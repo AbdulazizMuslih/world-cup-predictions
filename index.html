@@ -5,7 +5,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>توقعات كأس العالم 2026</title>
-    <link rel="stylesheet" href="style.css?v=11" />
+    <link rel="stylesheet" href="style.css?v=12" />
 </head>
 
 <body>
@@ -30,28 +30,28 @@
 
         <main class="container">
             <section id="loginCard" class="card login-card">
-                <h2>اختر اسمك</h2>
+                <form id="loginForm">
+                    <h2>اختر اسمك</h2>
 
-                <label>الاسم</label>
+                    <label>الاسم</label>
 
-                <select id="participantSelect" class="name-select-hidden" aria-hidden="true" tabindex="-1">
-                    <option value="">جاري تحميل الأسماء...</option>
-                </select>
+                    <select id="participantSelect" class="name-select-hidden" aria-hidden="true" tabindex="-1">
+                        <option value="">جاري تحميل الأسماء...</option>
+                    </select>
 
-                <div id="participantCards" class="participant-grid"></div>
+                    <div id="participantCards" class="participant-grid"></div>
 
-                <div id="participantCards" class="participant-grid"></div>
+                    <label>الرقم السري</label>
+                    <input id="pinInput" type="password" placeholder="أدخل الرقم السري" />
 
-                <label>الرقم السري</label>
-                <input id="pinInput" type="password" placeholder="أدخل الرقم السري" />
+                    <button id="continueBtn" type="submit">دخول</button>
 
-                <button id="continueBtn">دخول</button>
+                    <button id="adminLoginBtn" class="secondary-btn" type="button">
+                        دخول الإدارة
+                    </button>
 
-                <button id="adminLoginBtn" class="secondary-btn" type="button">
-                    دخول الإدارة
-                </button>
-
-                <p id="loginMessage" class="message"></p>
+                    <p id="loginMessage" class="message"></p>
+                </form>
             </section>
 
             <section id="dashboard" class="dashboard hidden">
@@ -110,7 +110,7 @@
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="app.js?v=11"></script>
+    <script src="app.js?v=12"></script>
 </body>
 
 </html>

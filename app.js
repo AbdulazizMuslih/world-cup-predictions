@@ -14,6 +14,7 @@ const pinInput = document.getElementById("pinInput");
 const continueBtn = document.getElementById("continueBtn");
 const loginMessage = document.getElementById("loginMessage");
 const loginCard = document.getElementById("loginCard");
+const loginForm = document.getElementById("loginForm");
 const dashboard = document.getElementById("dashboard");
 const welcomeName = document.getElementById("welcomeName");
 
@@ -164,7 +165,9 @@ async function loadParticipants() {
     });
 }
 
-continueBtn.addEventListener("click", async () => {
+loginForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+
     const participantId = participantSelect.value;
     const pin = pinInput.value.trim();
 
@@ -186,13 +189,6 @@ continueBtn.addEventListener("click", async () => {
     }
 
     await openParticipantDashboard(data, true);
-});
-
-pinInput.addEventListener("keydown", (event) => {
-    if (event.key === "Enter") {
-        event.preventDefault();
-        continueBtn.click();
-    }
 });
 
 adminLoginBtn.addEventListener("click", async () => {
@@ -295,9 +291,7 @@ function activateTab(tabName) {
 function startDashboardTabSession(tabName) {
     tabHistory = [tabName];
     activateTab(tabName);
-
-    history.replaceState({ appBase: true }, "", `#${tabName}`);
-    history.pushState({ appGuard: true }, "", `#${tabName}`);
+    installBackGuard();
 }
 
 function goToDashboardTab(tabName) {
@@ -305,16 +299,16 @@ function goToDashboardTab(tabName) {
 
     tabHistory.push(tabName);
     activateTab(tabName);
-
-    if (!dashboard.classList.contains("hidden")) {
-        history.replaceState({ appGuard: true }, "", `#${tabName}`);
-    }
 }
 
-function resetBackButtonTrap(tabName) {
+function installBackGuard() {
     if (dashboard.classList.contains("hidden")) return;
 
-    history.pushState({ appGuard: true }, "", `#${tabName}`);
+    history.pushState(
+        { wcBackGuard: true },
+        "",
+        window.location.href
+    );
 }
 
 window.addEventListener("popstate", () => {
@@ -330,7 +324,7 @@ window.addEventListener("popstate", () => {
         const previousTab = tabHistory[tabHistory.length - 1];
 
         activateTab(previousTab);
-        resetBackButtonTrap(previousTab);
+        installBackGuard();
         return;
     }
 
@@ -340,7 +334,7 @@ window.addEventListener("popstate", () => {
         allowLeavingPage = true;
         history.back();
     } else {
-        resetBackButtonTrap(currentTabName);
+        installBackGuard();
     }
 });
 
@@ -399,7 +393,7 @@ async function loadAvailableMatches() {
             : "match-card";
 
         const savedPredictionHtml = existingPrediction
-    ? `
+            ? `
         <div class="saved-prediction-card">
             <div class="saved-prediction-row">
                 <span class="saved-prediction-title">✅ بالتوفيق</span>
@@ -412,7 +406,7 @@ async function loadAvailableMatches() {
             </div>
         </div>
       `
-    : "";
+            : "";
 
         card.innerHTML = `
       <div class="match-title">
@@ -555,11 +549,11 @@ async function loadMyPredictions() {
                 <td>${match.team1} ضد ${match.team2}</td>
                 <td>${prediction.predicted_team1_goals} - ${prediction.predicted_team2_goals}</td>
                 <td>
-                  ${match.status === "completed"
+  ${match.actual_team1_goals !== null && match.actual_team2_goals !== null
                 ? `${match.actual_team1_goals} - ${match.actual_team2_goals}`
                 : "-"
             }
-                </td>
+</td>
                 <td>${prediction.points}</td>
               </tr>
             `;
