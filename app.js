@@ -349,6 +349,10 @@ async function loadMyPredictions() {
         return;
     }
 
+    const sortedPredictions = [...data].sort((a, b) => {
+        return new Date(a.matches.kickoff_at) - new Date(b.matches.kickoff_at);
+    });
+
     myPredictions.innerHTML = `
     <table class="table">
       <thead>
@@ -360,7 +364,7 @@ async function loadMyPredictions() {
         </tr>
       </thead>
       <tbody>
-        ${data.map((row) => `
+        ${sortedPredictions.map((row) => `
           <tr>
             <td>${row.matches.team1} ضد ${row.matches.team2}</td>
             <td>${row.predicted_team1_goals} - ${row.predicted_team2_goals}</td>
