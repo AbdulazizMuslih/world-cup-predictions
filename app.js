@@ -30,6 +30,12 @@ const adminTabBtn = document.getElementById("adminTabBtn");
 
 let isAdminMode = false;
 
+let currentTabName = "available";
+let isHandlingBrowserBack = false;
+let allowLeavingPage = false;
+
+const validTabNames = ["available", "mine", "leaderboard", "admin"];
+
 document.addEventListener("DOMContentLoaded", init);
 
 musicBtn.addEventListener("click", async () => {
@@ -128,7 +134,8 @@ continueBtn.addEventListener("click", async () => {
     document.querySelector('[data-tab="available"]').classList.remove("hidden");
     document.querySelector('[data-tab="mine"]').classList.remove("hidden");
 
-    activateTab("available");
+    activateTab("available", false);
+    history.pushState({ tab: "available" }, "", "#available");
 
     await loadAvailableMatches();
     await loadMyPredictions();
@@ -162,7 +169,8 @@ adminLoginBtn.addEventListener("click", async () => {
     await loadLeaderboard();
     await loadAdminMatches();
 
-    activateTab("admin");
+    activateTab("admin", false);
+    history.pushState({ tab: "admin" }, "", "#admin");
 });
 
 logoutBtn.addEventListener("click", () => {
@@ -194,12 +202,12 @@ function setupTabs() {
 
     tabs.forEach((tab) => {
         tab.addEventListener("click", () => {
-            activateTab(tab.dataset.tab);
+            activateTab(tab.dataset.tab, true);
         });
     });
 }
 
-function activateTab(tabName) {
+function activateTab(tabName, pushToHistory = false) {
     const tabs = document.querySelectorAll(".tab");
 
     const panels = {
@@ -208,6 +216,8 @@ function activateTab(tabName) {
         leaderboard: document.getElementById("leaderboardTab"),
         admin: document.getElementById("adminTab"),
     };
+
+    if (!panels[tabName]) return;
 
     tabs.forEach((tab) => {
         tab.classList.remove("active");
@@ -222,7 +232,43 @@ function activateTab(tabName) {
     });
 
     panels[tabName].classList.remove("hidden");
+
+    currentTabName = tabName;
+
+    if (
+        pushToHistory &&
+        !isHandlingBrowserBack &&
+        !dashboard.classList.contains("hidden")
+    ) {
+        history.pushState({ tab: tabName }, "", `#${tabName}`);
+    }
 }
+
+window.addEventListener("popstate", (event) => {
+    if (allowLeavingPage) return;
+
+    if (dashboard.classList.contains("hidden")) {
+        return;
+    }
+
+    const tabName = event.state && event.state.tab;
+
+    if (validTabNames.includes(tabName)) {
+        isHandlingBrowserBack = true;
+        activateTab(tabName, false);
+        isHandlingBrowserBack = false;
+        return;
+    }
+
+    const shouldLeave = confirm("هل تريد الخروج من الصفحة؟");
+
+    if (shouldLeave) {
+        allowLeavingPage = true;
+        history.back();
+    } else {
+        history.pushState({ tab: currentTabName }, "", `#${currentTabName}`);
+    }
+});
 
 function isAvailable(kickoffAt) {
     const now = new Date();
@@ -233,6 +279,8 @@ function isAvailable(kickoffAt) {
 }
 
 async function loadAvailableMatches() {
+    if (!currentParticipant) return;
+
     const { data: matches, error } = await db
         .from("matches")
         .select("*")
@@ -251,13 +299,10 @@ async function loadAvailableMatches() {
         return;
     }
 
-    const matchIds = openMatches.map((match) => match.id);
-
-    const { data: existingPredictions, error: predictionsError } = await db
+    const { data: participantPredictions, error: predictionsError } = await db
         .from("predictions")
         .select("match_id, predicted_team1_goals, predicted_team2_goals")
-        .eq("participant_id", currentParticipant.id)
-        .in("match_id", matchIds);
+        .eq("participant_id", currentParticipant.id);
 
     if (predictionsError) {
         console.error(predictionsError);
@@ -265,7 +310,7 @@ async function loadAvailableMatches() {
 
     const predictionMap = new Map();
 
-    (existingPredictions || []).forEach((prediction) => {
+    (participantPredictions || []).forEach((prediction) => {
         predictionMap.set(prediction.match_id, prediction);
     });
 
