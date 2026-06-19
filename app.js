@@ -34,6 +34,7 @@ let isAdminMode = false;
 let currentTabName = "available";
 let tabHistory = [];
 let allowLeavingPage = false;
+let dashboardRefreshTimer = null;
 
 document.addEventListener("DOMContentLoaded", init);
 
@@ -119,6 +120,7 @@ async function openParticipantDashboard(participant, rememberParticipant = true)
     await loadMyPredictions();
     await loadLeaderboard();
     await loadAdminMatches();
+    startDashboardAutoRefresh();
 }
 
 async function loadParticipants() {
@@ -218,11 +220,13 @@ adminLoginBtn.addEventListener("click", async () => {
     await loadAdminMatches();
 
     startDashboardTabSession("admin");
+    startDashboardAutoRefresh();
 });
 
 logoutBtn.addEventListener("click", () => {
     currentParticipant = null;
     isAdminMode = false;
+    stopDashboardAutoRefresh();
 
     localStorage.removeItem("wcParticipant");
     tabHistory = [];
@@ -309,6 +313,35 @@ function installBackGuard() {
         "",
         window.location.href
     );
+}
+
+function startDashboardAutoRefresh() {
+    stopDashboardAutoRefresh();
+
+    dashboardRefreshTimer = setInterval(async () => {
+        if (dashboard.classList.contains("hidden")) return;
+
+        try {
+            await loadLeaderboard();
+
+            if (currentParticipant) {
+                await loadMyPredictions();
+            }
+
+            if (isAdminMode) {
+                await loadAdminMatches();
+            }
+        } catch (error) {
+            console.error("Dashboard auto-refresh failed:", error);
+        }
+    }, 60 * 1000);
+}
+
+function stopDashboardAutoRefresh() {
+    if (dashboardRefreshTimer) {
+        clearInterval(dashboardRefreshTimer);
+        dashboardRefreshTimer = null;
+    }
 }
 
 window.addEventListener("popstate", () => {
