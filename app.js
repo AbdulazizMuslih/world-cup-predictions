@@ -63,23 +63,20 @@ async function restoreParticipantSession() {
     if (!savedParticipant) return;
 
     try {
-        const parsedParticipant = JSON.parse(savedParticipant);
+        const participant = JSON.parse(savedParticipant);
 
-        if (!parsedParticipant || !parsedParticipant.id) return;
-
-        const { data, error } = await db
-            .from("participants")
-            .select("id, name")
-            .eq("id", parsedParticipant.id)
-            .eq("active", true)
-            .single();
-
-        if (error || !data) {
+        if (!participant || !participant.id || !participant.name) {
             localStorage.removeItem("wcParticipant");
             return;
         }
 
-        await openParticipantDashboard(data, false);
+        await openParticipantDashboard(
+            {
+                id: participant.id,
+                name: participant.name,
+            },
+            false
+        );
     } catch (error) {
         console.error(error);
         localStorage.removeItem("wcParticipant");
@@ -191,6 +188,13 @@ continueBtn.addEventListener("click", async () => {
     await openParticipantDashboard(data, true);
 });
 
+pinInput.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+        event.preventDefault();
+        continueBtn.click();
+    }
+});
+
 adminLoginBtn.addEventListener("click", async () => {
     const password = prompt("أدخل كلمة مرور الإدارة");
 
@@ -291,7 +295,9 @@ function activateTab(tabName) {
 function startDashboardTabSession(tabName) {
     tabHistory = [tabName];
     activateTab(tabName);
-    resetBackButtonTrap(tabName);
+
+    history.replaceState({ appBase: true }, "", `#${tabName}`);
+    history.pushState({ appGuard: true }, "", `#${tabName}`);
 }
 
 function goToDashboardTab(tabName) {
@@ -299,14 +305,16 @@ function goToDashboardTab(tabName) {
 
     tabHistory.push(tabName);
     activateTab(tabName);
-    resetBackButtonTrap(tabName);
+
+    if (!dashboard.classList.contains("hidden")) {
+        history.replaceState({ appGuard: true }, "", `#${tabName}`);
+    }
 }
 
 function resetBackButtonTrap(tabName) {
     if (dashboard.classList.contains("hidden")) return;
 
-    history.replaceState({ app: true, tab: tabName }, "", `#${tabName}`);
-    history.pushState({ app: true, guard: true }, "", `#${tabName}`);
+    history.pushState({ appGuard: true }, "", `#${tabName}`);
 }
 
 window.addEventListener("popstate", () => {
