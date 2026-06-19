@@ -214,7 +214,7 @@ input::placeholder {
 .table td {
   padding: 12px;
   border-bottom: 1px solid rgba(255,255,255,0.12);
-  text-align: left;
+  text-align: right;
 }
 
 .table th {
@@ -259,6 +259,8 @@ input::placeholder {
 }
 
 .participant-card {
+  width: 100%;
+  margin-top: 0;
   min-height: 64px;
   border: 1px solid rgba(255, 255, 255, 0.28);
   border-radius: 18px;
@@ -269,6 +271,9 @@ input::placeholder {
   text-align: center;
   cursor: pointer;
   box-shadow: 0 10px 24px rgba(0, 0, 0, 0.20);
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .participant-card:hover {
@@ -301,35 +306,37 @@ input::placeholder {
   margin: 14px 0;
   padding: 12px 14px;
   border-radius: 16px;
-  background: rgba(0, 230, 118, 0.16);
-  border: 1px solid rgba(0, 230, 118, 0.45);
+  background: linear-gradient(135deg, rgba(0, 230, 118, 0.20), rgba(255, 213, 79, 0.14));
+  border: 1px solid rgba(0, 230, 118, 0.50);
   color: #ffffff;
 }
 
-.saved-prediction-title {
-  font-size: 18px;
-  font-weight: 900;
-  color: #00e676;
-  margin-bottom: 6px;
+.saved-prediction-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
 }
 
-.saved-prediction-text {
-  font-size: 15px;
-  font-weight: 700;
+.saved-prediction-title {
+  font-size: 17px;
+  font-weight: 900;
+  color: #00e676;
 }
 
 .saved-score {
   display: inline-block;
-  margin-right: 6px;
-  padding: 4px 10px;
+  padding: 5px 13px;
   border-radius: 999px;
   background: #00e676;
   color: #07111f;
+  font-size: 16px;
   font-weight: 900;
 }
 
 .saved-prediction-note {
   margin-top: 6px;
   font-size: 12px;
-  color: rgba(255, 255, 255, 0.72);
+  color: rgba(255, 255, 255, 0.78);
 }

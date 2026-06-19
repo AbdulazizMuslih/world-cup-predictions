@@ -31,10 +31,8 @@ const adminTabBtn = document.getElementById("adminTabBtn");
 let isAdminMode = false;
 
 let currentTabName = "available";
-let isHandlingBrowserBack = false;
+let tabHistory = [];
 let allowLeavingPage = false;
-
-const validTabNames = ["available", "mine", "leaderboard", "admin"];
 
 document.addEventListener("DOMContentLoaded", init);
 
@@ -56,6 +54,73 @@ async function init() {
     setupTabs();
     await loadParticipants();
     await loadLeaderboard();
+    await restoreParticipantSession();
+}
+
+async function restoreParticipantSession() {
+    const savedParticipant = localStorage.getItem("wcParticipant");
+
+    if (!savedParticipant) return;
+
+    try {
+        const parsedParticipant = JSON.parse(savedParticipant);
+
+        if (!parsedParticipant || !parsedParticipant.id) return;
+
+        const { data, error } = await db
+            .from("participants")
+            .select("id, name")
+            .eq("id", parsedParticipant.id)
+            .eq("active", true)
+            .single();
+
+        if (error || !data) {
+            localStorage.removeItem("wcParticipant");
+            return;
+        }
+
+        await openParticipantDashboard(data, false);
+    } catch (error) {
+        console.error(error);
+        localStorage.removeItem("wcParticipant");
+    }
+}
+
+async function openParticipantDashboard(participant, rememberParticipant = true) {
+    currentParticipant = participant;
+    welcomeName.textContent = participant.name;
+
+    if (rememberParticipant) {
+        localStorage.setItem(
+            "wcParticipant",
+            JSON.stringify({
+                id: participant.id,
+                name: participant.name,
+            })
+        );
+    }
+
+    participantSelect.value = participant.id;
+
+    document.querySelectorAll(".participant-card").forEach((btn) => {
+        btn.classList.toggle("selected", btn.dataset.participantId === participant.id);
+    });
+
+    loginCard.classList.add("hidden");
+    dashboard.classList.remove("hidden");
+
+    isAdminMode = false;
+    adminTabBtn.classList.add("hidden");
+
+    document.querySelector('[data-tab="available"]').classList.remove("hidden");
+    document.querySelector('[data-tab="mine"]').classList.remove("hidden");
+
+    startDashboardTabSession("available");
+
+    await loadAvailableMatches();
+    await loadMyPredictions();
+    await loadLeaderboard();
+    await loadAdminMatches();
 }
 
 async function loadParticipants() {
@@ -84,6 +149,7 @@ async function loadParticipants() {
         card.type = "button";
         card.className = "participant-card";
         card.textContent = participant.name;
+        card.dataset.participantId = participant.id;
 
         card.addEventListener("click", () => {
             participantSelect.value = participant.id;
@@ -122,25 +188,7 @@ continueBtn.addEventListener("click", async () => {
         return;
     }
 
-    currentParticipant = data;
-    welcomeName.textContent = data.name;
-
-    loginCard.classList.add("hidden");
-    dashboard.classList.remove("hidden");
-
-    isAdminMode = false;
-    adminTabBtn.classList.add("hidden");
-
-    document.querySelector('[data-tab="available"]').classList.remove("hidden");
-    document.querySelector('[data-tab="mine"]').classList.remove("hidden");
-
-    activateTab("available", false);
-    history.pushState({ tab: "available" }, "", "#available");
-
-    await loadAvailableMatches();
-    await loadMyPredictions();
-    await loadLeaderboard();
-    await loadAdminMatches();
+    await openParticipantDashboard(data, true);
 });
 
 adminLoginBtn.addEventListener("click", async () => {
@@ -169,13 +217,18 @@ adminLoginBtn.addEventListener("click", async () => {
     await loadLeaderboard();
     await loadAdminMatches();
 
-    activateTab("admin", false);
-    history.pushState({ tab: "admin" }, "", "#admin");
+    startDashboardTabSession("admin");
 });
 
 logoutBtn.addEventListener("click", () => {
     currentParticipant = null;
     isAdminMode = false;
+
+    localStorage.removeItem("wcParticipant");
+    tabHistory = [];
+    currentTabName = "available";
+    allowLeavingPage = false;
+    history.replaceState(null, "", window.location.pathname);
 
     pinInput.value = "";
     adminPassword.value = "";
@@ -202,12 +255,12 @@ function setupTabs() {
 
     tabs.forEach((tab) => {
         tab.addEventListener("click", () => {
-            activateTab(tab.dataset.tab, true);
+            goToDashboardTab(tab.dataset.tab);
         });
     });
 }
 
-function activateTab(tabName, pushToHistory = false) {
+function activateTab(tabName) {
     const tabs = document.querySelectorAll(".tab");
 
     const panels = {
@@ -232,31 +285,44 @@ function activateTab(tabName, pushToHistory = false) {
     });
 
     panels[tabName].classList.remove("hidden");
-
     currentTabName = tabName;
-
-    if (
-        pushToHistory &&
-        !isHandlingBrowserBack &&
-        !dashboard.classList.contains("hidden")
-    ) {
-        history.pushState({ tab: tabName }, "", `#${tabName}`);
-    }
 }
 
-window.addEventListener("popstate", (event) => {
+function startDashboardTabSession(tabName) {
+    tabHistory = [tabName];
+    activateTab(tabName);
+    resetBackButtonTrap(tabName);
+}
+
+function goToDashboardTab(tabName) {
+    if (tabName === currentTabName) return;
+
+    tabHistory.push(tabName);
+    activateTab(tabName);
+    resetBackButtonTrap(tabName);
+}
+
+function resetBackButtonTrap(tabName) {
+    if (dashboard.classList.contains("hidden")) return;
+
+    history.replaceState({ app: true, tab: tabName }, "", `#${tabName}`);
+    history.pushState({ app: true, guard: true }, "", `#${tabName}`);
+}
+
+window.addEventListener("popstate", () => {
     if (allowLeavingPage) return;
 
     if (dashboard.classList.contains("hidden")) {
         return;
     }
 
-    const tabName = event.state && event.state.tab;
+    if (tabHistory.length > 1) {
+        tabHistory.pop();
 
-    if (validTabNames.includes(tabName)) {
-        isHandlingBrowserBack = true;
-        activateTab(tabName, false);
-        isHandlingBrowserBack = false;
+        const previousTab = tabHistory[tabHistory.length - 1];
+
+        activateTab(previousTab);
+        resetBackButtonTrap(previousTab);
         return;
     }
 
@@ -266,7 +332,7 @@ window.addEventListener("popstate", (event) => {
         allowLeavingPage = true;
         history.back();
     } else {
-        history.pushState({ tab: currentTabName }, "", `#${currentTabName}`);
+        resetBackButtonTrap(currentTabName);
     }
 });
 
@@ -325,21 +391,20 @@ async function loadAvailableMatches() {
             : "match-card";
 
         const savedPredictionHtml = existingPrediction
-            ? `
-                <div class="saved-prediction-card">
-                    <div class="saved-prediction-title">✅ بالتوفيق</div>
-                    <div class="saved-prediction-text">
-                        تم حفظ توقعك:
-                        <span class="saved-score">
-                            ${existingPrediction.predicted_team1_goals} - ${existingPrediction.predicted_team2_goals}
-                        </span>
-                    </div>
-                    <div class="saved-prediction-note">
-                        يمكنك تعديل التوقع حتى بداية المباراة.
-                    </div>
-                </div>
-              `
-            : "";
+    ? `
+        <div class="saved-prediction-card">
+            <div class="saved-prediction-row">
+                <span class="saved-prediction-title">✅ بالتوفيق</span>
+                <span class="saved-score">
+                    ${existingPrediction.predicted_team1_goals} - ${existingPrediction.predicted_team2_goals}
+                </span>
+            </div>
+            <div class="saved-prediction-note">
+                تم حفظ توقعك ويمكنك تعديله حتى بداية المباراة.
+            </div>
+        </div>
+      `
+    : "";
 
         card.innerHTML = `
       <div class="match-title">
