@@ -245,4 +245,40 @@ input::placeholder {
   .tab {
     width: 100%;
   }
+
+  /* Better participant name selector */
+#participantSelect {
+  width: 100%;
+  min-height: 56px;
+  padding: 0 18px;
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 1.4;
+  color: #102033;
+  background: #ffffff;
+  border: 2px solid rgba(0, 123, 255, 0.25);
+  border-radius: 16px;
+  box-shadow: 0 8px 20px rgba(15, 35, 60, 0.08);
+  outline: none;
+  cursor: pointer;
+  direction: rtl;
+  text-align: right;
+}
+
+#participantSelect:hover {
+  border-color: rgba(0, 123, 255, 0.45);
+  box-shadow: 0 10px 24px rgba(15, 35, 60, 0.12);
+}
+
+#participantSelect:focus {
+  border-color: #007bff;
+  box-shadow: 0 0 0 4px rgba(0, 123, 255, 0.15);
+}
+
+#participantSelect option {
+  font-size: 18px;
+  font-weight: 600;
+  color: #102033;
+  background: #ffffff;
+}
 }
