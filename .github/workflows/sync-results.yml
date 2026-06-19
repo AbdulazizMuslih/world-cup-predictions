@@ -2,6 +2,9 @@ name: Sync World Cup Results
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - auto-results-sync
   schedule:
     - cron: "*/30 * * * *"
 
