@@ -33,9 +33,12 @@
                 <h2>اختر اسمك</h2>
 
                 <label>الاسم</label>
-                <select id="participantSelect">
+
+                <select id="participantSelect" class="native-select-hidden">
                     <option value="">جاري تحميل الأسماء...</option>
                 </select>
+
+                <div id="participantCards" class="participant-grid"></div>
 
                 <label>الرقم السري</label>
                 <input id="pinInput" type="password" placeholder="أدخل الرقم السري" />

@@ -8,7 +8,7 @@ const daiDaiAudio = document.getElementById("daiDaiAudio");
 
 let currentParticipant = null;
 
-const participantSelect = document.getElementById("participantSelect");
+const participantCards = document.getElementById("participantCards");
 const pinInput = document.getElementById("pinInput");
 const continueBtn = document.getElementById("continueBtn");
 const loginMessage = document.getElementById("loginMessage");
@@ -60,16 +60,37 @@ async function loadParticipants() {
 
     if (error) {
         participantSelect.innerHTML = `<option value="">تعذر تحميل الأسماء</option>`;
+        participantCards.innerHTML = `<p class="message">تعذر تحميل الأسماء</p>`;
         return;
     }
 
     participantSelect.innerHTML = `<option value="">اختر اسمك</option>`;
+    participantCards.innerHTML = "";
 
     data.forEach((participant) => {
         const option = document.createElement("option");
         option.value = participant.id;
         option.textContent = participant.name;
         participantSelect.appendChild(option);
+
+        const card = document.createElement("button");
+        card.type = "button";
+        card.className = "participant-card";
+        card.textContent = participant.name;
+
+        card.addEventListener("click", () => {
+            participantSelect.value = participant.id;
+            loginMessage.textContent = "";
+
+            document.querySelectorAll(".participant-card").forEach((btn) => {
+                btn.classList.remove("selected");
+            });
+
+            card.classList.add("selected");
+            pinInput.focus();
+        });
+
+        participantCards.appendChild(card);
     });
 }
 
@@ -149,6 +170,12 @@ logoutBtn.addEventListener("click", () => {
 
     pinInput.value = "";
     adminPassword.value = "";
+
+    participantSelect.value = "";
+
+    document.querySelectorAll(".participant-card").forEach((btn) => {
+        btn.classList.remove("selected");
+    });
 
     adminTabBtn.classList.add("hidden");
 
