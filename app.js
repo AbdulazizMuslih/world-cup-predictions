@@ -9,6 +9,7 @@ const daiDaiAudio = document.getElementById("daiDaiAudio");
 let currentParticipant = null;
 
 const participantCards = document.getElementById("participantCards");
+const participantSelect = document.getElementById("participantSelect");
 const pinInput = document.getElementById("pinInput");
 const continueBtn = document.getElementById("continueBtn");
 const loginMessage = document.getElementById("loginMessage");
