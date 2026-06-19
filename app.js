@@ -519,6 +519,32 @@ async function savePrediction(matchId) {
     await loadMyPredictions();
 }
 
+function hasActualScore(match) {
+    return (
+        match.actual_team1_goals !== null &&
+        match.actual_team1_goals !== undefined &&
+        match.actual_team2_goals !== null &&
+        match.actual_team2_goals !== undefined
+    );
+}
+
+function formatScore(team1Goals, team2Goals) {
+    return `<span class="score-text">${team1Goals} - ${team2Goals}</span>`;
+}
+
+function calculateLivePredictionPoints(prediction, match) {
+    if (!hasActualScore(match)) {
+        return prediction.points || 0;
+    }
+
+    return calculatePoints(
+        prediction.predicted_team1_goals,
+        prediction.predicted_team2_goals,
+        match.actual_team1_goals,
+        match.actual_team2_goals
+    );
+}
+
 async function loadMyPredictions() {
     if (!currentParticipant) return;
 
@@ -556,13 +582,6 @@ async function loadMyPredictions() {
         return new Date(a.kickoff_at).getTime() - new Date(b.kickoff_at).getTime();
     });
 
-    console.table(
-        sortedMatches.map((match) => ({
-            match: `${match.team1} ضد ${match.team2}`,
-            kickoff_at: match.kickoff_at
-        }))
-    );
-
     myPredictions.innerHTML = `
     <table class="table">
       <thead>
@@ -575,22 +594,29 @@ async function loadMyPredictions() {
       </thead>
       <tbody>
         ${sortedMatches.map((match) => {
-        const prediction = match.predictions[0];
+            const prediction = match.predictions[0];
 
-        return `
+            const livePoints = calculateLivePredictionPoints(prediction, match);
+
+            return `
               <tr>
                 <td>${match.team1} ضد ${match.team2}</td>
-                <td>${prediction.predicted_team1_goals} - ${prediction.predicted_team2_goals}</td>
                 <td>
-  ${match.actual_team1_goals !== null && match.actual_team2_goals !== null
-                ? `${match.actual_team1_goals} - ${match.actual_team2_goals}`
-                : "-"
-            }
-</td>
-                <td>${prediction.points}</td>
+                    ${formatScore(
+                        prediction.predicted_team1_goals,
+                        prediction.predicted_team2_goals
+                    )}
+                </td>
+                <td>
+                    ${hasActualScore(match)
+                        ? formatScore(match.actual_team1_goals, match.actual_team2_goals)
+                        : "-"
+                    }
+                </td>
+                <td>${livePoints}</td>
               </tr>
             `;
-    }).join("")}
+        }).join("")}
       </tbody>
     </table>
   `;
@@ -600,22 +626,54 @@ async function loadLeaderboard() {
     const { data, error } = await db
         .from("participants")
         .select(`
-      id,
-      name,
-      predictions(points)
-    `)
+            id,
+            name,
+            predictions(
+                predicted_team1_goals,
+                predicted_team2_goals,
+                points,
+                matches(
+                    actual_team1_goals,
+                    actual_team2_goals
+                )
+            )
+        `)
         .eq("active", true);
 
     if (error) {
+        console.error(error);
         leaderboard.innerHTML = `<p>تعذر تحميل الترتيب.</p>`;
         return;
     }
 
     const rows = data
-        .map((participant) => ({
-            name: participant.name,
-            points: participant.predictions.reduce((sum, p) => sum + p.points, 0),
-        }))
+        .map((participant) => {
+            const totalPoints = (participant.predictions || []).reduce((sum, prediction) => {
+                const match = prediction.matches;
+
+                if (
+                    match &&
+                    match.actual_team1_goals !== null &&
+                    match.actual_team1_goals !== undefined &&
+                    match.actual_team2_goals !== null &&
+                    match.actual_team2_goals !== undefined
+                ) {
+                    return sum + calculatePoints(
+                        prediction.predicted_team1_goals,
+                        prediction.predicted_team2_goals,
+                        match.actual_team1_goals,
+                        match.actual_team2_goals
+                    );
+                }
+
+                return sum + (prediction.points || 0);
+            }, 0);
+
+            return {
+                name: participant.name,
+                points: totalPoints,
+            };
+        })
         .sort((a, b) => b.points - a.points);
 
     leaderboard.innerHTML = `
