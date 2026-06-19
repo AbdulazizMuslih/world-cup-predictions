@@ -322,36 +322,35 @@ async function loadMyPredictions() {
     if (!currentParticipant) return;
 
     const { data, error } = await db
-        .from("predictions")
+        .from("matches")
         .select(`
-      id,
-      predicted_team1_goals,
-      predicted_team2_goals,
-      points,
-      matches (
-        team1,
-        team2,
-        kickoff_at,
-        status,
-        actual_team1_goals,
-        actual_team2_goals
-      )
-    `)
-        .eq("participant_id", currentParticipant.id);
+            id,
+            team1,
+            team2,
+            kickoff_at,
+            status,
+            actual_team1_goals,
+            actual_team2_goals,
+            predictions!inner (
+                predicted_team1_goals,
+                predicted_team2_goals,
+                points,
+                participant_id
+            )
+        `)
+        .eq("predictions.participant_id", currentParticipant.id)
+        .order("kickoff_at", { ascending: true });
 
     if (error) {
+        console.error(error);
         myPredictions.innerHTML = `<p>تعذر تحميل التوقعات.</p>`;
         return;
     }
 
-    if (data.length === 0) {
+    if (!data || data.length === 0) {
         myPredictions.innerHTML = `<p>لم تقم بإضافة أي توقع حتى الآن.</p>`;
         return;
     }
-
-    const sortedPredictions = [...data].sort((a, b) => {
-        return new Date(a.matches.kickoff_at) - new Date(b.matches.kickoff_at);
-    });
 
     myPredictions.innerHTML = `
     <table class="table">
@@ -364,19 +363,23 @@ async function loadMyPredictions() {
         </tr>
       </thead>
       <tbody>
-        ${sortedPredictions.map((row) => `
-          <tr>
-            <td>${row.matches.team1} ضد ${row.matches.team2}</td>
-            <td>${row.predicted_team1_goals} - ${row.predicted_team2_goals}</td>
-            <td>
-              ${row.matches.status === "completed"
-            ? `${row.matches.actual_team1_goals} - ${row.matches.actual_team2_goals}`
-            : "-"
-        }
-            </td>
-            <td>${row.points}</td>
-          </tr>
-        `).join("")}
+        ${data.map((match) => {
+            const prediction = match.predictions[0];
+
+            return `
+              <tr>
+                <td>${match.team1} ضد ${match.team2}</td>
+                <td>${prediction.predicted_team1_goals} - ${prediction.predicted_team2_goals}</td>
+                <td>
+                  ${match.status === "completed"
+                    ? `${match.actual_team1_goals} - ${match.actual_team2_goals}`
+                    : "-"
+                  }
+                </td>
+                <td>${prediction.points}</td>
+              </tr>
+            `;
+        }).join("")}
       </tbody>
     </table>
   `;
