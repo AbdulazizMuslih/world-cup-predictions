@@ -251,11 +251,50 @@ async function loadAvailableMatches() {
         return;
     }
 
+    const matchIds = openMatches.map((match) => match.id);
+
+    const { data: existingPredictions, error: predictionsError } = await db
+        .from("predictions")
+        .select("match_id, predicted_team1_goals, predicted_team2_goals")
+        .eq("participant_id", currentParticipant.id)
+        .in("match_id", matchIds);
+
+    if (predictionsError) {
+        console.error(predictionsError);
+    }
+
+    const predictionMap = new Map();
+
+    (existingPredictions || []).forEach((prediction) => {
+        predictionMap.set(prediction.match_id, prediction);
+    });
+
     availableMatches.innerHTML = "";
 
     openMatches.forEach((match) => {
+        const existingPrediction = predictionMap.get(match.id);
+
         const card = document.createElement("div");
-        card.className = "match-card";
+        card.className = existingPrediction
+            ? "match-card match-card-predicted"
+            : "match-card";
+
+        const savedPredictionHtml = existingPrediction
+            ? `
+                <div class="saved-prediction-card">
+                    <div class="saved-prediction-title">✅ بالتوفيق</div>
+                    <div class="saved-prediction-text">
+                        تم حفظ توقعك:
+                        <span class="saved-score">
+                            ${existingPrediction.predicted_team1_goals} - ${existingPrediction.predicted_team2_goals}
+                        </span>
+                    </div>
+                    <div class="saved-prediction-note">
+                        يمكنك تعديل التوقع حتى بداية المباراة.
+                    </div>
+                </div>
+              `
+            : "";
 
         card.innerHTML = `
       <div class="match-title">
@@ -268,12 +307,28 @@ async function loadAvailableMatches() {
         وقت المباراة: ${new Date(match.kickoff_at).toLocaleString("ar-SA")}
       </p>
 
+      ${savedPredictionHtml}
+
       <div class="score-row">
-        <input id="team1-${match.id}" type="number" min="0" placeholder="${match.team1}" />
-        <input id="team2-${match.id}" type="number" min="0" placeholder="${match.team2}" />
+        <input 
+          id="team1-${match.id}" 
+          type="number" 
+          min="0" 
+          placeholder="${match.team1}" 
+          value="${existingPrediction ? existingPrediction.predicted_team1_goals : ""}"
+        />
+        <input 
+          id="team2-${match.id}" 
+          type="number" 
+          min="0" 
+          placeholder="${match.team2}" 
+          value="${existingPrediction ? existingPrediction.predicted_team2_goals : ""}"
+        />
       </div>
 
-      <button onclick="savePrediction('${match.id}')">حفظ التوقع</button>
+      <button onclick="savePrediction('${match.id}')">
+        ${existingPrediction ? "تحديث التوقع" : "حفظ التوقع"}
+      </button>
     `;
 
         availableMatches.appendChild(card);
@@ -315,6 +370,7 @@ async function savePrediction(matchId) {
     }
 
     alert("تم حفظ التوقع!");
+    await loadAvailableMatches();
     await loadMyPredictions();
 }
 
@@ -374,22 +430,22 @@ async function loadMyPredictions() {
       </thead>
       <tbody>
         ${sortedMatches.map((match) => {
-            const prediction = match.predictions[0];
+        const prediction = match.predictions[0];
 
-            return `
+        return `
               <tr>
                 <td>${match.team1} ضد ${match.team2}</td>
                 <td>${prediction.predicted_team1_goals} - ${prediction.predicted_team2_goals}</td>
                 <td>
                   ${match.status === "completed"
-                    ? `${match.actual_team1_goals} - ${match.actual_team2_goals}`
-                    : "-"
-                  }
+                ? `${match.actual_team1_goals} - ${match.actual_team2_goals}`
+                : "-"
+            }
                 </td>
                 <td>${prediction.points}</td>
               </tr>
             `;
-        }).join("")}
+    }).join("")}
       </tbody>
     </table>
   `;
