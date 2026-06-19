@@ -49,7 +49,7 @@ async function loadParticipants() {
     .from("participants")
     .select("id, name")
     .eq("active", true)
-    .order("name");
+    .order("sort_order", { ascending: true });
 
   if (error) {
     participantSelect.innerHTML = `<option value="">تعذر تحميل الأسماء</option>`;
