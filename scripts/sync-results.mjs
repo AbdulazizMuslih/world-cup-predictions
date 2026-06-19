@@ -9,6 +9,8 @@ if (!SUPABASE_SERVICE_ROLE_KEY) throw new Error("Missing SUPABASE_SERVICE_ROLE_K
 const FOOTBALL_API_URL =
     "https://api.football-data.org/v4/competitions/WC/matches?season=2026";
 
+const STALE_LIVE_MATCH_MS = 3 * 60 * 60 * 1000;
+
 const TEAM_ARABIC_NAMES = {
     "United States": "أمريكا",
     "USA": "أمريكا",
@@ -144,14 +146,38 @@ function normalizeMatch(apiMatch) {
     const actualHome = apiMatch.score?.fullTime?.home;
     const actualAway = apiMatch.score?.fullTime?.away;
 
+    const actualTeam1Goals = Number.isInteger(actualHome) ? actualHome : null;
+    const actualTeam2Goals = Number.isInteger(actualAway) ? actualAway : null;
+
+    const mappedStatus = mapStatus(apiMatch.status);
+    const kickoffTime = new Date(apiMatch.utcDate).getTime();
+
+    const hasActualScore =
+        actualTeam1Goals !== null &&
+        actualTeam2Goals !== null;
+
+    const isStaleLiveMatch =
+        mappedStatus === "live" &&
+        hasActualScore &&
+        Number.isFinite(kickoffTime) &&
+        Date.now() - kickoffTime > STALE_LIVE_MATCH_MS;
+
+    const finalStatus = isStaleLiveMatch ? "completed" : mappedStatus;
+
+    if (isStaleLiveMatch) {
+        console.log(
+            `Treating stale live match as completed: ${apiMatch.homeTeam?.name} vs ${apiMatch.awayTeam?.name}`
+        );
+    }
+
     return {
         external_id: String(apiMatch.id),
         team1: toArabicTeamName(apiMatch.homeTeam?.name),
         team2: toArabicTeamName(apiMatch.awayTeam?.name),
         kickoff_at: apiMatch.utcDate,
-        status: mapStatus(apiMatch.status),
-        actual_team1_goals: Number.isInteger(actualHome) ? actualHome : null,
-        actual_team2_goals: Number.isInteger(actualAway) ? actualAway : null,
+        status: finalStatus,
+        actual_team1_goals: actualTeam1Goals,
+        actual_team2_goals: actualTeam2Goals,
         competition: "FIFA World Cup 2026",
         last_synced_at: new Date().toISOString()
     };
@@ -223,13 +249,13 @@ async function main() {
 
     await upsertMatches(normalizedMatches);
 
-    const completedMatches = normalizedMatches.filter(
+    const matchesToScore = normalizedMatches.filter(
         (match) => match.status === "completed"
     );
 
-    console.log(`Completed matches found: ${completedMatches.length}`);
+    console.log(`Matches ready for scoring: ${matchesToScore.length}`);
 
-    for (const match of completedMatches) {
+    for (const match of matchesToScore) {
         await recalculatePointsForCompletedMatch(match);
     }
 
