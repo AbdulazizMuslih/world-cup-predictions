@@ -338,8 +338,7 @@ async function loadMyPredictions() {
                 participant_id
             )
         `)
-        .eq("predictions.participant_id", currentParticipant.id)
-        .order("kickoff_at", { ascending: true });
+        .eq("predictions.participant_id", currentParticipant.id);
 
     if (error) {
         console.error(error);
@@ -352,6 +351,17 @@ async function loadMyPredictions() {
         return;
     }
 
+    const sortedMatches = [...data].sort((a, b) => {
+        return new Date(a.kickoff_at).getTime() - new Date(b.kickoff_at).getTime();
+    });
+
+    console.table(
+        sortedMatches.map((match) => ({
+            match: `${match.team1} ضد ${match.team2}`,
+            kickoff_at: match.kickoff_at
+        }))
+    );
+
     myPredictions.innerHTML = `
     <table class="table">
       <thead>
@@ -363,7 +373,7 @@ async function loadMyPredictions() {
         </tr>
       </thead>
       <tbody>
-        ${data.map((match) => {
+        ${sortedMatches.map((match) => {
             const prediction = match.predictions[0];
 
             return `
