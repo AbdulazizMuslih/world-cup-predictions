@@ -1,0 +1,248 @@
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: Arial, Helvetica, sans-serif;
+  color: #ffffff;
+  background:
+    radial-gradient(circle at top left, rgba(0, 255, 166, 0.18), transparent 30%),
+    radial-gradient(circle at top right, rgba(255, 213, 79, 0.18), transparent 30%),
+    linear-gradient(135deg, #07111f, #101b3f 45%, #29104a);
+  min-height: 100vh;
+}
+
+.app-shell {
+  min-height: 100vh;
+}
+
+.hero {
+  min-height: 300px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 40px 20px;
+  background:
+    linear-gradient(rgba(7, 17, 31, 0.45), rgba(7, 17, 31, 0.85)),
+    url("assets/hero.jpg");
+  background-size: cover;
+  background-position: center;
+}
+
+.hero-overlay {
+  max-width: 760px;
+}
+
+.eyebrow {
+  color: #ffd54f;
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  font-size: 12px;
+  font-weight: bold;
+  margin-bottom: 10px;
+}
+
+h1 {
+  font-size: clamp(42px, 7vw, 78px);
+  margin: 0;
+  line-height: 0.95;
+}
+
+.subtitle {
+  font-size: 18px;
+  opacity: 0.88;
+  margin: 18px 0 24px;
+}
+
+.music-btn,
+button {
+  border: 0;
+  border-radius: 999px;
+  background: linear-gradient(135deg, #00e676, #ffd54f);
+  color: #07111f;
+  padding: 12px 20px;
+  font-weight: bold;
+  cursor: pointer;
+  text-decoration: none;
+  display: inline-block;
+}
+
+.secondary-btn {
+  background: rgba(255, 255, 255, 0.12);
+  color: #ffffff;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+}
+
+.container {
+  width: min(1100px, calc(100% - 32px));
+  margin: -40px auto 40px;
+}
+
+.card,
+.dashboard,
+.admin-box {
+  background: rgba(255, 255, 255, 0.10);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 24px;
+  backdrop-filter: blur(16px);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.28);
+}
+
+.login-card {
+  max-width: 440px;
+  margin: 0 auto;
+  padding: 28px;
+}
+
+label {
+  display: block;
+  margin: 16px 0 8px;
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.78);
+}
+
+input,
+select {
+  width: 100%;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 14px;
+  padding: 13px 14px;
+  background: rgba(0, 0, 0, 0.25);
+  color: #ffffff;
+  outline: none;
+}
+
+input::placeholder {
+  color: rgba(255, 255, 255, 0.45);
+}
+
+.login-card button,
+.admin-box button {
+  width: 100%;
+  margin-top: 18px;
+}
+
+.hidden {
+  display: none !important;
+}
+
+.dashboard {
+  padding: 24px;
+}
+
+.dashboard-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 22px;
+}
+
+.dashboard-top h2 {
+  margin: 0;
+  font-size: 32px;
+}
+
+.tabs {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 22px;
+}
+
+.tab {
+  background: rgba(255, 255, 255, 0.10);
+  color: #ffffff;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+}
+
+.tab.active {
+  background: #ffffff;
+  color: #07111f;
+}
+
+.match-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 16px;
+}
+
+.match-card {
+  background:
+    linear-gradient(145deg, rgba(255,255,255,0.14), rgba(255,255,255,0.06));
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 22px;
+  padding: 18px;
+}
+
+.match-title {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+  font-size: 20px;
+  font-weight: bold;
+}
+
+.vs {
+  color: #ffd54f;
+  font-size: 13px;
+}
+
+.kickoff {
+  margin: 12px 0;
+  opacity: 0.75;
+  font-size: 14px;
+}
+
+.score-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  overflow: hidden;
+  border-radius: 16px;
+}
+
+.table th,
+.table td {
+  padding: 12px;
+  border-bottom: 1px solid rgba(255,255,255,0.12);
+  text-align: left;
+}
+
+.table th {
+  color: #ffd54f;
+  font-size: 13px;
+}
+
+.message {
+  min-height: 20px;
+  color: #ffd54f;
+}
+
+.admin-box {
+  padding: 20px;
+  max-width: 560px;
+}
+
+@media (max-width: 640px) {
+  .dashboard-top {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .tabs {
+    flex-direction: column;
+  }
+
+  .tab {
+    width: 100%;
+  }
+}

@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>توقعات كأس العالم 2026</title>
+    <link rel="stylesheet" href="style.css" />
+</head>
+
+<body>
+    <div class="app-shell">
+        <header class="hero">
+            <div class="hero-overlay">
+                <p class="eyebrow">مسابقة توقعات خاصة</p>
+                <h1>توقعات كأس العالم 2026</h1>
+                <p class="subtitle">
+                    توقع النتيجة، اجمع النقاط، وتصدر الترتيب.
+                </p>
+
+                <div class="hero-actions">
+                    <button id="musicBtn" class="music-btn" type="button">
+                        ▶ شغّل Dai Dai
+                    </button>
+
+                    <audio id="daiDaiAudio" src="assets/song.mp3" preload="auto"></audio>
+                </div>
+            </div>
+        </header>
+
+        <main class="container">
+            <section id="loginCard" class="card login-card">
+                <h2>اختر اسمك</h2>
+
+                <label>الاسم</label>
+                <select id="participantSelect">
+                    <option value="">جاري تحميل الأسماء...</option>
+                </select>
+
+                <label>الرقم السري</label>
+                <input id="pinInput" type="password" placeholder="أدخل الرقم السري" />
+
+                <button id="continueBtn">دخول</button>
+
+                <p id="loginMessage" class="message"></p>
+            </section>
+
+            <section id="dashboard" class="dashboard hidden">
+                <div class="dashboard-top">
+                    <div>
+                        <p class="eyebrow">مرحباً</p>
+                        <h2 id="welcomeName">المشارك</h2>
+                    </div>
+
+                    <button id="logoutBtn" class="secondary-btn">تغيير المستخدم</button>
+                </div>
+
+                <nav class="tabs">
+                    <button class="tab active" data-tab="available">المباريات المتاحة</button>
+                    <button class="tab" data-tab="mine">توقعاتي</button>
+                    <button class="tab" data-tab="leaderboard">الترتيب</button>
+                    <button class="tab" data-tab="admin">الإدارة</button>
+                </nav>
+
+                <section id="availableTab" class="tab-panel">
+                    <h3>المباريات المتاحة للتوقع</h3>
+                    <div id="availableMatches" class="match-grid"></div>
+                </section>
+
+                <section id="mineTab" class="tab-panel hidden">
+                    <h3>توقعاتي</h3>
+                    <div id="myPredictions"></div>
+                </section>
+
+                <section id="leaderboardTab" class="tab-panel hidden">
+                    <h3>الترتيب العام</h3>
+                    <div id="leaderboard"></div>
+                </section>
+
+                <section id="adminTab" class="tab-panel hidden">
+                    <h3>الإدارة</h3>
+
+                    <div class="admin-box">
+                        <label>كلمة مرور الإدارة</label>
+                        <input id="adminPassword" type="password" placeholder="أدخل كلمة مرور الإدارة" />
+
+                        <label>المباراة</label>
+                        <select id="adminMatchSelect"></select>
+
+                        <div class="score-row">
+                            <input id="actualTeam1Goals" type="number" min="0" placeholder="أهداف الفريق الأول" />
+                            <input id="actualTeam2Goals" type="number" min="0" placeholder="أهداف الفريق الثاني" />
+                        </div>
+
+                        <button id="saveResultBtn">حفظ النتيجة</button>
+                        <p id="adminMessage" class="message"></p>
+                    </div>
+                </section>
+            </section>
+        </main>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="app.js"></script>
+</body>
+
+</html>
