@@ -60,6 +60,7 @@ const TEAM_ARABIC_NAMES = {
   "Switzerland": "سويسرا",
   "Canada": "كندا",
   "Bosnia and Herzegovina": "البوسنة والهرسك",
+  "Bosnia-Herzegovina" : "البوسنة والهرسك",
   "Qatar": "قطر",
   "Czechia": "التشيك",
   "Czech Republic": "التشيك",
