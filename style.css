@@ -346,3 +346,13 @@ input::placeholder {
   unicode-bidi: isolate;
   display: inline-block;
 }
+
+.admin-predictions-box {
+  margin-top: 18px;
+  max-width: none;
+}
+
+.admin-participant-predictions {
+  margin-top: 16px;
+  overflow-x: auto;
+}

@@ -5,7 +5,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>توقعات كأس العالم 2026</title>
-    <link rel="stylesheet" href="style.css?v=13" />
+    <link rel="stylesheet" href="style.css?v=14" />
 </head>
 
 <body>
@@ -104,13 +104,23 @@
                         <button id="saveResultBtn">حفظ النتيجة</button>
                         <p id="adminMessage" class="message"></p>
                     </div>
+                    <div class="admin-box admin-predictions-box">
+                        <h3>عرض توقعات مشارك</h3>
+
+                        <label>المشارك</label>
+                        <select id="adminParticipantSelect">
+                            <option value="">اختر المشارك</option>
+                        </select>
+
+                        <div id="adminParticipantPredictions" class="admin-participant-predictions"></div>
+                    </div>
                 </section>
             </section>
         </main>
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="app.js?v=15"></script>
+    <script src="app.js?v=16"></script>
 </body>
 
 </html>

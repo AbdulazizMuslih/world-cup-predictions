@@ -139,11 +139,18 @@ async function loadParticipants() {
     participantSelect.innerHTML = `<option value="">اختر اسمك</option>`;
     participantCards.innerHTML = "";
 
+    adminParticipantSelect.innerHTML = `<option value="">اختر المشارك</option>`;
+
     data.forEach((participant) => {
         const option = document.createElement("option");
         option.value = participant.id;
         option.textContent = participant.name;
         participantSelect.appendChild(option);
+
+        const adminOption = document.createElement("option");
+        adminOption.value = participant.id;
+        adminOption.textContent = participant.name;
+        adminParticipantSelect.appendChild(adminOption);
 
         const card = document.createElement("button");
         card.type = "button";
@@ -622,6 +629,85 @@ async function loadMyPredictions() {
   `;
 }
 
+async function loadAdminParticipantPredictions(participantId) {
+    const selectedName =
+        adminParticipantSelect.options[adminParticipantSelect.selectedIndex]?.textContent || "";
+
+    const { data, error } = await db
+        .from("matches")
+        .select(`
+            id,
+            team1,
+            team2,
+            kickoff_at,
+            status,
+            actual_team1_goals,
+            actual_team2_goals,
+            predictions!inner (
+                predicted_team1_goals,
+                predicted_team2_goals,
+                points,
+                participant_id
+            )
+        `)
+        .eq("predictions.participant_id", participantId);
+
+    if (error) {
+        console.error(error);
+        adminParticipantPredictions.innerHTML = `<p>تعذر تحميل توقعات المشارك.</p>`;
+        return;
+    }
+
+    if (!data || data.length === 0) {
+        adminParticipantPredictions.innerHTML = `<p>لا توجد توقعات لهذا المشارك.</p>`;
+        return;
+    }
+
+    const sortedMatches = [...data].sort((a, b) => {
+        return new Date(b.kickoff_at).getTime() - new Date(a.kickoff_at).getTime();
+    });
+
+    adminParticipantPredictions.innerHTML = `
+        <h4>توقعات ${selectedName}</h4>
+
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>المباراة</th>
+                    <th>التوقع</th>
+                    <th>النتيجة الفعلية</th>
+                    <th>النقاط</th>
+                </tr>
+            </thead>
+            <tbody>
+                ${sortedMatches.map((match) => {
+                    const prediction = match.predictions[0];
+                    const livePoints = calculateLivePredictionPoints(prediction, match);
+
+                    return `
+                        <tr>
+                            <td>${match.team1} ضد ${match.team2}</td>
+                            <td>
+                                ${formatScore(
+                                    prediction.predicted_team1_goals,
+                                    prediction.predicted_team2_goals
+                                )}
+                            </td>
+                            <td>
+                                ${hasActualScore(match)
+                                    ? formatScore(match.actual_team1_goals, match.actual_team2_goals)
+                                    : "-"
+                                }
+                            </td>
+                            <td>${livePoints}</td>
+                        </tr>
+                    `;
+                }).join("")}
+            </tbody>
+        </table>
+    `;
+}
+
 async function loadLeaderboard() {
     const { data, error } = await db
         .from("participants")
@@ -704,6 +790,8 @@ const actualTeam1Goals = document.getElementById("actualTeam1Goals");
 const actualTeam2Goals = document.getElementById("actualTeam2Goals");
 const saveResultBtn = document.getElementById("saveResultBtn");
 const adminMessage = document.getElementById("adminMessage");
+const adminParticipantSelect = document.getElementById("adminParticipantSelect");
+const adminParticipantPredictions = document.getElementById("adminParticipantPredictions");
 
 async function loadAdminMatches() {
     const { data, error } = await db
@@ -757,6 +845,17 @@ saveResultBtn.addEventListener("click", async () => {
     adminMessage.textContent = "تم حفظ النتيجة وتحديث النقاط.";
     await loadLeaderboard();
     await loadMyPredictions();
+});
+
+adminParticipantSelect.addEventListener("change", async () => {
+    const participantId = adminParticipantSelect.value;
+
+    if (!participantId) {
+        adminParticipantPredictions.innerHTML = "";
+        return;
+    }
+
+    await loadAdminParticipantPredictions(participantId);
 });
 
 async function recalculatePoints(matchId, actualTeam1GoalsValue, actualTeam2GoalsValue) {
