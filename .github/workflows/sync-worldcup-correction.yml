@@ -3,7 +3,7 @@ name: Sync World Cup - Result Correction
 on:
   workflow_dispatch:
   schedule:
-    - cron: "*/5 * * * *"
+    - cron: "1-59/5 * * * *"
 
 jobs:
   sync-correction:
