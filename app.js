@@ -579,7 +579,7 @@ async function loadMyPredictions() {
     }
 
     const sortedMatches = [...data].sort((a, b) => {
-        return new Date(a.kickoff_at).getTime() - new Date(b.kickoff_at).getTime();
+        return new Date(b.kickoff_at).getTime() - new Date(a.kickoff_at).getTime();
     });
 
     myPredictions.innerHTML = `
@@ -594,29 +594,29 @@ async function loadMyPredictions() {
       </thead>
       <tbody>
         ${sortedMatches.map((match) => {
-            const prediction = match.predictions[0];
+        const prediction = match.predictions[0];
 
-            const livePoints = calculateLivePredictionPoints(prediction, match);
+        const livePoints = calculateLivePredictionPoints(prediction, match);
 
-            return `
+        return `
               <tr>
                 <td>${match.team1} ضد ${match.team2}</td>
                 <td>
                     ${formatScore(
-                        prediction.predicted_team1_goals,
-                        prediction.predicted_team2_goals
-                    )}
+            prediction.predicted_team1_goals,
+            prediction.predicted_team2_goals
+        )}
                 </td>
                 <td>
                     ${hasActualScore(match)
-                        ? formatScore(match.actual_team1_goals, match.actual_team2_goals)
-                        : "-"
-                    }
+                ? formatScore(match.actual_team1_goals, match.actual_team2_goals)
+                : "-"
+            }
                 </td>
                 <td>${livePoints}</td>
               </tr>
             `;
-        }).join("")}
+    }).join("")}
       </tbody>
     </table>
   `;
