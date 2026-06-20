@@ -60,6 +60,13 @@ async function init() {
 }
 
 async function restoreParticipantSession() {
+    const savedAdminMode = localStorage.getItem("wcAdminMode");
+
+    if (savedAdminMode === "true") {
+        await openAdminDashboard(ADMIN_PASSWORD, false);
+        return;
+    }
+
     const savedParticipant = localStorage.getItem("wcParticipant");
 
     if (!savedParticipant) return;
@@ -200,16 +207,15 @@ loginForm.addEventListener("submit", async (event) => {
     await openParticipantDashboard(data, true);
 });
 
-adminLoginBtn.addEventListener("click", async () => {
-    const password = prompt("أدخل كلمة مرور الإدارة");
-
-    if (password !== ADMIN_PASSWORD) {
-        alert("كلمة مرور الإدارة غير صحيحة.");
-        return;
-    }
-
+async function openAdminDashboard(password = ADMIN_PASSWORD, rememberAdmin = true) {
     isAdminMode = true;
     currentParticipant = null;
+
+    if (rememberAdmin) {
+        localStorage.setItem("wcAdminMode", "true");
+    }
+
+    localStorage.removeItem("wcParticipant");
 
     welcomeName.textContent = "الإدارة";
 
@@ -228,6 +234,17 @@ adminLoginBtn.addEventListener("click", async () => {
 
     startDashboardTabSession("admin");
     startDashboardAutoRefresh();
+}
+
+adminLoginBtn.addEventListener("click", async () => {
+    const password = prompt("أدخل كلمة مرور الإدارة");
+
+    if (password !== ADMIN_PASSWORD) {
+        alert("كلمة مرور الإدارة غير صحيحة.");
+        return;
+    }
+
+    await openAdminDashboard(password, true);
 });
 
 logoutBtn.addEventListener("click", () => {
@@ -236,6 +253,7 @@ logoutBtn.addEventListener("click", () => {
     stopDashboardAutoRefresh();
 
     localStorage.removeItem("wcParticipant");
+    localStorage.removeItem("wcAdminMode");
     tabHistory = [];
     currentTabName = "available";
     allowLeavingPage = false;
