@@ -1,13 +1,14 @@
 const FOOTBALL_DATA_TOKEN = process.env.FOOTBALL_DATA_TOKEN;
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+const SYNC_MODE = (process.env.SYNC_MODE || "normal").toLowerCase();
 
 if (!FOOTBALL_DATA_TOKEN) throw new Error("Missing FOOTBALL_DATA_TOKEN");
 if (!SUPABASE_URL) throw new Error("Missing SUPABASE_URL");
 if (!SUPABASE_SERVICE_ROLE_KEY) throw new Error("Missing SUPABASE_SERVICE_ROLE_KEY");
 
-const FOOTBALL_API_URL =
-    "https://api.football-data.org/v4/competitions/WC/matches?season=2026";
+const FOOTBALL_API_BASE_URL =
+    "https://api.football-data.org/v4/competitions/WC/matches";
 
 const TEAM_ARABIC_NAMES = {
     "United States": "أمريكا",
@@ -71,6 +72,12 @@ const TEAM_ARABIC_NAMES = {
     "South Korea": "كوريا الجنوبية"
 };
 
+const MS = {
+    minute: 60 * 1000,
+    hour: 60 * 60 * 1000,
+    day: 24 * 60 * 60 * 1000
+};
+
 function toArabicTeamName(name) {
     if (!name) return "غير محدد";
     return TEAM_ARABIC_NAMES[name] || name;
@@ -97,6 +104,26 @@ function getOutcome(team1, team2) {
     return "draw";
 }
 
+function toApiDate(date) {
+    return date.toISOString().slice(0, 10);
+}
+
+function buildWindowApiUrl(fromTime, toTime) {
+    const apiDateFrom = toApiDate(fromTime);
+    const apiDateTo = toApiDate(toTime);
+
+    return `${FOOTBALL_API_BASE_URL}?season=2026&dateFrom=${apiDateFrom}&dateTo=${apiDateTo}`;
+}
+
+function buildFullSeasonApiUrl() {
+    return `${FOOTBALL_API_BASE_URL}?season=2026`;
+}
+
+function isApiMatchInWindow(apiMatch, fromTime, toTime) {
+    const kickoff = new Date(apiMatch.utcDate);
+    return kickoff >= fromTime && kickoff <= toTime;
+}
+
 async function supabaseFetch(path, options = {}) {
     const response = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
         ...options,
@@ -119,8 +146,8 @@ async function supabaseFetch(path, options = {}) {
     return text ? JSON.parse(text) : null;
 }
 
-async function fetchFootballMatches() {
-    const response = await fetch(FOOTBALL_API_URL, {
+async function fetchFootballMatches(apiUrl) {
+    const response = await fetch(apiUrl, {
         headers: {
             "X-Auth-Token": FOOTBALL_DATA_TOKEN
         }
@@ -214,16 +241,18 @@ async function recalculatePointsForScoredMatch(match) {
     }
 }
 
-async function main() {
-    console.log("Starting World Cup sync...");
+async function normalizeUpsertAndScore(apiMatches, exactFilter, label) {
+    const filteredApiMatches = exactFilter
+        ? apiMatches.filter(exactFilter)
+        : apiMatches;
 
-    const apiMatches = await fetchFootballMatches();
+    console.log(`${label}: API matches after exact filter: ${filteredApiMatches.length}`);
 
-    const normalizedMatches = apiMatches
+    const normalizedMatches = filteredApiMatches
         .map(normalizeMatch)
         .filter((match) => match.team1 !== "غير محدد" && match.team2 !== "غير محدد");
 
-    console.log(`Fetched ${normalizedMatches.length} matches.`);
+    console.log(`${label}: Normalized matches: ${normalizedMatches.length}`);
 
     await upsertMatches(normalizedMatches);
 
@@ -239,10 +268,110 @@ async function main() {
         return matchHasStarted && hasActualScore;
     });
 
-    console.log(`Live/completed matches with scores found: ${scoredMatches.length}`);
+    console.log(`${label}: Live/completed matches with scores found: ${scoredMatches.length}`);
 
     for (const match of scoredMatches) {
         await recalculatePointsForScoredMatch(match);
+    }
+}
+
+async function runNormalSync() {
+    const now = new Date();
+    const fromTime = new Date(now.getTime() - 4 * MS.hour);
+    const toTime = new Date(now.getTime() + 24 * MS.hour);
+    const apiUrl = buildWindowApiUrl(fromTime, toTime);
+
+    console.log("Running normal sync.");
+    console.log(`Exact window: ${fromTime.toISOString()} to ${toTime.toISOString()}`);
+    console.log(`Football API URL: ${apiUrl}`);
+
+    const apiMatches = await fetchFootballMatches(apiUrl);
+    console.log(`Normal sync: Fetched ${apiMatches.length} matches from API date window.`);
+
+    await normalizeUpsertAndScore(
+        apiMatches,
+        (apiMatch) => isApiMatchInWindow(apiMatch, fromTime, toTime),
+        "Normal sync"
+    );
+}
+
+async function getLikelyEndingMatches() {
+    const now = new Date();
+    const fromTime = new Date(now.getTime() - 4 * MS.hour);
+    const likelyEndingTime = new Date(now.getTime() - 105 * MS.minute);
+
+    const path =
+        "matches" +
+        `?kickoff_at=gte.${encodeURIComponent(fromTime.toISOString())}` +
+        `&kickoff_at=lte.${encodeURIComponent(likelyEndingTime.toISOString())}` +
+        "&status=neq.completed" +
+        "&select=id,external_id,kickoff_at,status,actual_team1_goals,actual_team2_goals";
+
+    const matches = await supabaseFetch(path);
+
+    return {
+        now,
+        fromTime,
+        likelyEndingTime,
+        matches: matches || []
+    };
+}
+
+async function runCorrectionSync() {
+    console.log("Running result correction sync.");
+
+    const { now, fromTime, likelyEndingTime, matches } = await getLikelyEndingMatches();
+
+    console.log(`Correction candidate window: ${fromTime.toISOString()} to ${likelyEndingTime.toISOString()}`);
+    console.log(`Likely-ending matches found in Supabase: ${matches.length}`);
+
+    if (matches.length === 0) {
+        console.log("No likely-ending matches. Skipping football-data API call.");
+        return;
+    }
+
+    const apiUrl = buildWindowApiUrl(fromTime, now);
+
+    console.log(`Football API URL: ${apiUrl}`);
+
+    const apiMatches = await fetchFootballMatches(apiUrl);
+    console.log(`Correction sync: Fetched ${apiMatches.length} matches from API date window.`);
+
+    await normalizeUpsertAndScore(
+        apiMatches,
+        (apiMatch) => isApiMatchInWindow(apiMatch, fromTime, now),
+        "Correction sync"
+    );
+}
+
+async function runFullFixtureSync() {
+    const apiUrl = buildFullSeasonApiUrl();
+
+    console.log("Running full fixture discovery sync.");
+    console.log(`Football API URL: ${apiUrl}`);
+
+    const apiMatches = await fetchFootballMatches(apiUrl);
+    console.log(`Full fixture sync: Fetched ${apiMatches.length} matches.`);
+
+    await normalizeUpsertAndScore(
+        apiMatches,
+        null,
+        "Full fixture sync"
+    );
+}
+
+async function main() {
+    console.log("Starting World Cup sync...");
+    console.log(`SYNC_MODE=${SYNC_MODE}`);
+
+    if (SYNC_MODE === "normal") {
+        await runNormalSync();
+    } else if (SYNC_MODE === "correction") {
+        await runCorrectionSync();
+    } else if (SYNC_MODE === "full") {
+        await runFullFixtureSync();
+    } else {
+        throw new Error(`Invalid SYNC_MODE: ${SYNC_MODE}`);
     }
 
     console.log("World Cup sync completed.");

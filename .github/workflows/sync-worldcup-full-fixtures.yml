@@ -1,15 +1,13 @@
-name: Sync World Cup Results
+name: Sync World Cup - Full Fixtures
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - auto-results-sync
   schedule:
-    - cron: "*/30 * * * *"
+    # 09:00 UTC = 12:00 KSA. This is usually away from the North America match windows.
+    - cron: "0 9 * * *"
 
 jobs:
-  sync-results:
+  sync-full-fixtures:
     runs-on: ubuntu-latest
 
     steps:
@@ -22,3 +20,4 @@ jobs:
           FOOTBALL_DATA_TOKEN: ${{ secrets.FOOTBALL_DATA_TOKEN }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SYNC_MODE: full
