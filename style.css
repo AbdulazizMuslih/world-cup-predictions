@@ -729,3 +729,107 @@ input::placeholder {
 .scoreline-dash {
   color: rgba(241, 216, 154, 0.70);
 }
+
+/* ===============================
+   Mobile fix for توقعاتي tables
+   =============================== */
+
+@media (max-width: 700px) {
+  #myPredictions .table,
+  #adminParticipantPredictions .table {
+    border-collapse: separate;
+    border-spacing: 0 12px;
+  }
+
+  #myPredictions .table thead,
+  #adminParticipantPredictions .table thead {
+    display: none;
+  }
+
+  #myPredictions .table tbody,
+  #adminParticipantPredictions .table tbody {
+    display: block;
+    width: 100%;
+  }
+
+  #myPredictions .table tr,
+  #adminParticipantPredictions .table tr {
+    display: block;
+    width: 100%;
+    margin-bottom: 14px;
+    padding: 12px 14px;
+    border-radius: 18px;
+    background:
+      linear-gradient(145deg, rgba(255, 255, 255, 0.105), rgba(255, 255, 255, 0.045));
+    border: 1px solid rgba(241, 216, 154, 0.18);
+    box-shadow: 0 12px 28px rgba(0, 0, 0, 0.20);
+  }
+
+  #myPredictions .table td,
+  #adminParticipantPredictions .table td {
+    display: grid;
+    grid-template-columns: 88px minmax(0, 1fr);
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    padding: 9px 0;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    text-align: right;
+  }
+
+  #myPredictions .table td:last-child,
+  #adminParticipantPredictions .table td:last-child {
+    border-bottom: 0;
+  }
+
+  #myPredictions .table td::before,
+  #adminParticipantPredictions .table td::before {
+    color: var(--wc-gold-light, #f1d89a);
+    font-size: 12px;
+    font-weight: 900;
+    opacity: 0.95;
+  }
+
+  #myPredictions .table td:nth-child(1)::before,
+  #adminParticipantPredictions .table td:nth-child(1)::before {
+    content: "المباراة";
+  }
+
+  #myPredictions .table td:nth-child(2)::before {
+    content: "توقعك";
+  }
+
+  #adminParticipantPredictions .table td:nth-child(2)::before {
+    content: "التوقع";
+  }
+
+  #myPredictions .table td:nth-child(3)::before,
+  #adminParticipantPredictions .table td:nth-child(3)::before {
+    content: "النتيجة";
+  }
+
+  #myPredictions .table td:nth-child(4)::before,
+  #adminParticipantPredictions .table td:nth-child(4)::before {
+    content: "النقاط";
+  }
+
+  #myPredictions .scoreline,
+  #adminParticipantPredictions .scoreline {
+    width: 100%;
+    max-width: 100%;
+    justify-content: flex-start;
+    overflow: hidden;
+  }
+
+  #myPredictions .scoreline-team,
+  #adminParticipantPredictions .scoreline-team {
+    max-width: 64px;
+  }
+
+  #myPredictions .table td:nth-child(4),
+  #adminParticipantPredictions .table td:nth-child(4) {
+    font-size: 18px;
+    font-weight: 900;
+    color: var(--wc-gold-light, #f1d89a);
+  }
+}
