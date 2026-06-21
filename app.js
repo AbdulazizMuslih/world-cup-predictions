@@ -28,6 +28,7 @@ const ADMIN_PASSWORD = "Aziz123";
 
 const adminLoginBtn = document.getElementById("adminLoginBtn");
 const adminTabBtn = document.getElementById("adminTabBtn");
+const adminPredictionsTabBtn = document.getElementById("adminPredictionsTabBtn");
 
 let isAdminMode = false;
 
@@ -117,6 +118,7 @@ async function openParticipantDashboard(participant, rememberParticipant = true)
 
     isAdminMode = false;
     adminTabBtn.classList.add("hidden");
+    adminPredictionsTabBtn.classList.add("hidden");
 
     document.querySelector('[data-tab="available"]').classList.remove("hidden");
     document.querySelector('[data-tab="mine"]').classList.remove("hidden");
@@ -223,6 +225,7 @@ async function openAdminDashboard(password = ADMIN_PASSWORD, rememberAdmin = tru
     dashboard.classList.remove("hidden");
 
     adminTabBtn.classList.remove("hidden");
+    adminPredictionsTabBtn.classList.remove("hidden");
 
     document.querySelector('[data-tab="available"]').classList.add("hidden");
     document.querySelector('[data-tab="mine"]').classList.add("hidden");
@@ -269,6 +272,7 @@ logoutBtn.addEventListener("click", () => {
     });
 
     adminTabBtn.classList.add("hidden");
+    adminPredictionsTabBtn.classList.add("hidden");
 
     document.querySelector('[data-tab="available"]').classList.remove("hidden");
     document.querySelector('[data-tab="mine"]').classList.remove("hidden");
@@ -297,6 +301,7 @@ function activateTab(tabName) {
         mine: document.getElementById("mineTab"),
         leaderboard: document.getElementById("leaderboardTab"),
         admin: document.getElementById("adminTab"),
+        adminPredictions: document.getElementById("adminPredictionsTab"),
     };
 
     if (!panels[tabName]) return;
@@ -355,6 +360,10 @@ function startDashboardAutoRefresh() {
 
             if (isAdminMode) {
                 await loadAdminMatches();
+
+                if (adminParticipantSelect.value) {
+                    await loadAdminParticipantPredictions(adminParticipantSelect.value);
+                }
             }
         } catch (error) {
             console.error("Dashboard auto-refresh failed:", error);
@@ -557,6 +566,18 @@ function formatScore(team1Goals, team2Goals) {
     return `<span class="score-text">${team1Goals} - ${team2Goals}</span>`;
 }
 
+function formatTeamScore(team1Name, team1Goals, team2Name, team2Goals) {
+    return `
+        <div class="scoreline" dir="rtl" title="${team1Name} ${team1Goals} - ${team2Goals} ${team2Name}">
+            <span class="scoreline-team">${team1Name}</span>
+            <span class="scoreline-number">${team1Goals}</span>
+            <span class="scoreline-dash">-</span>
+            <span class="scoreline-number">${team2Goals}</span>
+            <span class="scoreline-team">${team2Name}</span>
+        </div>
+    `;
+}
+
 function calculateLivePredictionPoints(prediction, match) {
     if (!hasActualScore(match)) {
         return prediction.points || 0;
@@ -627,14 +648,21 @@ async function loadMyPredictions() {
               <tr>
                 <td>${match.team1} ضد ${match.team2}</td>
                 <td>
-                    ${formatScore(
+                    ${formatTeamScore(
+            match.team1,
             prediction.predicted_team1_goals,
+            match.team2,
             prediction.predicted_team2_goals
         )}
                 </td>
                 <td>
                     ${hasActualScore(match)
-                ? formatScore(match.actual_team1_goals, match.actual_team2_goals)
+                ? formatTeamScore(
+                    match.team1,
+                    match.actual_team1_goals,
+                    match.team2,
+                    match.actual_team2_goals
+                )
                 : "-"
             }
                 </td>
@@ -706,14 +734,21 @@ async function loadAdminParticipantPredictions(participantId) {
                         <tr>
                             <td>${match.team1} ضد ${match.team2}</td>
                             <td>
-                                ${formatScore(
+                                ${formatTeamScore(
+                                    match.team1,
                                     prediction.predicted_team1_goals,
+                                    match.team2,
                                     prediction.predicted_team2_goals
                                 )}
                             </td>
                             <td>
                                 ${hasActualScore(match)
-                                    ? formatScore(match.actual_team1_goals, match.actual_team2_goals)
+                                    ? formatTeamScore(
+                                        match.team1,
+                                        match.actual_team1_goals,
+                                        match.team2,
+                                        match.actual_team2_goals
+                                    )
                                     : "-"
                                 }
                             </td>

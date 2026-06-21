@@ -356,3 +356,376 @@ input::placeholder {
   margin-top: 16px;
   overflow-x: auto;
 }
+
+.score-breakdown {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: auto;
+  white-space: nowrap;
+}
+
+.score-team-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.09);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.score-team-row + .score-team-row::before {
+  content: "-";
+  color: #ffd54f;
+  font-weight: 900;
+  margin-left: 2px;
+  margin-right: 2px;
+}
+
+.score-team-name {
+  font-size: 13px;
+  font-weight: 800;
+  color: rgba(255, 255, 255, 0.92);
+}
+
+.score-number {
+  direction: ltr;
+  unicode-bidi: isolate;
+  min-width: 28px;
+  text-align: center;
+  display: inline-block;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: #ffd54f;
+  color: #07111f;
+  font-size: 15px;
+  font-weight: 900;
+}
+
+.participant-predictions-card {
+  max-width: none;
+  background:
+    linear-gradient(145deg, rgba(0, 230, 118, 0.16), rgba(255, 213, 79, 0.10)),
+    rgba(255, 255, 255, 0.10);
+}
+
+.participant-predictions-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 8px;
+}
+
+.participant-predictions-header h3 {
+  margin: 0;
+  font-size: 24px;
+}
+
+.admin-select-label {
+  color: #ffd54f;
+  font-size: 15px;
+  font-weight: 900;
+}
+
+.admin-participant-select {
+  font-size: 19px;
+  font-weight: 900;
+  padding: 16px 18px;
+  background: rgba(255, 255, 255, 0.94);
+  color: #07111f;
+  border: 2px solid rgba(255, 213, 79, 0.75);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.24);
+}
+
+.admin-participant-select option {
+  color: #07111f;
+  background: #ffffff;
+}
+
+.scoreline {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  white-space: nowrap;
+  max-width: 100%;
+  padding: 6px 10px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.075);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.scoreline-team {
+  max-width: 82px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  font-weight: 800;
+  color: rgba(255, 255, 255, 0.88);
+}
+
+.scoreline-number {
+  direction: ltr;
+  unicode-bidi: isolate;
+  min-width: 30px;
+  height: 30px;
+  padding: 0 9px;
+  border-radius: 999px;
+  background: #ffd54f;
+  color: #07111f;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  font-weight: 900;
+}
+
+.scoreline-dash {
+  color: rgba(255, 255, 255, 0.65);
+  font-size: 15px;
+  font-weight: 900;
+}
+
+.table td {
+  vertical-align: middle;
+}
+
+@media (max-width: 700px) {
+  .scoreline {
+    gap: 5px;
+    padding: 5px 7px;
+  }
+
+  .scoreline-team {
+    max-width: 58px;
+    font-size: 12px;
+  }
+
+  .scoreline-number {
+    min-width: 26px;
+    height: 26px;
+    padding: 0 7px;
+    font-size: 14px;
+  }
+}
+
+/* ===============================
+   Premium World Cup Theme Override
+   =============================== */
+
+:root {
+  --wc-bg-1: #050817;
+  --wc-bg-2: #0b1631;
+  --wc-bg-3: #251036;
+
+  --wc-card: rgba(255, 255, 255, 0.085);
+  --wc-card-strong: rgba(255, 255, 255, 0.13);
+  --wc-border: rgba(255, 255, 255, 0.16);
+
+  --wc-text: #f7f1e3;
+  --wc-muted: rgba(247, 241, 227, 0.72);
+
+  --wc-gold: #caa45d;
+  --wc-gold-light: #f1d89a;
+  --wc-gold-dark: #8d692c;
+
+  --wc-maroon: #7d1738;
+  --wc-plum: #3a164b;
+  --wc-teal: #34d6bd;
+
+  --wc-shadow: rgba(0, 0, 0, 0.34);
+}
+
+body {
+  color: var(--wc-text);
+  background:
+    radial-gradient(circle at top left, rgba(125, 23, 56, 0.32), transparent 30%),
+    radial-gradient(circle at top right, rgba(202, 164, 93, 0.22), transparent 28%),
+    radial-gradient(circle at bottom, rgba(52, 214, 189, 0.10), transparent 35%),
+    linear-gradient(135deg, var(--wc-bg-1), var(--wc-bg-2) 52%, var(--wc-bg-3));
+}
+
+.hero {
+  background:
+    linear-gradient(rgba(5, 8, 23, 0.42), rgba(5, 8, 23, 0.92)),
+    url("assets/hero.jpg");
+  background-size: cover;
+  background-position: center;
+}
+
+.eyebrow {
+  color: var(--wc-gold-light);
+}
+
+.subtitle {
+  color: var(--wc-muted);
+}
+
+.card,
+.dashboard,
+.admin-box {
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, 0.11), rgba(255, 255, 255, 0.055));
+  border: 1px solid var(--wc-border);
+  box-shadow: 0 24px 70px var(--wc-shadow);
+}
+
+.music-btn,
+button {
+  background: linear-gradient(135deg, var(--wc-gold-light), var(--wc-gold));
+  color: #11101a;
+  box-shadow: 0 10px 26px rgba(202, 164, 93, 0.18);
+}
+
+.music-btn:hover,
+button:hover {
+  filter: brightness(1.04);
+  transform: translateY(-1px);
+}
+
+.secondary-btn {
+  background: rgba(255, 255, 255, 0.095);
+  color: var(--wc-text);
+  border: 1px solid rgba(241, 216, 154, 0.28);
+  box-shadow: none;
+}
+
+input,
+select {
+  background: rgba(5, 8, 23, 0.48);
+  color: var(--wc-text);
+  border: 1px solid rgba(241, 216, 154, 0.22);
+}
+
+input:focus,
+select:focus {
+  border-color: rgba(241, 216, 154, 0.72);
+  box-shadow: 0 0 0 3px rgba(241, 216, 154, 0.10);
+}
+
+input::placeholder {
+  color: rgba(247, 241, 227, 0.42);
+}
+
+.tab {
+  background: rgba(255, 255, 255, 0.075);
+  color: var(--wc-muted);
+  border: 1px solid rgba(255, 255, 255, 0.13);
+}
+
+.tab.active {
+  background: linear-gradient(135deg, var(--wc-gold-light), var(--wc-gold));
+  color: #11101a;
+  border-color: transparent;
+  box-shadow: 0 12px 28px rgba(202, 164, 93, 0.18);
+}
+
+.match-card {
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, 0.105), rgba(255, 255, 255, 0.045));
+  border: 1px solid rgba(255, 255, 255, 0.14);
+}
+
+.vs {
+  color: var(--wc-gold-light);
+}
+
+.kickoff {
+  color: var(--wc-muted);
+}
+
+.table th {
+  color: var(--wc-gold-light);
+  font-weight: 900;
+}
+
+.table td {
+  color: rgba(247, 241, 227, 0.92);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.10);
+}
+
+.message {
+  color: var(--wc-gold-light);
+}
+
+.participant-card {
+  background:
+    linear-gradient(145deg, rgba(247, 241, 227, 0.96), rgba(218, 203, 166, 0.92));
+  color: #11101a;
+  border: 1px solid rgba(241, 216, 154, 0.55);
+  box-shadow: 0 14px 32px rgba(0, 0, 0, 0.24);
+}
+
+.participant-card.selected {
+  background: linear-gradient(135deg, var(--wc-gold-light), var(--wc-gold));
+  color: #11101a;
+  border-color: rgba(255, 255, 255, 0.85);
+  box-shadow: 0 16px 38px rgba(202, 164, 93, 0.24);
+}
+
+.match-card-predicted {
+  border-color: rgba(241, 216, 154, 0.55);
+  box-shadow: 0 18px 44px rgba(202, 164, 93, 0.12);
+}
+
+.saved-prediction-card {
+  background:
+    linear-gradient(135deg, rgba(202, 164, 93, 0.18), rgba(125, 23, 56, 0.14));
+  border: 1px solid rgba(241, 216, 154, 0.42);
+}
+
+.saved-prediction-title {
+  color: var(--wc-gold-light);
+}
+
+.saved-score {
+  background: linear-gradient(135deg, var(--wc-gold-light), var(--wc-gold));
+  color: #11101a;
+}
+
+.participant-predictions-card {
+  background:
+    linear-gradient(145deg, rgba(125, 23, 56, 0.18), rgba(202, 164, 93, 0.10)),
+    rgba(255, 255, 255, 0.08);
+}
+
+.admin-select-label {
+  color: var(--wc-gold-light);
+}
+
+.admin-participant-select {
+  background:
+    linear-gradient(145deg, rgba(247, 241, 227, 0.98), rgba(224, 211, 180, 0.96));
+  color: #11101a;
+  border: 2px solid rgba(241, 216, 154, 0.75);
+  box-shadow: 0 16px 34px rgba(0, 0, 0, 0.26);
+}
+
+.admin-participant-select option {
+  background: #f7f1e3;
+  color: #11101a;
+}
+
+/* Cleaner premium score style */
+.scoreline {
+  background: rgba(5, 8, 23, 0.46);
+  border: 1px solid rgba(241, 216, 154, 0.18);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+.scoreline-team {
+  color: rgba(247, 241, 227, 0.88);
+}
+
+.scoreline-number {
+  background: linear-gradient(180deg, var(--wc-gold-light), var(--wc-gold));
+  color: #11101a;
+  box-shadow: 0 4px 12px rgba(202, 164, 93, 0.18);
+}
+
+.scoreline-dash {
+  color: rgba(241, 216, 154, 0.70);
+}

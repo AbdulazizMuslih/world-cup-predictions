@@ -5,7 +5,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>توقعات كأس العالم 2026</title>
-    <link rel="stylesheet" href="style.css?v=14" />
+    <link rel="stylesheet" href="style.css?v=18" />
 </head>
 
 <body>
@@ -69,6 +69,7 @@
                     <button class="tab" data-tab="mine">توقعاتي</button>
                     <button class="tab" data-tab="leaderboard">الترتيب</button>
                     <button id="adminTabBtn" class="tab hidden" data-tab="admin">الإدارة</button>
+                    <button id="adminPredictionsTabBtn" class="tab hidden" data-tab="adminPredictions">توقعات المشتركين</button>
                 </nav>
 
                 <section id="availableTab" class="tab-panel">
@@ -104,11 +105,21 @@
                         <button id="saveResultBtn">حفظ النتيجة</button>
                         <p id="adminMessage" class="message"></p>
                     </div>
-                    <div class="admin-box admin-predictions-box">
-                        <h3>عرض توقعات مشارك</h3>
+                </section>
 
-                        <label>المشارك</label>
-                        <select id="adminParticipantSelect">
+                <section id="adminPredictionsTab" class="tab-panel hidden">
+                    <h3>توقعات المشتركين</h3>
+
+                    <div class="admin-box admin-predictions-box participant-predictions-card">
+                        <div class="participant-predictions-header">
+                            <div>
+                                <p class="eyebrow">عرض التوقعات</p>
+                                <h3>اختر المشارك</h3>
+                            </div>
+                        </div>
+
+                        <label class="admin-select-label">المشارك</label>
+                        <select id="adminParticipantSelect" class="admin-participant-select">
                             <option value="">اختر المشارك</option>
                         </select>
 
@@ -120,7 +131,7 @@
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="app.js?v=17"></script>
+    <script src="app.js?v=19"></script>
 </body>
 
 </html>
