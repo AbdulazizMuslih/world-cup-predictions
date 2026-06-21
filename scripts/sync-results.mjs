@@ -1,7 +1,7 @@
 const FOOTBALL_DATA_TOKEN = process.env.FOOTBALL_DATA_TOKEN;
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
-const SYNC_MODE = (process.env.SYNC_MODE || "normal").toLowerCase();
+const SYNC_MODE = (process.env.SYNC_MODE || "auto").toLowerCase();
 
 if (!FOOTBALL_DATA_TOKEN) throw new Error("Missing FOOTBALL_DATA_TOKEN");
 if (!SUPABASE_URL) throw new Error("Missing SUPABASE_URL");
@@ -295,14 +295,15 @@ async function runNormalSync() {
     );
 }
 
-async function getActiveMatches() {
+async function getLikelyEndingMatches() {
     const now = new Date();
     const fromTime = new Date(now.getTime() - 4 * MS.hour);
+    const likelyEndingTime = new Date(now.getTime() - 105 * MS.minute);
 
     const path =
         "matches" +
         `?kickoff_at=gte.${encodeURIComponent(fromTime.toISOString())}` +
-        `&kickoff_at=lte.${encodeURIComponent(now.toISOString())}` +
+        `&kickoff_at=lte.${encodeURIComponent(likelyEndingTime.toISOString())}` +
         "&status=neq.completed" +
         "&select=id,external_id,kickoff_at,status,actual_team1_goals,actual_team2_goals";
 
@@ -311,20 +312,21 @@ async function getActiveMatches() {
     return {
         now,
         fromTime,
+        likelyEndingTime,
         matches: matches || []
     };
 }
 
 async function runCorrectionSync() {
-    console.log("Running active match correction sync.");
+    console.log("Running result correction sync.");
 
-    const { now, fromTime, matches } = await getActiveMatches();
+    const { now, fromTime, likelyEndingTime, matches } = await getLikelyEndingMatches();
 
-    console.log(`Active match window: ${fromTime.toISOString()} to ${now.toISOString()}`);
-    console.log(`Active matches found in Supabase: ${matches.length}`);
+    console.log(`Correction candidate window: ${fromTime.toISOString()} to ${likelyEndingTime.toISOString()}`);
+    console.log(`Likely-ending matches found in Supabase: ${matches.length}`);
 
     if (matches.length === 0) {
-        console.log("No active matches. Skipping football-data API call.");
+        console.log("No likely-ending matches. Skipping football-data API call.");
         return;
     }
 
@@ -358,11 +360,46 @@ async function runFullFixtureSync() {
     );
 }
 
+
+function shouldRunNormalInAuto(now) {
+    const minute = now.getUTCMinutes();
+    return minute === 1 || minute === 31;
+}
+
+function shouldRunFullInAuto(now) {
+    const hour = now.getUTCHours();
+    const minute = now.getUTCMinutes();
+    return hour === 9 && minute === 1;
+}
+
+async function runAutoSync() {
+    const now = new Date();
+
+    console.log("Running auto sync.");
+    console.log(`UTC now: ${now.toISOString()}`);
+
+    await runCorrectionSync();
+
+    if (shouldRunNormalInAuto(now)) {
+        await runNormalSync();
+    } else {
+        console.log("Normal sync not due in this auto run.");
+    }
+
+    if (shouldRunFullInAuto(now)) {
+        await runFullFixtureSync();
+    } else {
+        console.log("Full fixture sync not due in this auto run.");
+    }
+}
+
 async function main() {
     console.log("Starting World Cup sync...");
     console.log(`SYNC_MODE=${SYNC_MODE}`);
 
-    if (SYNC_MODE === "normal") {
+    if (SYNC_MODE === "auto") {
+        await runAutoSync();
+    } else if (SYNC_MODE === "normal") {
         await runNormalSync();
     } else if (SYNC_MODE === "correction") {
         await runCorrectionSync();
