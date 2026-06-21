@@ -295,15 +295,14 @@ async function runNormalSync() {
     );
 }
 
-async function getLikelyEndingMatches() {
+async function getActiveMatches() {
     const now = new Date();
     const fromTime = new Date(now.getTime() - 4 * MS.hour);
-    const likelyEndingTime = new Date(now.getTime() - 105 * MS.minute);
 
     const path =
         "matches" +
         `?kickoff_at=gte.${encodeURIComponent(fromTime.toISOString())}` +
-        `&kickoff_at=lte.${encodeURIComponent(likelyEndingTime.toISOString())}` +
+        `&kickoff_at=lte.${encodeURIComponent(now.toISOString())}` +
         "&status=neq.completed" +
         "&select=id,external_id,kickoff_at,status,actual_team1_goals,actual_team2_goals";
 
@@ -312,21 +311,20 @@ async function getLikelyEndingMatches() {
     return {
         now,
         fromTime,
-        likelyEndingTime,
         matches: matches || []
     };
 }
 
 async function runCorrectionSync() {
-    console.log("Running result correction sync.");
+    console.log("Running active match correction sync.");
 
-    const { now, fromTime, likelyEndingTime, matches } = await getLikelyEndingMatches();
+    const { now, fromTime, matches } = await getActiveMatches();
 
-    console.log(`Correction candidate window: ${fromTime.toISOString()} to ${likelyEndingTime.toISOString()}`);
-    console.log(`Likely-ending matches found in Supabase: ${matches.length}`);
+    console.log(`Active match window: ${fromTime.toISOString()} to ${now.toISOString()}`);
+    console.log(`Active matches found in Supabase: ${matches.length}`);
 
     if (matches.length === 0) {
-        console.log("No likely-ending matches. Skipping football-data API call.");
+        console.log("No active matches. Skipping football-data API call.");
         return;
     }
 
