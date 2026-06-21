@@ -1,23 +1,16 @@
-name: Sync World Cup
+name: Sync World Cup - Active Match Correction
 
 on:
   workflow_dispatch:
-    inputs:
-      mode:
-        description: "Sync mode"
-        required: false
-        default: "auto"
-        type: choice
-        options:
-          - auto
-          - correction
-          - normal
-          - full
   schedule:
-    - cron: "1,6,11,16,21,26,31,36,41,46,51,56 * * * *"
+    - cron: "*/5 * * * *"
+
+concurrency:
+  group: wc-correction-sync
+  cancel-in-progress: false
 
 jobs:
-  sync-world-cup:
+  sync-correction:
     runs-on: ubuntu-latest
 
     steps:
@@ -26,13 +19,14 @@ jobs:
 
       - name: Show trigger details
         run: |
+          echo "workflow=active-correction"
           echo "event=${{ github.event_name }}"
           echo "utc_now=$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
 
-      - name: Run sync script
+      - name: Run active match correction sync
         run: node scripts/sync-results.mjs
         env:
           FOOTBALL_DATA_TOKEN: ${{ secrets.FOOTBALL_DATA_TOKEN }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-          SYNC_MODE: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.mode || 'auto' }}
+          SYNC_MODE: correction
