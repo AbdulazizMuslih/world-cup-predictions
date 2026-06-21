@@ -297,13 +297,12 @@ async function runNormalSync() {
 
 async function getActiveMatches() {
     const now = new Date();
-    const fromTime = new Date(now.getTime() - 4 * MS.hour);
+    const fromTime = new Date(now.getTime() - 2 * MS.hour);
 
     const path =
         "matches" +
         `?kickoff_at=gte.${encodeURIComponent(fromTime.toISOString())}` +
         `&kickoff_at=lte.${encodeURIComponent(now.toISOString())}` +
-        "&status=neq.completed" +
         "&select=id,external_id,kickoff_at,status,actual_team1_goals,actual_team2_goals";
 
     const matches = await supabaseFetch(path);
