@@ -2960,3 +2960,72 @@ body::before {
 .update-required-card button {
   min-width: 180px;
 }
+
+/* ===============================
+   V28 mobile hero image responsiveness
+   Shows the full Messi/Ronaldo/trophy artwork better on phones
+   =============================== */
+
+@media (max-width: 700px) {
+  .hero {
+    min-height: 560px !important;
+    padding: 26px 16px 42px !important;
+    align-items: flex-start !important;
+    background:
+      linear-gradient(
+        180deg,
+        rgba(5, 8, 23, 0.06) 0%,
+        rgba(5, 8, 23, 0.16) 32%,
+        rgba(5, 8, 23, 0.76) 56%,
+        rgba(5, 8, 23, 0.96) 100%
+      ),
+      url("assets/world-cup-hero-v24.jpg") top center / 100% auto no-repeat,
+      radial-gradient(circle at 50% 8%, rgba(241, 216, 154, 0.16), transparent 28%),
+      linear-gradient(135deg, var(--wc-bg-1), var(--wc-bg-2) 52%, var(--wc-bg-3)) !important;
+    background-repeat: no-repeat !important;
+  }
+
+  .hero-overlay {
+    width: 100% !important;
+    margin-top: min(205px, 48vw) !important;
+    padding: 18px 14px 20px !important;
+    border-radius: 26px !important;
+    background:
+      radial-gradient(circle at center, rgba(5, 8, 23, 0.78), rgba(5, 8, 23, 0.44) 58%, rgba(5, 8, 23, 0.18) 82%) !important;
+    backdrop-filter: blur(2px);
+  }
+
+  .hero h1 {
+    font-size: clamp(34px, 10vw, 52px) !important;
+    line-height: 1.02 !important;
+  }
+
+  .hero h1::after {
+    margin-top: 13px !important;
+  }
+
+  .subtitle {
+    font-size: clamp(14px, 4vw, 17px) !important;
+    margin: 14px 0 16px !important;
+  }
+
+  .hero-badges {
+    gap: 6px !important;
+    margin-bottom: 16px !important;
+  }
+
+  .hero-badges span {
+    font-size: clamp(10px, 3.2vw, 12px) !important;
+    padding: 7px 9px !important;
+  }
+}
+
+@media (max-width: 390px) {
+  .hero {
+    min-height: 535px !important;
+  }
+
+  .hero-overlay {
+    margin-top: min(188px, 47vw) !important;
+  }
+}
