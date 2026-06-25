@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 430">
+  <defs>
+    <linearGradient id="gold" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#fff3bc"/>
+      <stop offset="0.48" stop-color="#caa45d"/>
+      <stop offset="1" stop-color="#8d692c"/>
+    </linearGradient>
+    <radialGradient id="aura" cx="50%" cy="35%" r="60%">
+      <stop offset="0" stop-color="#f1d89a" stop-opacity="0.55"/>
+      <stop offset="1" stop-color="#f1d89a" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <ellipse cx="150" cy="178" rx="135" ry="155" fill="url(#aura)"/>
+  <path d="M105 58c-10 31-6 70 8 96 10 18 23 30 37 30s27-12 37-30c14-26 18-65 8-96H105z" fill="url(#gold)" opacity="0.92"/>
+  <path d="M104 80C56 85 42 119 52 151c8 27 35 45 68 46" fill="none" stroke="url(#gold)" stroke-width="18" stroke-linecap="round" opacity="0.82"/>
+  <path d="M196 80c48 5 62 39 52 71-8 27-35 45-68 46" fill="none" stroke="url(#gold)" stroke-width="18" stroke-linecap="round" opacity="0.82"/>
+  <path d="M139 184h22v70h-22z" fill="url(#gold)"/>
+  <path d="M105 254h90l18 64H87z" fill="url(#gold)" opacity="0.94"/>
+  <path d="M65 318h170v40H65z" rx="14" fill="url(#gold)" opacity="0.96"/>
+  <path d="M48 360h204v42H48z" rx="16" fill="#2b1739" opacity="0.92"/>
+  <path d="M78 374h144" stroke="#f1d89a" stroke-width="6" stroke-linecap="round" opacity="0.72"/>
+</svg>

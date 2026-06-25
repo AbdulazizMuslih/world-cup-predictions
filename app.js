@@ -566,14 +566,112 @@ function formatScore(team1Goals, team2Goals) {
     return `<span class="score-text">${team1Goals} - ${team2Goals}</span>`;
 }
 
-function formatTeamScore(team1Name, team1Goals, team2Name, team2Goals) {
+const TEAM_FLAG_CODES = {
+    "المكسيك": "mx",
+    "جنوب أفريقيا": "za",
+    "كوريا الجنوبية": "kr",
+    "كوريا": "kr",
+    "التشيك": "cz",
+    "كندا": "ca",
+    "البوسنة والهرسك": "ba",
+    "البوسنة": "ba",
+    "قطر": "qa",
+    "سويسرا": "ch",
+    "البرازيل": "br",
+    "المغرب": "ma",
+    "هايتي": "ht",
+    "اسكتلندا": "gb-sct",
+    "أستراليا": "au",
+    "تركيا": "tr",
+    "أمريكا": "us",
+    "الولايات المتحدة": "us",
+    "باراغواي": "py",
+    "ألمانيا": "de",
+    "كوراساو": "cw",
+    "ساحل العاج": "ci",
+    "الإكوادور": "ec",
+    "هولندا": "nl",
+    "اليابان": "jp",
+    "السويد": "se",
+    "تونس": "tn",
+    "إسبانيا": "es",
+    "السعودية": "sa",
+    "الأوروغواي": "uy",
+    "الرأس الأخضر": "cv",
+    "بلجيكا": "be",
+    "مصر": "eg",
+    "إيران": "ir",
+    "نيوزيلندا": "nz",
+    "فرنسا": "fr",
+    "السنغال": "sn",
+    "العراق": "iq",
+    "النرويج": "no",
+    "الأرجنتين": "ar",
+    "الجزائر": "dz",
+    "النمسا": "at",
+    "الأردن": "jo",
+    "البرتغال": "pt",
+    "الكونغو الديمقراطية": "cd",
+    "أوزبكستان": "uz",
+    "كولومبيا": "co",
+    "إنجلترا": "gb-eng",
+    "كرواتيا": "hr",
+    "غانا": "gh",
+    "بنما": "pa"
+};
+
+function getTeamFlagCode(teamName) {
+    return TEAM_FLAG_CODES[teamName] || "un";
+}
+
+function formatTeamFlag(teamName) {
+    const code = getTeamFlagCode(teamName);
+    const safeTeamName = escapeHtml(teamName);
+
     return `
-        <div class="scoreline" dir="rtl" title="${team1Name} ${team1Goals} - ${team2Goals} ${team2Name}">
-            <span class="scoreline-team">${team1Name}</span>
+        <img
+            class="scoreline-flag-img"
+            src="https://flagcdn.com/40x30/${code}.png"
+            alt=""
+            title="${safeTeamName}"
+            loading="lazy"
+        />
+    `;
+}
+
+function escapeHtml(value) {
+    return String(value)
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#039;");
+}
+
+function formatMatchCell(team1Name, team2Name) {
+    const matchText = `${team1Name} ضد ${team2Name}`;
+    const isLongMatch = matchText.length > 22;
+
+    return `
+        <div class="match-cell-name-only ${isLongMatch ? "match-cell-long" : ""}" title="${matchText}">
+            <span class="match-team-name">${team1Name}</span>
+            <span class="match-vs-word">ضد</span>
+            <span class="match-team-name">${team2Name}</span>
+        </div>
+    `;
+}
+
+function formatTeamScore(team1Name, team1Goals, team2Name, team2Goals) {
+    const safeTeam1Name = escapeHtml(team1Name);
+    const safeTeam2Name = escapeHtml(team2Name);
+
+    return `
+        <div class="scoreline" dir="ltr" title="${safeTeam1Name} ${team1Goals} - ${team2Goals} ${safeTeam2Name}">
+            ${formatTeamFlag(team1Name)}
             <span class="scoreline-number">${team1Goals}</span>
             <span class="scoreline-dash">-</span>
             <span class="scoreline-number">${team2Goals}</span>
-            <span class="scoreline-team">${team2Name}</span>
+            ${formatTeamFlag(team2Name)}
         </div>
     `;
 }
@@ -629,12 +727,12 @@ async function loadMyPredictions() {
     });
 
     myPredictions.innerHTML = `
-    <table class="table">
+    <table class="table predictions-table">
       <thead>
         <tr>
           <th>المباراة</th>
           <th>توقعك</th>
-          <th>النتيجة الفعلية</th>
+          <th>الفعلي</th>
           <th>النقاط</th>
         </tr>
       </thead>
@@ -646,7 +744,7 @@ async function loadMyPredictions() {
 
         return `
               <tr>
-                <td>${match.team1} ضد ${match.team2}</td>
+                <td class="match-name-cell">${formatMatchCell(match.team1, match.team2)}</td>
                 <td>
                     ${formatTeamScore(
             match.team1,
@@ -716,12 +814,12 @@ async function loadAdminParticipantPredictions(participantId) {
     adminParticipantPredictions.innerHTML = `
         <h4>توقعات ${selectedName}</h4>
 
-        <table class="table">
+        <table class="table predictions-table">
             <thead>
                 <tr>
                     <th>المباراة</th>
                     <th>التوقع</th>
-                    <th>النتيجة الفعلية</th>
+                    <th>الفعلي</th>
                     <th>النقاط</th>
                 </tr>
             </thead>
@@ -732,7 +830,7 @@ async function loadAdminParticipantPredictions(participantId) {
 
                     return `
                         <tr>
-                            <td>${match.team1} ضد ${match.team2}</td>
+                            <td class="match-name-cell">${formatMatchCell(match.team1, match.team2)}</td>
                             <td>
                                 ${formatTeamScore(
                                     match.team1,
@@ -815,25 +913,57 @@ async function loadLeaderboard() {
         })
         .sort((a, b) => b.points - a.points);
 
+    const podiumItems = [
+        rows[2] ? { rank: 3, icon: "🥉", row: rows[2] } : null,
+        rows[0] ? { rank: 1, icon: "🥇", row: rows[0] } : null,
+        rows[1] ? { rank: 2, icon: "🥈", row: rows[1] } : null,
+    ].filter(Boolean);
+
     leaderboard.innerHTML = `
-    <table class="table">
-      <thead>
-        <tr>
-          <th>المركز</th>
-          <th>المشارك</th>
-          <th>النقاط</th>
-        </tr>
-      </thead>
-      <tbody>
-        ${rows.map((row, index) => `
+    <div class="leaderboard-stage">
+      <div class="leaderboard-hero-card">
+        <div class="leaderboard-hero-copy">
+          <p class="eyebrow">تحديث تلقائي</p>
+          <h4>الترتيب المباشر</h4>
+          <p>النقاط تتحدث مع النتائج الفعلية لكل مباراة.</p>
+        </div>
+        <div class="leaderboard-visual" aria-hidden="true">
+          <img src="assets/world-cup-2026-mark-v24.jpg" alt="" loading="lazy" />
+        </div>
+      </div>
+
+      ${podiumItems.length > 0 ? `
+        <div class="leaderboard-podium">
+          ${podiumItems.map((item) => `
+            <div class="podium-card podium-rank-${item.rank}">
+              <span class="podium-medal">${item.icon}</span>
+              <span class="podium-name">${item.row.name}</span>
+              <span class="podium-points">${item.row.points}</span>
+              <span class="podium-label">نقطة</span>
+            </div>
+          `).join("")}
+        </div>
+      ` : ""}
+
+      <table class="table leaderboard-table">
+        <thead>
           <tr>
-            <td>${index + 1}</td>
-            <td>${row.name}</td>
-            <td>${row.points}</td>
+            <th>المركز</th>
+            <th>المشارك</th>
+            <th>النقاط</th>
           </tr>
-        `).join("")}
-      </tbody>
-    </table>
+        </thead>
+        <tbody>
+          ${rows.map((row, index) => `
+            <tr class="leaderboard-row leaderboard-rank-${index + 1}">
+              <td><span class="rank-badge">${index + 1}</span></td>
+              <td class="leaderboard-name">${row.name}</td>
+              <td class="leaderboard-points">${row.points}</td>
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>
+    </div>
   `;
 }
 

@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 700" preserveAspectRatio="xMidYMid slice">
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#140824"/>
+      <stop offset="0.45" stop-color="#101b3f"/>
+      <stop offset="1" stop-color="#4b113f"/>
+    </linearGradient>
+    <radialGradient id="light" cx="50%" cy="50%" r="50%">
+      <stop offset="0" stop-color="#fff4c4" stop-opacity="0.95"/>
+      <stop offset="0.24" stop-color="#f1d89a" stop-opacity="0.42"/>
+      <stop offset="1" stop-color="#f1d89a" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="pitch" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#0d6f5b"/>
+      <stop offset="0.5" stop-color="#0a8a72"/>
+      <stop offset="1" stop-color="#0d6f5b"/>
+    </linearGradient>
+    <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="8" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+  <rect width="1600" height="700" fill="url(#sky)"/>
+  <circle cx="170" cy="86" r="130" fill="url(#light)"/>
+  <circle cx="1430" cy="86" r="130" fill="url(#light)"/>
+  <circle cx="800" cy="65" r="180" fill="url(#light)" opacity="0.7"/>
+  <g opacity="0.55" stroke="#f1d89a" stroke-width="3" filter="url(#glow)">
+    <path d="M170 120 470 430"/><path d="M170 120 650 430"/><path d="M170 120 810 430"/>
+    <path d="M1430 120 1130 430"/><path d="M1430 120 950 430"/><path d="M1430 120 790 430"/>
+    <path d="M800 112 500 450"/><path d="M800 112 800 450"/><path d="M800 112 1100 450"/>
+  </g>
+  <path d="M0 410 Q800 275 1600 410 L1600 700 L0 700 Z" fill="#070916" opacity="0.72"/>
+  <path d="M140 465 Q800 345 1460 465" fill="none" stroke="#f1d89a" stroke-opacity="0.28" stroke-width="16"/>
+  <path d="M210 500 Q800 405 1390 500" fill="none" stroke="#ffffff" stroke-opacity="0.10" stroke-width="7"/>
+  <path d="M0 540 Q800 455 1600 540 L1600 700 L0 700 Z" fill="url(#pitch)" opacity="0.86"/>
+  <path d="M340 616 Q800 560 1260 616" fill="none" stroke="#f7f1e3" stroke-opacity="0.34" stroke-width="4"/>
+  <path d="M800 540 L800 700" stroke="#f7f1e3" stroke-opacity="0.20" stroke-width="4"/>
+  <circle cx="800" cy="622" r="58" fill="none" stroke="#f7f1e3" stroke-opacity="0.20" stroke-width="4"/>
+  <g opacity="0.8">
+    <circle cx="112" cy="210" r="4" fill="#f1d89a"/><circle cx="308" cy="150" r="3" fill="#34d6bd"/><circle cx="1320" cy="185" r="4" fill="#f1d89a"/>
+    <rect x="1230" y="245" width="7" height="22" rx="3" fill="#7d1738" transform="rotate(32 1230 245)"/>
+    <rect x="435" y="205" width="7" height="22" rx="3" fill="#34d6bd" transform="rotate(-22 435 205)"/>
+    <rect x="962" y="162" width="7" height="22" rx="3" fill="#f1d89a" transform="rotate(18 962 162)"/>
+  </g>
+</svg>
