@@ -2908,3 +2908,55 @@ body::before {
     font-size: clamp(8px, 2vw, 10px) !important;
   }
 }
+
+/* ===============================
+   Mandatory update overlay
+   =============================== */
+
+.update-required-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 99999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 22px;
+  background:
+    radial-gradient(circle at top, rgba(241, 216, 154, 0.20), transparent 34%),
+    rgba(5, 8, 23, 0.86);
+  backdrop-filter: blur(12px);
+}
+
+.update-required-card {
+  width: min(420px, 100%);
+  padding: 28px 24px;
+  border-radius: 28px;
+  text-align: center;
+  background:
+    linear-gradient(145deg, rgba(255,255,255,.16), rgba(255,255,255,.07)),
+    rgba(12, 18, 38, .92);
+  border: 1px solid rgba(241, 216, 154, .35);
+  box-shadow: 0 28px 80px rgba(0,0,0,.45);
+  color: #f7f1e3;
+}
+
+.update-required-icon {
+  font-size: 42px;
+  margin-bottom: 10px;
+}
+
+.update-required-card h2 {
+  margin: 0 0 10px;
+  font-size: 30px;
+  color: #f1d89a;
+}
+
+.update-required-card p {
+  margin: 0 0 22px;
+  line-height: 1.8;
+  color: rgba(247, 241, 227, .82);
+}
+
+.update-required-card button {
+  min-width: 180px;
+}

@@ -37,6 +37,9 @@ let tabHistory = [];
 let allowLeavingPage = false;
 let dashboardRefreshTimer = null;
 
+const APP_VERSION = "27";
+let updateCheckTimer = null;
+
 document.addEventListener("DOMContentLoaded", init);
 
 musicBtn.addEventListener("click", async () => {
@@ -55,6 +58,13 @@ daiDaiAudio.addEventListener("ended", () => {
 
 async function init() {
     setupTabs();
+
+    await checkForAppUpdate(false);
+
+    updateCheckTimer = setInterval(() => {
+        checkForAppUpdate(false);
+    }, 60 * 1000);
+
     await loadParticipants();
     await loadLeaderboard();
     await restoreParticipantSession();
@@ -1064,6 +1074,66 @@ async function recalculatePoints(matchId, actualTeam1GoalsValue, actualTeam2Goal
     }
 }
 
+async function checkForAppUpdate(forceReload = false) {
+    try {
+        const response = await fetch(`version.json?t=${Date.now()}`, {
+            cache: "no-store"
+        });
+
+        if (!response.ok) return;
+
+        const data = await response.json();
+        const latestVersion = String(data.version || "").trim();
+
+        if (!latestVersion) return;
+
+        if (latestVersion !== APP_VERSION) {
+            localStorage.setItem("wcNeedsRefresh", "true");
+
+            if (forceReload) {
+                window.location.reload(true);
+                return;
+            }
+
+            showUpdateRequiredOverlay(latestVersion);
+        }
+    } catch (error) {
+        console.warn("Version check failed:", error);
+    }
+}
+
+function showUpdateRequiredOverlay(latestVersion) {
+    if (document.getElementById("updateRequiredOverlay")) return;
+
+    const overlay = document.createElement("div");
+    overlay.id = "updateRequiredOverlay";
+    overlay.className = "update-required-overlay";
+
+    overlay.innerHTML = `
+        <div class="update-required-card">
+            <div class="update-required-icon">⚽</div>
+            <h2>تم تحديث الموقع</h2>
+            <p>
+                يوجد إصدار جديد من المسابقة. الرجاء التحديث للمتابعة بأحدث النتائج والتصميم.
+            </p>
+            <button type="button" id="forceRefreshBtn">
+                تحديث الآن
+            </button>
+        </div>
+    `;
+
+    document.body.appendChild(overlay);
+
+    document.getElementById("forceRefreshBtn").addEventListener("click", () => {
+        localStorage.removeItem("wcNeedsRefresh");
+
+        const url = new URL(window.location.href);
+        url.searchParams.set("refresh", Date.now());
+
+        window.location.replace(url.toString());
+    });
+}
+
 function calculatePoints(predicted1, predicted2, actual1, actual2) {
     if (predicted1 === actual1 && predicted2 === actual2) {
         return 50;
@@ -1088,3 +1158,4 @@ function isAvailable(kickoffAt) {
 
     return now >= openTime && now < kickoff;
 }
+
