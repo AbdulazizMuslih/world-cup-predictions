@@ -37,7 +37,7 @@ let tabHistory = [];
 let allowLeavingPage = false;
 let dashboardRefreshTimer = null;
 
-const APP_VERSION = "34";
+const APP_VERSION = "35";
 let updateCheckTimer = null;
 
 document.addEventListener("DOMContentLoaded", init);
@@ -901,35 +901,35 @@ async function loadAdminParticipantPredictions(participantId) {
             </thead>
             <tbody>
                 ${sortedMatches.map((match) => {
-                    const prediction = match.predictions[0];
-                    const livePoints = calculateLivePredictionPoints(prediction, match);
+        const prediction = match.predictions[0];
+        const livePoints = calculateLivePredictionPoints(prediction, match);
 
-                    return `
+        return `
                         <tr>
                             <td class="match-name-cell">${formatMatchCell(match.team1, match.team2)}</td>
                             <td>
                                 ${formatTeamScore(
-                                    match.team1,
-                                    prediction.predicted_team1_goals,
-                                    match.team2,
-                                    prediction.predicted_team2_goals
-                                )}
+            match.team1,
+            prediction.predicted_team1_goals,
+            match.team2,
+            prediction.predicted_team2_goals
+        )}
                             </td>
                             <td>
                                 ${hasActualScore(match)
-                                    ? formatTeamScore(
-                                        match.team1,
-                                        match.actual_team1_goals,
-                                        match.team2,
-                                        match.actual_team2_goals
-                                    )
-                                    : "-"
-                                }
+                ? formatTeamScore(
+                    match.team1,
+                    match.actual_team1_goals,
+                    match.team2,
+                    match.actual_team2_goals
+                )
+                : "-"
+            }
                             </td>
                             <td>${livePoints}</td>
                         </tr>
                     `;
-                }).join("")}
+    }).join("")}
             </tbody>
         </table>
     `;
@@ -1153,16 +1153,26 @@ async function checkForAppUpdate(forceReload = false) {
 
         if (!latestVersion) return;
 
-        if (latestVersion !== APP_VERSION) {
-            localStorage.setItem("wcNeedsRefresh", "true");
-
-            if (forceReload) {
-                window.location.reload(true);
-                return;
-            }
-
-            showUpdateRequiredOverlay(latestVersion);
+        if (latestVersion === APP_VERSION) {
+            sessionStorage.removeItem("wcReloadAttemptedVersion");
+            localStorage.setItem("wcLoadedVersion", APP_VERSION);
+            return;
         }
+
+        const reloadAttemptedVersion = sessionStorage.getItem("wcReloadAttemptedVersion");
+
+        if (reloadAttemptedVersion !== latestVersion || forceReload) {
+            sessionStorage.setItem("wcReloadAttemptedVersion", latestVersion);
+
+            const url = new URL(window.location.href);
+            url.searchParams.set("appVersion", latestVersion);
+            url.searchParams.set("refresh", Date.now());
+
+            window.location.replace(url.toString());
+            return;
+        }
+
+        showUpdateRequiredOverlay(latestVersion);
     } catch (error) {
         console.warn("Version check failed:", error);
     }
@@ -1191,9 +1201,11 @@ function showUpdateRequiredOverlay(latestVersion) {
     document.body.appendChild(overlay);
 
     document.getElementById("forceRefreshBtn").addEventListener("click", () => {
+        sessionStorage.removeItem("wcReloadAttemptedVersion");
         localStorage.removeItem("wcNeedsRefresh");
 
         const url = new URL(window.location.href);
+        url.searchParams.set("appVersion", latestVersion);
         url.searchParams.set("refresh", Date.now());
 
         window.location.replace(url.toString());
