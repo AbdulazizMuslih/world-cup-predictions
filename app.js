@@ -37,7 +37,7 @@ let tabHistory = [];
 let allowLeavingPage = false;
 let dashboardRefreshTimer = null;
 
-const APP_VERSION = "35";
+const APP_VERSION = "36";
 let updateCheckTimer = null;
 
 document.addEventListener("DOMContentLoaded", init);
@@ -765,6 +765,29 @@ function calculateLivePredictionPoints(prediction, match) {
     );
 }
 
+function getPredictionRowClass(points, match) {
+    if (!hasActualScore(match)) return "prediction-row-pending";
+    if (points === 50) return "prediction-row-exact";
+    if (points === 10) return "prediction-row-correct";
+    return "prediction-row-zero";
+}
+
+function formatPointPill(points, match) {
+    if (!hasActualScore(match)) {
+        return `<span class="points-pill points-pill-pending">${points}</span>`;
+    }
+
+    if (points === 50) {
+        return `<span class="points-pill points-pill-exact">${points}<small>بالملّي</small></span>`;
+    }
+
+    if (points === 10) {
+        return `<span class="points-pill points-pill-correct">${points}<small>صحيح</small></span>`;
+    }
+
+    return `<span class="points-pill points-pill-zero">${points}</span>`;
+}
+
 async function loadMyPredictions() {
     if (!currentParticipant) return;
 
@@ -802,8 +825,46 @@ async function loadMyPredictions() {
         return new Date(b.kickoff_at).getTime() - new Date(a.kickoff_at).getTime();
     });
 
+    const summary = sortedMatches.reduce((acc, match) => {
+        const prediction = match.predictions[0];
+        const livePoints = calculateLivePredictionPoints(prediction, match);
+
+        acc.totalPredictions += 1;
+        acc.totalPoints += livePoints;
+
+        if (hasActualScore(match)) {
+            acc.finished += 1;
+
+            if (livePoints === 50) {
+                acc.exact += 1;
+            }
+
+            if (livePoints === 10) {
+                acc.correct += 1;
+            }
+        }
+
+        return acc;
+    }, { totalPredictions: 0, totalPoints: 0, finished: 0, exact: 0, correct: 0 });
+
     myPredictions.innerHTML = `
-    <table class="table predictions-table">
+    <div class="prediction-summary-card prediction-summary-card-v36">
+      <div class="prediction-summary-title">
+        <p class="eyebrow">ملخص توقعاتك</p>
+        <h4>${escapeHtml(currentParticipant.name)}</h4>
+      </div>
+      <div class="prediction-summary-grid">
+        <span><strong>${summary.totalPoints}</strong><small>نقطة</small></span>
+        <span><strong>${summary.totalPredictions}</strong><small>توقع</small></span>
+        <span><strong>${summary.exact}</strong><small>بالملّي</small></span>
+        <span><strong>${summary.correct}</strong><small>صحيح</small></span>
+      </div>
+      <div class="prediction-summary-art" aria-hidden="true">
+        <img src="assets/prediction-summary-ball-v36.png" alt="" loading="lazy" />
+      </div>
+    </div>
+
+    <table class="table predictions-table predictions-table-v36">
       <thead>
         <tr>
           <th>المباراة</th>
@@ -815,11 +876,11 @@ async function loadMyPredictions() {
       <tbody>
         ${sortedMatches.map((match) => {
         const prediction = match.predictions[0];
-
         const livePoints = calculateLivePredictionPoints(prediction, match);
+        const rowClass = getPredictionRowClass(livePoints, match);
 
         return `
-              <tr>
+              <tr class="${rowClass}">
                 <td class="match-name-cell">${formatMatchCell(match.team1, match.team2)}</td>
                 <td>
                     ${formatTeamScore(
@@ -837,10 +898,10 @@ async function loadMyPredictions() {
                     match.team2,
                     match.actual_team2_goals
                 )
-                : "-"
+                : `<span class="pending-score">لم تبدأ</span>`
             }
                 </td>
-                <td>${livePoints}</td>
+                <td>${formatPointPill(livePoints, match)}</td>
               </tr>
             `;
     }).join("")}
@@ -941,11 +1002,13 @@ async function loadLeaderboard() {
         .select(`
             id,
             name,
+            sort_order,
             predictions(
                 predicted_team1_goals,
                 predicted_team2_goals,
                 points,
                 matches(
+                    kickoff_at,
                     actual_team1_goals,
                     actual_team2_goals
                 )
@@ -961,33 +1024,71 @@ async function loadLeaderboard() {
 
     const rows = data
         .map((participant) => {
-            const totalPoints = (participant.predictions || []).reduce((sum, prediction) => {
-                const match = prediction.matches;
+            const predictions = participant.predictions || [];
+            const completedPredictions = predictions
+                .map((prediction) => {
+                    const match = prediction.matches;
 
-                if (
-                    match &&
-                    match.actual_team1_goals !== null &&
-                    match.actual_team1_goals !== undefined &&
-                    match.actual_team2_goals !== null &&
-                    match.actual_team2_goals !== undefined
-                ) {
-                    return sum + calculatePoints(
+                    if (
+                        !match ||
+                        match.actual_team1_goals === null ||
+                        match.actual_team1_goals === undefined ||
+                        match.actual_team2_goals === null ||
+                        match.actual_team2_goals === undefined
+                    ) {
+                        return null;
+                    }
+
+                    const points = calculatePoints(
                         prediction.predicted_team1_goals,
                         prediction.predicted_team2_goals,
                         match.actual_team1_goals,
                         match.actual_team2_goals
                     );
-                }
 
-                return sum + (prediction.points || 0);
+                    return {
+                        points,
+                        kickoffTime: new Date(match.kickoff_at).getTime(),
+                        isExactScore: points === 50,
+                        isCorrectWinner: points === 10,
+                        isWinningPrediction: points > 0,
+                    };
+                })
+                .filter(Boolean)
+                .sort((a, b) => a.kickoffTime - b.kickoffTime);
+
+            const totalPoints = completedPredictions.reduce((sum, prediction) => {
+                return sum + prediction.points;
             }, 0);
 
+            const exactScoreCount = completedPredictions.filter((prediction) => {
+                return prediction.isExactScore;
+            }).length;
+
+            const correctWinnerCount = completedPredictions.filter((prediction) => {
+                return prediction.isCorrectWinner;
+            }).length;
+
+            const bestCorrectStreak = getBestCorrectPredictionStreak(completedPredictions);
+
             return {
+                id: participant.id,
                 name: participant.name,
+                sortOrder: Number.isFinite(Number(participant.sort_order)) ? Number(participant.sort_order) : 9999,
                 points: totalPoints,
+                predictionCount: predictions.length,
+                completedPredictionCount: completedPredictions.length,
+                exactScoreCount,
+                correctWinnerCount,
+                bestCorrectStreak,
             };
         })
-        .sort((a, b) => b.points - a.points);
+        .sort(compareLeaderboardRows);
+
+    const leader = rows[0];
+    const second = rows[1];
+    const leaderGap = leader && second ? leader.points - second.points : 0;
+    const totalPredictions = rows.reduce((sum, row) => sum + row.predictionCount, 0);
 
     const podiumItems = [
         rows[2] ? { rank: 3, icon: "🥉", row: rows[2] } : null,
@@ -996,24 +1097,32 @@ async function loadLeaderboard() {
     ].filter(Boolean);
 
     leaderboard.innerHTML = `
-    <div class="leaderboard-stage">
-      <div class="leaderboard-hero-card">
-        <div class="leaderboard-hero-copy">
-          <p class="eyebrow">تحديث تلقائي</p>
-          <h4>الترتيب المباشر</h4>
-          <p>النقاط تتحدث مع النتائج الفعلية لكل مباراة.</p>
+    <div class="leaderboard-stage leaderboard-stage-v36-lite">
+      ${leader ? `
+        <div class="leaderboard-story-card leaderboard-story-hype">
+          <div class="leaderboard-story-visual" aria-hidden="true">
+            <img src="assets/world-cup-2026-mark-v24.jpg" alt="" loading="lazy" />
+          </div>
+
+          <div class="leaderboard-story-copy">
+            <p class="eyebrow">قصة المنافسة الآن</p>
+            <h4>${escapeHtml(leader.name)} في الصدارة</h4>
+            <p>${leaderGap > 0 ? `الفارق عن أقرب منافس: ${leaderGap} نقطة.` : "الصدارة مشتعلة والفارق صفر."}</p>
+          </div>
+
+          <div class="story-metrics">
+            <span><strong>${leader.points}</strong><small>نقطة المتصدر</small></span>
+            <span><strong>${totalPredictions}</strong><small>إجمالي التوقعات</small></span>
+          </div>
         </div>
-        <div class="leaderboard-visual" aria-hidden="true">
-          <img src="assets/world-cup-2026-mark-v24.jpg" alt="" loading="lazy" />
-        </div>
-      </div>
+      ` : ""}
 
       ${podiumItems.length > 0 ? `
         <div class="leaderboard-podium">
           ${podiumItems.map((item) => `
             <div class="podium-card podium-rank-${item.rank}">
               <span class="podium-medal">${item.icon}</span>
-              <span class="podium-name">${item.row.name}</span>
+              <span class="podium-name">${escapeHtml(item.row.name)}</span>
               <span class="podium-points">${item.row.points}</span>
               <span class="podium-label">نقطة</span>
             </div>
@@ -1021,7 +1130,7 @@ async function loadLeaderboard() {
         </div>
       ` : ""}
 
-      <table class="table leaderboard-table">
+      <table class="table leaderboard-table leaderboard-table-v36-lite">
         <thead>
           <tr>
             <th>المركز</th>
@@ -1033,7 +1142,7 @@ async function loadLeaderboard() {
           ${rows.map((row, index) => `
             <tr class="leaderboard-row leaderboard-rank-${index + 1}">
               <td><span class="rank-badge">${index + 1}</span></td>
-              <td class="leaderboard-name">${row.name}</td>
+              <td class="leaderboard-name">${escapeHtml(row.name)}</td>
               <td class="leaderboard-points">${row.points}</td>
             </tr>
           `).join("")}
@@ -1041,6 +1150,34 @@ async function loadLeaderboard() {
       </table>
     </div>
   `;
+}
+
+function compareLeaderboardRows(a, b) {
+    return (
+        b.points - a.points ||
+        b.exactScoreCount - a.exactScoreCount ||
+        b.bestCorrectStreak - a.bestCorrectStreak ||
+        b.correctWinnerCount - a.correctWinnerCount ||
+        a.sortOrder - b.sortOrder ||
+        a.name.localeCompare(b.name, "ar")
+    );
+}
+
+function getBestCorrectPredictionStreak(completedPredictions) {
+    let currentStreak = 0;
+    let bestStreak = 0;
+
+    completedPredictions.forEach((prediction) => {
+        if (prediction.isWinningPrediction) {
+            currentStreak += 1;
+            bestStreak = Math.max(bestStreak, currentStreak);
+            return;
+        }
+
+        currentStreak = 0;
+    });
+
+    return bestStreak;
 }
 
 const adminPassword = document.getElementById("adminPassword");
