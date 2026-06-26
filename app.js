@@ -1155,20 +1155,22 @@ async function checkForAppUpdate(forceReload = false) {
 
         if (latestVersion === APP_VERSION) {
             sessionStorage.removeItem("wcReloadAttemptedVersion");
+            localStorage.removeItem("wcNeedsRefresh");
             localStorage.setItem("wcLoadedVersion", APP_VERSION);
             return;
         }
+
+        localStorage.setItem("wcNeedsRefresh", "true");
 
         const reloadAttemptedVersion = sessionStorage.getItem("wcReloadAttemptedVersion");
 
         if (reloadAttemptedVersion !== latestVersion || forceReload) {
             sessionStorage.setItem("wcReloadAttemptedVersion", latestVersion);
 
-            const url = new URL(window.location.href);
-            url.searchParams.set("appVersion", latestVersion);
-            url.searchParams.set("refresh", Date.now());
+            const baseUrl = `${window.location.origin}${window.location.pathname}`;
+            const updateUrl = `${baseUrl}?v=${encodeURIComponent(latestVersion)}&t=${Date.now()}`;
 
-            window.location.replace(url.toString());
+            window.location.replace(updateUrl);
             return;
         }
 
@@ -1204,11 +1206,10 @@ function showUpdateRequiredOverlay(latestVersion) {
         sessionStorage.removeItem("wcReloadAttemptedVersion");
         localStorage.removeItem("wcNeedsRefresh");
 
-        const url = new URL(window.location.href);
-        url.searchParams.set("appVersion", latestVersion);
-        url.searchParams.set("refresh", Date.now());
+        const baseUrl = `${window.location.origin}${window.location.pathname}`;
+        const updateUrl = `${baseUrl}?v=${encodeURIComponent(latestVersion)}&t=${Date.now()}`;
 
-        window.location.replace(url.toString());
+        window.location.replace(updateUrl);
     });
 }
 
