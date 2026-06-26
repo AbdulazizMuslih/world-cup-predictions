@@ -6,7 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#10162d" />
     <title>توقعات كأس العالم 2026</title>
-    <link rel="stylesheet" href="style.css?v=29" />
+    <link rel="stylesheet" href="style.css?v=33" />
 </head>
 
 <body>
@@ -36,22 +36,37 @@
         </header>
 
         <main class="container">
-            <section id="loginCard" class="card login-card">
+            <section id="loginCard" class="card login-card login-card-v30">
                 <form id="loginForm">
-                    <h2>اختر اسمك</h2>
-
-                    <label>الاسم</label>
+                    <div class="login-intro">
+                        <div class="login-intro-icon" aria-hidden="true">🏆</div>
+                        <div>
+                            <p class="eyebrow">دخول المشترك</p>
+                            <h2>اختر حسابك</h2>
+                            <p class="login-hint">اختر اسمك، أدخل الرقم السري، وادخل للتوقعات مباشرة.</p>
+                        </div>
+                    </div>
 
                     <select id="participantSelect" class="name-select-hidden" aria-hidden="true" tabindex="-1">
                         <option value="">جاري تحميل الأسماء...</option>
                     </select>
 
-                    <div id="participantCards" class="participant-grid"></div>
+                    <div class="participant-picker">
+                        <div class="participant-picker-head">
+                            <span>المشارك</span>
+                            <small>اختر اسمك من القائمة</small>
+                        </div>
 
-                    <label>الرقم السري</label>
-                    <input id="pinInput" type="password" placeholder="أدخل الرقم السري" />
 
-                    <button id="continueBtn" type="submit">دخول</button>
+                        <div id="participantCards" class="participant-grid participant-list"></div>
+                    </div>
+
+                    <div class="pin-panel">
+                        <label>الرقم السري</label>
+                        <input id="pinInput" type="password" placeholder="أدخل الرقم السري" />
+                    </div>
+
+                    <button id="continueBtn" type="submit">دخول للمسابقة</button>
 
                     <button id="adminLoginBtn" class="secondary-btn" type="button">
                         دخول الإدارة
@@ -138,7 +153,7 @@
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="app.js?v=29"></script>
+    <script src="app.js?v=33"></script>
 </body>
 
 </html>

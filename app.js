@@ -37,7 +37,7 @@ let tabHistory = [];
 let allowLeavingPage = false;
 let dashboardRefreshTimer = null;
 
-const APP_VERSION = "29";
+const APP_VERSION = "33";
 let updateCheckTimer = null;
 
 document.addEventListener("DOMContentLoaded", init);
@@ -125,6 +125,8 @@ async function openParticipantDashboard(participant, rememberParticipant = true)
 
     loginCard.classList.add("hidden");
     dashboard.classList.remove("hidden");
+    dashboard.classList.remove("admin-dashboard");
+    dashboard.classList.add("participant-dashboard");
 
     isAdminMode = false;
     adminTabBtn.classList.add("hidden");
@@ -171,11 +173,19 @@ async function loadParticipants() {
         adminOption.textContent = participant.name;
         adminParticipantSelect.appendChild(adminOption);
 
+        const participantVisual = getParticipantVisual(participant.name);
+
         const card = document.createElement("button");
         card.type = "button";
         card.className = "participant-card";
-        card.textContent = participant.name;
         card.dataset.participantId = participant.id;
+        card.dataset.participantName = participant.name;
+        card.style.setProperty("--participant-accent", participantVisual.color);
+        card.innerHTML = `
+            <span class="participant-avatar" aria-hidden="true">${participantVisual.icon}</span>
+            <span class="participant-card-name">${escapeHtml(participant.name)}</span>
+            <span class="participant-card-check" aria-hidden="true">✓</span>
+        `;
 
         card.addEventListener("click", () => {
             participantSelect.value = participant.id;
@@ -191,6 +201,59 @@ async function loadParticipants() {
 
         participantCards.appendChild(card);
     });
+
+}
+
+const PARTICIPANT_VISUALS = {
+    "عبدالرحمن": { icon: "⚡", color: "#38bdf8" },
+    "رحاب": { icon: "🌟", color: "#facc15" },
+    "الهام": { icon: "🚀", color: "#fb7185" },
+    "غادة": { icon: "💎", color: "#e879f9" },
+    "عبدالإله": { icon: "🛡️", color: "#a78bfa" },
+    "عبدالاله": { icon: "🛡️", color: "#a78bfa" },
+    "عبدالمجيد": { icon: "👑", color: "#e879f9" },
+    "يزيد": { icon: "☀️", color: "#d946ef" },
+    "عبدالوهاب": { icon: "🌞", color: "#facc15" },
+    "عبدالملك": { icon: "💠", color: "#60a5fa" },
+    "يوسف": { icon: "🥅", color: "#22c55e" },
+    "أنس": { icon: "⚽", color: "#fb7185" },
+    "انس": { icon: "⚽", color: "#fb7185" },
+    "منذر": { icon: "🛡️", color: "#34d6bd" },
+    "تالين": { icon: "⭐", color: "#60a5fa" },
+    "لمار": { icon: "💜", color: "#e879f9" },
+    "سليم": { icon: "💎", color: "#a78bfa" },
+    "وهبو": { icon: "🎲", color: "#e879f9" },
+    "أمل": { icon: "🔥", color: "#f1d89a" },
+    "امل": { icon: "🔥", color: "#f1d89a" },
+    "يوسف": { icon: "🥅", color: "#22c55e" }
+};
+
+const FALLBACK_PARTICIPANT_VISUALS = [
+    { icon: "⚽", color: "#fb7185" },
+    { icon: "🏆", color: "#f1d89a" },
+    { icon: "🔥", color: "#f97316" },
+    { icon: "⭐", color: "#60a5fa" },
+    { icon: "🎯", color: "#34d6bd" },
+    { icon: "💎", color: "#e879f9" },
+    { icon: "🛡️", color: "#a78bfa" },
+    { icon: "🚀", color: "#fb7185" }
+];
+
+function getParticipantVisual(name) {
+    const cleanName = String(name || "").trim();
+
+    if (PARTICIPANT_VISUALS[cleanName]) {
+        return PARTICIPANT_VISUALS[cleanName];
+    }
+
+    const hash = hashString(cleanName);
+    return FALLBACK_PARTICIPANT_VISUALS[hash % FALLBACK_PARTICIPANT_VISUALS.length];
+}
+
+function hashString(value) {
+    return String(value).split("").reduce((hash, character) => {
+        return ((hash << 5) - hash + character.charCodeAt(0)) >>> 0;
+    }, 0);
 }
 
 loginForm.addEventListener("submit", async (event) => {
@@ -233,6 +296,8 @@ async function openAdminDashboard(password = ADMIN_PASSWORD, rememberAdmin = tru
 
     loginCard.classList.add("hidden");
     dashboard.classList.remove("hidden");
+    dashboard.classList.remove("participant-dashboard");
+    dashboard.classList.add("admin-dashboard");
 
     adminTabBtn.classList.remove("hidden");
     adminPredictionsTabBtn.classList.remove("hidden");
@@ -288,6 +353,7 @@ logoutBtn.addEventListener("click", () => {
     document.querySelector('[data-tab="mine"]').classList.remove("hidden");
 
     dashboard.classList.add("hidden");
+    dashboard.classList.remove("admin-dashboard", "participant-dashboard");
     loginCard.classList.remove("hidden");
 
     activateTab("available");
