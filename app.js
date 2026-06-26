@@ -37,7 +37,7 @@ let tabHistory = [];
 let allowLeavingPage = false;
 let dashboardRefreshTimer = null;
 
-const APP_VERSION = "33";
+const APP_VERSION = "34";
 let updateCheckTimer = null;
 
 document.addEventListener("DOMContentLoaded", init);

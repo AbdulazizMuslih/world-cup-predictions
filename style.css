@@ -4232,3 +4232,101 @@ button {
     font-size: clamp(14px, 4.4vw, 16px) !important;
   }
 }
+
+
+/* ===============================
+   V34 urgent mobile login-name readability fix
+   Long participant names must show fully on live mobile screens
+   =============================== */
+
+@media (max-width: 700px) {
+  .participant-picker {
+    padding: 12px 10px !important;
+  }
+
+  .participant-list {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 10px !important;
+    overflow: visible !important;
+    max-height: none !important;
+  }
+
+  .participant-card {
+    position: relative !important;
+    grid-template-columns: auto minmax(0, 1fr) !important;
+    min-height: 60px !important;
+    padding: 10px 11px !important;
+    gap: 9px !important;
+    align-items: center !important;
+  }
+
+  .participant-avatar {
+    width: 36px !important;
+    height: 36px !important;
+    min-width: 36px !important;
+    border-radius: 13px !important;
+    font-size: 17px !important;
+  }
+
+  /* The hidden check column was stealing space from long Arabic names. */
+  .participant-card-check {
+    position: absolute !important;
+    top: 5px !important;
+    inset-inline-start: 6px !important;
+    width: 18px !important;
+    height: 18px !important;
+    font-size: 10px !important;
+  }
+
+  .participant-card:not(.selected) .participant-card-check {
+    display: none !important;
+  }
+
+  .participant-card-name {
+    width: 100% !important;
+    min-width: 0 !important;
+    max-width: 100% !important;
+    display: block !important;
+    overflow: visible !important;
+    text-overflow: clip !important;
+    white-space: normal !important;
+    overflow-wrap: normal !important;
+    word-break: keep-all !important;
+    font-size: clamp(15px, 4vw, 17px) !important;
+    line-height: 1.18 !important;
+    letter-spacing: -0.015em !important;
+  }
+}
+
+@media (max-width: 390px) {
+  .participant-list {
+    gap: 9px !important;
+  }
+
+  .participant-card {
+    min-height: 58px !important;
+    padding: 9px 9px !important;
+    gap: 8px !important;
+  }
+
+  .participant-avatar {
+    width: 33px !important;
+    height: 33px !important;
+    min-width: 33px !important;
+    font-size: 16px !important;
+  }
+
+  .participant-card-name {
+    font-size: clamp(14px, 3.85vw, 16px) !important;
+  }
+}
+
+@media (max-width: 340px) {
+  .participant-list {
+    grid-template-columns: 1fr !important;
+  }
+
+  .participant-card-name {
+    white-space: nowrap !important;
+  }
+}
