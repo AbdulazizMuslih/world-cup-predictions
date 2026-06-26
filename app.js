@@ -37,7 +37,7 @@ let tabHistory = [];
 let allowLeavingPage = false;
 let dashboardRefreshTimer = null;
 
-const APP_VERSION = "36";
+const APP_VERSION = "37";
 let updateCheckTimer = null;
 
 document.addEventListener("DOMContentLoaded", init);
@@ -58,6 +58,7 @@ daiDaiAudio.addEventListener("ended", () => {
 
 async function init() {
     setupTabs();
+    applySiteStageTheme("GROUP_STAGE");
 
     await checkForAppUpdate(false);
 
@@ -65,6 +66,7 @@ async function init() {
         checkForAppUpdate(false);
     }, 60 * 1000);
 
+    await loadSiteStageThemeFromTournamentProgress();
     await loadParticipants();
     await loadLeaderboard();
     await restoreParticipantSession();
@@ -356,6 +358,7 @@ logoutBtn.addEventListener("click", () => {
     dashboard.classList.remove("admin-dashboard", "participant-dashboard");
     loginCard.classList.remove("hidden");
 
+    loadSiteStageThemeFromTournamentProgress();
     activateTab("available");
 });
 
@@ -499,13 +502,19 @@ async function loadAvailableMatches() {
         .order("kickoff_at");
 
     if (error) {
+        availableMatches.className = "match-grid";
         availableMatches.innerHTML = `<p>تعذر تحميل المباريات.</p>`;
         return;
     }
 
-    const openMatches = matches.filter((match) => isAvailable(match.kickoff_at));
+    const openMatches = matches
+        .filter((match) => isAvailable(match.kickoff_at))
+        .sort((a, b) => new Date(a.kickoff_at).getTime() - new Date(b.kickoff_at).getTime());
+
+    await loadSiteStageThemeFromTournamentProgress();
 
     if (openMatches.length === 0) {
+        availableMatches.className = "match-grid";
         availableMatches.innerHTML = `<p>لا توجد مباريات متاحة للتوقع حالياً.</p>`;
         return;
     }
@@ -525,69 +534,24 @@ async function loadAvailableMatches() {
         predictionMap.set(prediction.match_id, prediction);
     });
 
-    availableMatches.innerHTML = "";
-
-    openMatches.forEach((match) => {
-        const existingPrediction = predictionMap.get(match.id);
-
-        const card = document.createElement("div");
-        card.className = existingPrediction
-            ? "match-card match-card-predicted"
-            : "match-card";
-
-        const savedPredictionHtml = existingPrediction
-            ? `
-        <div class="saved-prediction-card">
-            <div class="saved-prediction-row">
-                <span class="saved-prediction-title">✅ بالتوفيق</span>
-                <span class="saved-score">
-                    ${existingPrediction.predicted_team1_goals} - ${existingPrediction.predicted_team2_goals}
-                </span>
-            </div>
-            <div class="saved-prediction-note">
-                تم حفظ توقعك ويمكنك تعديله حتى بداية المباراة.
-            </div>
-        </div>
-      `
-            : "";
-
-        card.innerHTML = `
-      <div class="match-title">
-        <span>${match.team1}</span>
-        <span class="vs">ضد</span>
-        <span>${match.team2}</span>
-      </div>
-
-      <p class="kickoff">
-        وقت المباراة: ${new Date(match.kickoff_at).toLocaleString("ar-SA")}
-      </p>
-
-      ${savedPredictionHtml}
-
-      <div class="score-row">
-        <input 
-          id="team1-${match.id}" 
-          type="number" 
-          min="0" 
-          placeholder="${match.team1}" 
-          value="${existingPrediction ? existingPrediction.predicted_team1_goals : ""}"
-        />
-        <input 
-          id="team2-${match.id}" 
-          type="number" 
-          min="0" 
-          placeholder="${match.team2}" 
-          value="${existingPrediction ? existingPrediction.predicted_team2_goals : ""}"
-        />
-      </div>
-
-      <button onclick="savePrediction('${match.id}')">
-        ${existingPrediction ? "تحديث التوقع" : "حفظ التوقع"}
-      </button>
-    `;
-
-        availableMatches.appendChild(card);
+    const groups = groupMatchesByStage(openMatches);
+    const visibleSections = AVAILABLE_STAGE_SECTIONS.filter((section) => {
+        return groups[section.stage] && groups[section.stage].length > 0;
     });
+
+    availableMatches.className = "match-grid available-stage-grid";
+    availableMatches.innerHTML = visibleSections.map((section) => {
+        const stageMatches = groups[section.stage].sort((a, b) => {
+            return new Date(a.kickoff_at).getTime() - new Date(b.kickoff_at).getTime();
+        });
+
+        return `
+            ${renderAvailableStageHeader(section.stage, stageMatches.length)}
+            ${stageMatches.map((match) => {
+                return renderAvailableMatchCard(match, predictionMap.get(match.id));
+            }).join("")}
+        `;
+    }).join("");
 }
 
 async function savePrediction(matchId) {
@@ -737,17 +701,421 @@ function formatMatchCell(team1Name, team2Name) {
     `;
 }
 
-function formatTeamScore(team1Name, team1Goals, team2Name, team2Goals) {
+function formatTeamScore(team1Name, team1Goals, team2Name, team2Goals, options = {}) {
     const safeTeam1Name = escapeHtml(team1Name);
     const safeTeam2Name = escapeHtml(team2Name);
+    const winnerSide = options.winnerSide || null;
+    const highlightWinner = Boolean(options.highlightWinner && winnerSide && winnerSide !== "DRAW");
+    const team1NumberClass = highlightWinner && winnerSide === "HOME_TEAM"
+        ? "scoreline-number scoreline-number-winner"
+        : "scoreline-number";
+    const team2NumberClass = highlightWinner && winnerSide === "AWAY_TEAM"
+        ? "scoreline-number scoreline-number-winner"
+        : "scoreline-number";
+    const winnerLabel = highlightWinner ? " - المتأهل محدد باللون الأخضر" : "";
 
     return `
-        <div class="scoreline" dir="ltr" title="${safeTeam1Name} ${team1Goals} - ${team2Goals} ${safeTeam2Name}">
+        <div class="scoreline ${highlightWinner ? "scoreline-knockout-winner" : ""}" dir="ltr" title="${safeTeam1Name} ${team1Goals} - ${team2Goals} ${safeTeam2Name}${winnerLabel}">
             ${formatTeamFlag(team1Name)}
-            <span class="scoreline-number">${team1Goals}</span>
+            <span class="${team1NumberClass}">${team1Goals}</span>
             <span class="scoreline-dash">-</span>
-            <span class="scoreline-number">${team2Goals}</span>
+            <span class="${team2NumberClass}">${team2Goals}</span>
             ${formatTeamFlag(team2Name)}
+        </div>
+    `;
+}
+
+const PREDICTION_STAGE_SECTIONS = [
+    { stage: "FINAL", title: "توقعات النهائي (كرة كأس العالم)", knockout: true },
+    { stage: "THIRD_PLACE", title: "توقعات المركز الثالث", knockout: true },
+    { stage: "SEMI_FINALS", title: "توقعات نصف النهائي 🔥", knockout: true },
+    { stage: "QUARTER_FINALS", title: "توقعات الأدوار الإقصائية 8", knockout: true },
+    { stage: "LAST_16", title: "توقعات الأدوار الإقصائية 16", knockout: true },
+    { stage: "LAST_32", title: "توقعات الأدوار الإقصائية 32", knockout: true },
+    { stage: "GROUP_STAGE", title: "توقعات دور المجموعات", knockout: false }
+];
+
+const AVAILABLE_STAGE_SECTIONS = [
+    { stage: "GROUP_STAGE" },
+    { stage: "LAST_32" },
+    { stage: "LAST_16" },
+    { stage: "QUARTER_FINALS" },
+    { stage: "SEMI_FINALS" },
+    { stage: "THIRD_PLACE" },
+    { stage: "FINAL" }
+];
+
+const STAGE_THEME_META = {
+    GROUP_STAGE: {
+        themeClass: "stage-theme-group",
+        icon: "🌍",
+        kicker: "دور المجموعات",
+        title: "المباريات المتاحة للتوقع",
+        note: "اجمع النقاط قبل بداية المباراة."
+    },
+    LAST_32: {
+        themeClass: "stage-theme-last-32",
+        icon: "🧊",
+        kicker: "بداية خروج المغلوب",
+        title: "توقعات دور الـ32",
+        note: "من هنا تبدأ كل مباراة تحسم الطريق."
+    },
+    LAST_16: {
+        themeClass: "stage-theme-last-16",
+        icon: "🔷",
+        kicker: "مرحلة أقوى",
+        title: "توقعات دور الـ16",
+        note: "الأسماء الكبيرة تبدأ تضغط، وكل نتيجة تفرق."
+    },
+    QUARTER_FINALS: {
+        themeClass: "stage-theme-quarter-finals",
+        icon: "🟠",
+        kicker: "ربع النهائي",
+        title: "توقعات دور الـ8",
+        note: "خطوة واحدة عن نصف النهائي، والحماس أعلى."
+    },
+    SEMI_FINALS: {
+        themeClass: "stage-theme-semi-finals",
+        icon: "🔥",
+        kicker: "نصف النهائي",
+        title: "توقعات نصف النهائي",
+        note: "كل توقع صار نار، والفرق بين المراكز يصير حساس."
+    },
+    THIRD_PLACE: {
+        themeClass: "stage-theme-third-place",
+        icon: "🥉",
+        kicker: "مباراة المركز الثالث",
+        title: "توقعات المركز الثالث",
+        note: "مباراة واحدة، لكنها قد تغيّر ترتيب المسابقة."
+    },
+    FINAL: {
+        themeClass: "stage-theme-final",
+        icon: "🏆",
+        kicker: "النهائي",
+        title: "توقعات النهائي",
+        note: "آخر توقع، أعلى حماس، وفرصة ذهبية قبل الختام."
+    }
+};
+
+function getStageThemeMeta(stage) {
+    return STAGE_THEME_META[stage] || {
+        themeClass: "stage-theme-group",
+        icon: "⚽",
+        kicker: "مرحلة متاحة",
+        title: "المباريات المتاحة للتوقع",
+        note: "التوقع متاح حتى بداية المباراة."
+    };
+}
+
+function getStageThemeClass(stage) {
+    return getStageThemeMeta(stage).themeClass;
+}
+
+const SITE_STAGE_FLOW = [
+    "GROUP_STAGE",
+    "LAST_32",
+    "LAST_16",
+    "QUARTER_FINALS",
+    "SEMI_FINALS"
+];
+
+const SITE_STAGE_THEME_CLASSES = [
+    ...new Set(Object.values(STAGE_THEME_META).map((meta) => meta.themeClass))
+];
+
+function isMatchCompletedForSiteTheme(match) {
+    return (
+        match.status === "completed" ||
+        match.status === "FINISHED" ||
+        (match.actual_team1_goals !== null &&
+            match.actual_team1_goals !== undefined &&
+            match.actual_team2_goals !== null &&
+            match.actual_team2_goals !== undefined)
+    );
+}
+
+function areStageMatchesCompleted(matches = []) {
+    return matches.length > 0 && matches.every(isMatchCompletedForSiteTheme);
+}
+
+function getTournamentProgressStageForSiteTheme(matches = []) {
+    const matchesByStage = matches.reduce((groups, match) => {
+        const stage = getPredictionStage(match);
+
+        if (!groups[stage]) {
+            groups[stage] = [];
+        }
+
+        groups[stage].push(match);
+        return groups;
+    }, {});
+
+    for (const stage of SITE_STAGE_FLOW) {
+        const stageMatches = matchesByStage[stage] || [];
+
+        if (stageMatches.length === 0) {
+            return stage;
+        }
+
+        if (!areStageMatchesCompleted(stageMatches)) {
+            return stage;
+        }
+    }
+
+    const finalMatches = matchesByStage.FINAL || [];
+    const thirdPlaceMatches = matchesByStage.THIRD_PLACE || [];
+
+    if (finalMatches.length > 0 && !areStageMatchesCompleted(finalMatches)) {
+        return "FINAL";
+    }
+
+    if (thirdPlaceMatches.length > 0 && !areStageMatchesCompleted(thirdPlaceMatches)) {
+        return "THIRD_PLACE";
+    }
+
+    if (finalMatches.length > 0) {
+        return "FINAL";
+    }
+
+    return "SEMI_FINALS";
+}
+
+async function loadSiteStageThemeFromTournamentProgress() {
+    try {
+        const { data: matches, error } = await db
+            .from("matches")
+            .select("stage, kickoff_at, status, actual_team1_goals, actual_team2_goals")
+            .order("kickoff_at");
+
+        if (error) {
+            console.error(error);
+            applySiteStageTheme("GROUP_STAGE");
+            return;
+        }
+
+        applySiteStageTheme(getTournamentProgressStageForSiteTheme(matches || []));
+    } catch (error) {
+        console.error("Site stage theme load failed:", error);
+        applySiteStageTheme("GROUP_STAGE");
+    }
+}
+
+function applySiteStageTheme(stage = "GROUP_STAGE") {
+    const normalizedStage = stage || "GROUP_STAGE";
+    const themeClass = getStageThemeClass(normalizedStage);
+
+    document.body.classList.add("site-stage-theme");
+    document.body.classList.remove(...SITE_STAGE_THEME_CLASSES);
+    document.body.classList.add(themeClass);
+    document.body.dataset.siteStage = normalizedStage;
+}
+
+function renderAvailableStageHeader(stage, matchCount) {
+    const meta = getStageThemeMeta(stage);
+    const matchWord = matchCount === 1 ? "مباراة" : "مباريات";
+
+    return `
+        <div class="available-stage-hype">
+            <div class="available-stage-copy">
+                <span class="available-stage-kicker">${meta.icon} ${meta.kicker}</span>
+                <h4>${meta.title}</h4>
+                <p>${meta.note}</p>
+            </div>
+            <div class="available-stage-count">
+                <strong>${matchCount}</strong>
+                <span>${matchWord} متاحة الآن</span>
+            </div>
+        </div>
+    `;
+}
+
+function renderAvailableMatchCard(match, existingPrediction) {
+    const stage = getPredictionStage(match);
+    const meta = getStageThemeMeta(stage);
+    const cardClasses = [
+        "match-card",
+        "available-stage-card",
+        existingPrediction ? "match-card-predicted" : ""
+    ].filter(Boolean).join(" ");
+
+    const savedPredictionHtml = existingPrediction
+        ? `
+        <div class="saved-prediction-card">
+            <div class="saved-prediction-row">
+                <span class="saved-prediction-title">✅ بالتوفيق</span>
+                <span class="saved-score">
+                    ${existingPrediction.predicted_team1_goals} - ${existingPrediction.predicted_team2_goals}
+                </span>
+            </div>
+            <div class="saved-prediction-note">
+                تم حفظ توقعك ويمكنك تعديله حتى بداية المباراة.
+            </div>
+        </div>
+      `
+        : "";
+
+    return `
+        <div class="${cardClasses}">
+            <div class="match-stage-row">
+                <span class="match-stage-pill">${meta.icon} ${meta.kicker}</span>
+                <span class="match-stage-live">متاحة الآن</span>
+            </div>
+
+            <div class="match-title">
+                <span>${escapeHtml(match.team1)}</span>
+                <span class="vs">ضد</span>
+                <span>${escapeHtml(match.team2)}</span>
+            </div>
+
+            <p class="kickoff">
+                وقت المباراة: ${new Date(match.kickoff_at).toLocaleString("ar-SA")}
+            </p>
+
+            ${savedPredictionHtml}
+
+            <div class="score-row">
+                <input
+                    id="team1-${match.id}"
+                    type="number"
+                    min="0"
+                    placeholder="${escapeHtml(match.team1)}"
+                    value="${existingPrediction ? existingPrediction.predicted_team1_goals : ""}"
+                />
+                <input
+                    id="team2-${match.id}"
+                    type="number"
+                    min="0"
+                    placeholder="${escapeHtml(match.team2)}"
+                    value="${existingPrediction ? existingPrediction.predicted_team2_goals : ""}"
+                />
+            </div>
+
+            <button onclick="savePrediction('${match.id}')">
+                ${existingPrediction ? "تحديث التوقع" : "حفظ التوقع"}
+            </button>
+        </div>
+    `;
+}
+
+function getPredictionStage(match) {
+    return match.stage || "GROUP_STAGE";
+}
+
+function isKnockoutStage(stage) {
+    return Boolean(stage && stage !== "GROUP_STAGE");
+}
+
+function getPredictionStageMeta(stage) {
+    return PREDICTION_STAGE_SECTIONS.find((section) => section.stage === stage) || {
+        stage,
+        title: "توقعات أخرى",
+        knockout: stage !== "GROUP_STAGE"
+    };
+}
+
+function groupMatchesByStage(matches) {
+    return matches.reduce((groups, match) => {
+        const stage = getPredictionStage(match);
+
+        if (!groups[stage]) {
+            groups[stage] = [];
+        }
+
+        groups[stage].push(match);
+        return groups;
+    }, {});
+}
+
+function renderPredictionTable(matches, options = {}) {
+    const predictionHeader = options.predictionHeader || "توقعك";
+    const pointsFormatter = options.pointsFormatter || ((points, match) => formatPointPill(points, match));
+
+    return `
+        <table class="table predictions-table predictions-table-v36">
+            <thead>
+                <tr>
+                    <th>المباراة</th>
+                    <th>${predictionHeader}</th>
+                    <th>الفعلي</th>
+                    <th>النقاط</th>
+                </tr>
+            </thead>
+            <tbody>
+                ${matches.map((match) => renderPredictionRow(match, pointsFormatter)).join("")}
+            </tbody>
+        </table>
+    `;
+}
+
+function renderPredictionRow(match, pointsFormatter) {
+    const prediction = match.predictions[0];
+    const livePoints = calculateLivePredictionPoints(prediction, match);
+    const rowClass = getPredictionRowClass(livePoints, match);
+    const stage = getPredictionStage(match);
+    const shouldHighlightWinner = isKnockoutStage(stage) && hasActualScore(match);
+
+    return `
+        <tr class="${rowClass}">
+            <td class="match-name-cell">${formatMatchCell(match.team1, match.team2)}</td>
+            <td>
+                ${formatTeamScore(
+        match.team1,
+        prediction.predicted_team1_goals,
+        match.team2,
+        prediction.predicted_team2_goals
+    )}
+            </td>
+            <td>
+                ${hasActualScore(match)
+            ? formatTeamScore(
+                match.team1,
+                match.actual_team1_goals,
+                match.team2,
+                match.actual_team2_goals,
+                {
+                    highlightWinner: shouldHighlightWinner,
+                    winnerSide: match.winner_side
+                }
+            )
+            : `<span class="pending-score">لم تبدأ</span>`
+        }
+            </td>
+            <td>${pointsFormatter(livePoints, match)}</td>
+        </tr>
+    `;
+}
+
+function renderPredictionStageSections(matches, options = {}) {
+    const groups = groupMatchesByStage(matches);
+    const knockoutSections = [];
+    let groupSection = "";
+
+    PREDICTION_STAGE_SECTIONS.forEach((section) => {
+        const sectionMatches = groups[section.stage];
+
+        if (!sectionMatches || sectionMatches.length === 0) return;
+
+        const sectionHtml = `
+            <section class="predictions-stage-section predictions-stage-${section.stage.toLowerCase()}">
+                <h4 class="predictions-stage-title">${section.title}</h4>
+                ${renderPredictionTable(sectionMatches, options)}
+            </section>
+        `;
+
+        if (section.knockout) {
+            knockoutSections.push(sectionHtml);
+        } else {
+            groupSection = sectionHtml;
+        }
+    });
+
+    return `
+        <div class="predictions-stage-groups">
+            ${knockoutSections.length > 0 ? `
+                <div class="predictions-stage-splitter">توقعات الأدوار الإقصائية</div>
+                ${knockoutSections.join("")}
+            ` : ""}
+            ${groupSection}
         </div>
     `;
 }
@@ -799,6 +1167,9 @@ async function loadMyPredictions() {
             team2,
             kickoff_at,
             status,
+            stage,
+            score_duration,
+            winner_side,
             actual_team1_goals,
             actual_team2_goals,
             predictions!inner (
@@ -864,49 +1235,7 @@ async function loadMyPredictions() {
       </div>
     </div>
 
-    <table class="table predictions-table predictions-table-v36">
-      <thead>
-        <tr>
-          <th>المباراة</th>
-          <th>توقعك</th>
-          <th>الفعلي</th>
-          <th>النقاط</th>
-        </tr>
-      </thead>
-      <tbody>
-        ${sortedMatches.map((match) => {
-        const prediction = match.predictions[0];
-        const livePoints = calculateLivePredictionPoints(prediction, match);
-        const rowClass = getPredictionRowClass(livePoints, match);
-
-        return `
-              <tr class="${rowClass}">
-                <td class="match-name-cell">${formatMatchCell(match.team1, match.team2)}</td>
-                <td>
-                    ${formatTeamScore(
-            match.team1,
-            prediction.predicted_team1_goals,
-            match.team2,
-            prediction.predicted_team2_goals
-        )}
-                </td>
-                <td>
-                    ${hasActualScore(match)
-                ? formatTeamScore(
-                    match.team1,
-                    match.actual_team1_goals,
-                    match.team2,
-                    match.actual_team2_goals
-                )
-                : `<span class="pending-score">لم تبدأ</span>`
-            }
-                </td>
-                <td>${formatPointPill(livePoints, match)}</td>
-              </tr>
-            `;
-    }).join("")}
-      </tbody>
-    </table>
+    ${renderPredictionStageSections(sortedMatches)}
   `;
 }
 
@@ -922,6 +1251,9 @@ async function loadAdminParticipantPredictions(participantId) {
             team2,
             kickoff_at,
             status,
+            stage,
+            score_duration,
+            winner_side,
             actual_team1_goals,
             actual_team2_goals,
             predictions!inner (
@@ -949,50 +1281,10 @@ async function loadAdminParticipantPredictions(participantId) {
     });
 
     adminParticipantPredictions.innerHTML = `
-        <h4>توقعات ${selectedName}</h4>
-
-        <table class="table predictions-table">
-            <thead>
-                <tr>
-                    <th>المباراة</th>
-                    <th>التوقع</th>
-                    <th>الفعلي</th>
-                    <th>النقاط</th>
-                </tr>
-            </thead>
-            <tbody>
-                ${sortedMatches.map((match) => {
-        const prediction = match.predictions[0];
-        const livePoints = calculateLivePredictionPoints(prediction, match);
-
-        return `
-                        <tr>
-                            <td class="match-name-cell">${formatMatchCell(match.team1, match.team2)}</td>
-                            <td>
-                                ${formatTeamScore(
-            match.team1,
-            prediction.predicted_team1_goals,
-            match.team2,
-            prediction.predicted_team2_goals
-        )}
-                            </td>
-                            <td>
-                                ${hasActualScore(match)
-                ? formatTeamScore(
-                    match.team1,
-                    match.actual_team1_goals,
-                    match.team2,
-                    match.actual_team2_goals
-                )
-                : "-"
-            }
-                            </td>
-                            <td>${livePoints}</td>
-                        </tr>
-                    `;
-    }).join("")}
-            </tbody>
-        </table>
+        <h4>توقعات ${escapeHtml(selectedName)}</h4>
+        ${renderPredictionStageSections(sortedMatches, {
+        predictionHeader: "التوقع"
+    })}
     `;
 }
 
@@ -1222,12 +1514,20 @@ saveResultBtn.addEventListener("click", async () => {
         return;
     }
 
+    const manualWinnerSide = team1Goals > team2Goals
+        ? "HOME_TEAM"
+        : team2Goals > team1Goals
+            ? "AWAY_TEAM"
+            : "DRAW";
+
     const { error } = await db
         .from("matches")
         .update({
             actual_team1_goals: team1Goals,
             actual_team2_goals: team2Goals,
             status: "completed",
+            score_duration: "REGULAR",
+            winner_side: manualWinnerSide,
         })
         .eq("id", matchId);
 

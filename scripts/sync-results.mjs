@@ -85,7 +85,12 @@ function toArabicTeamName(name) {
 
 function mapStatus(apiStatus) {
     if (apiStatus === "FINISHED") return "completed";
-    if (apiStatus === "IN_PLAY" || apiStatus === "PAUSED") return "live";
+    if (
+        apiStatus === "IN_PLAY" ||
+        apiStatus === "PAUSED" ||
+        apiStatus === "EXTRA_TIME" ||
+        apiStatus === "PENALTY_SHOOTOUT"
+    ) return "live";
     return "scheduled";
 }
 
@@ -167,9 +172,52 @@ async function fetchFootballMatches(apiUrl) {
     return data.matches;
 }
 
+function getScorePart(scorePart) {
+    return {
+        home: Number.isInteger(scorePart?.home) ? scorePart.home : null,
+        away: Number.isInteger(scorePart?.away) ? scorePart.away : null
+    };
+}
+
+function addScoreParts(first, second) {
+    const hasAnyScore =
+        Number.isInteger(first.home) ||
+        Number.isInteger(first.away) ||
+        Number.isInteger(second.home) ||
+        Number.isInteger(second.away);
+
+    if (!hasAnyScore) {
+        return { home: null, away: null };
+    }
+
+    return {
+        home: (Number.isInteger(first.home) ? first.home : 0) +
+            (Number.isInteger(second.home) ? second.home : 0),
+        away: (Number.isInteger(first.away) ? first.away : 0) +
+            (Number.isInteger(second.away) ? second.away : 0)
+    };
+}
+
+function getScoringResultForPredictions(apiMatch) {
+    const score = apiMatch.score || {};
+    const duration = score.duration || "REGULAR";
+    const fullTime = getScorePart(score.fullTime);
+
+    if (duration === "EXTRA_TIME" || duration === "PENALTY_SHOOTOUT") {
+        const regularTime = getScorePart(score.regularTime);
+        const extraTime = getScorePart(score.extraTime);
+        const footballScore = addScoreParts(regularTime, extraTime);
+
+        if (Number.isInteger(footballScore.home) && Number.isInteger(footballScore.away)) {
+            return footballScore;
+        }
+    }
+
+    return fullTime;
+}
+
 function normalizeMatch(apiMatch) {
-    const actualHome = apiMatch.score?.fullTime?.home;
-    const actualAway = apiMatch.score?.fullTime?.away;
+    const scoringResult = getScoringResultForPredictions(apiMatch);
 
     return {
         external_id: String(apiMatch.id),
@@ -177,8 +225,11 @@ function normalizeMatch(apiMatch) {
         team2: toArabicTeamName(apiMatch.awayTeam?.name),
         kickoff_at: apiMatch.utcDate,
         status: mapStatus(apiMatch.status),
-        actual_team1_goals: Number.isInteger(actualHome) ? actualHome : null,
-        actual_team2_goals: Number.isInteger(actualAway) ? actualAway : null,
+        stage: apiMatch.stage || "GROUP_STAGE",
+        score_duration: apiMatch.score?.duration || "REGULAR",
+        winner_side: apiMatch.score?.winner || null,
+        actual_team1_goals: Number.isInteger(scoringResult.home) ? scoringResult.home : null,
+        actual_team2_goals: Number.isInteger(scoringResult.away) ? scoringResult.away : null,
         competition: "FIFA World Cup 2026",
         last_synced_at: new Date().toISOString()
     };
