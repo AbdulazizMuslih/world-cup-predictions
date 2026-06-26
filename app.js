@@ -37,7 +37,7 @@ let tabHistory = [];
 let allowLeavingPage = false;
 let dashboardRefreshTimer = null;
 
-const APP_VERSION = "37";
+const APP_VERSION = "38";
 let updateCheckTimer = null;
 
 document.addEventListener("DOMContentLoaded", init);
@@ -548,8 +548,8 @@ async function loadAvailableMatches() {
         return `
             ${renderAvailableStageHeader(section.stage, stageMatches.length)}
             ${stageMatches.map((match) => {
-                return renderAvailableMatchCard(match, predictionMap.get(match.id));
-            }).join("")}
+            return renderAvailableMatchCard(match, predictionMap.get(match.id));
+        }).join("")}
         `;
     }).join("");
 }
@@ -1288,94 +1288,104 @@ async function loadAdminParticipantPredictions(participantId) {
     `;
 }
 
-async function loadLeaderboard() {
-    const { data, error } = await db
-        .from("participants")
-        .select(`
-            id,
-            name,
-            sort_order,
-            predictions(
-                predicted_team1_goals,
-                predicted_team2_goals,
-                points,
-                matches(
-                    kickoff_at,
-                    actual_team1_goals,
-                    actual_team2_goals
-                )
-            )
-        `)
-        .eq("active", true);
+const LEADERBOARD_STAGE_PRIORITY = [
+    "FINAL",
+    "THIRD_PLACE",
+    "SEMI_FINALS",
+    "QUARTER_FINALS",
+    "LAST_16",
+    "LAST_32",
+    "GROUP_STAGE"
+];
 
-    if (error) {
-        console.error(error);
+const LEADERBOARD_STAGE_LABELS = {
+    FINAL: "النهائي",
+    THIRD_PLACE: "المركز الثالث",
+    SEMI_FINALS: "نصف النهائي",
+    QUARTER_FINALS: "ربع النهائي",
+    LAST_16: "دور الـ16",
+    LAST_32: "دور الـ32",
+    GROUP_STAGE: "دور المجموعات"
+};
+
+const MISSING_PREDICTION_TOTAL_GOAL_ERROR = 99;
+const MISSING_PREDICTION_GOAL_DIFFERENCE_ERROR = 99;
+
+const TIE_BREAKER_RULES = {
+    2: {
+        title: "قاعدة ٢: عدد نتائج بالملّي",
+        description: "عند تساوي النقاط، يتقدم من لديه عدد أكبر من توقعات 50."
+    },
+    3: {
+        title: "قاعدة ٣: أطول سلسلة صحيحة",
+        description: "تحتسب كل توقعات 50 و10 كسلسلة صحيحة، وأي 0 يقطع السلسلة."
+    },
+    4: {
+        title: "قاعدة ٤: أقل خطأ في مجموع الأهداف",
+        description: "نحسب مدى قرب توقع أهداف الفريقين من النتيجة الفعلية. الأقل خطأ يتقدم."
+    },
+    5: {
+        title: "قاعدة ٥: أقل خطأ في فارق الأهداف",
+        description: "نقارن مدى قرب توقع هامش الفوز أو التعادل من الواقع. الأقل خطأ يتقدم."
+    },
+    6: {
+        title: "قاعدة ٦: الأفضل في المراحل المتأخرة",
+        description: "نقارن نقاط النهائي ثم المركز الثالث ثم نصف النهائي ثم ربع النهائي ثم دور الـ16 ثم دور الـ32 ثم المجموعات."
+    },
+    7: {
+        title: "قاعدة ٧: الأسبق للوصول للنقاط الحالية",
+        description: "إذا استمر التعادل، يتقدم من وصل إلى نفس مجموع النقاط أولاً."
+    },
+    8: {
+        title: "قاعدة ٨: الاسم",
+        description: "تستخدم فقط كحل أخير إذا تساوت كل قواعد كسر التعادل."
+    }
+};
+
+async function loadLeaderboard() {
+    const [participantsResult, matchesResult] = await Promise.all([
+        db
+            .from("participants")
+            .select(`
+                id,
+                name,
+                predictions(
+                    match_id,
+                    predicted_team1_goals,
+                    predicted_team2_goals,
+                    points
+                )
+            `)
+            .eq("active", true),
+        db
+            .from("matches")
+            .select(`
+                id,
+                kickoff_at,
+                stage,
+                actual_team1_goals,
+                actual_team2_goals
+            `)
+            .not("actual_team1_goals", "is", null)
+            .not("actual_team2_goals", "is", null)
+            .order("kickoff_at", { ascending: true })
+    ]);
+
+    if (participantsResult.error || matchesResult.error) {
+        console.error(participantsResult.error || matchesResult.error);
         leaderboard.innerHTML = `<p>تعذر تحميل الترتيب.</p>`;
         return;
     }
 
-    const rows = data
-        .map((participant) => {
-            const predictions = participant.predictions || [];
-            const completedPredictions = predictions
-                .map((prediction) => {
-                    const match = prediction.matches;
+    const completedMatches = (matchesResult.data || [])
+        .filter(hasActualScore)
+        .sort((a, b) => new Date(a.kickoff_at).getTime() - new Date(b.kickoff_at).getTime());
 
-                    if (
-                        !match ||
-                        match.actual_team1_goals === null ||
-                        match.actual_team1_goals === undefined ||
-                        match.actual_team2_goals === null ||
-                        match.actual_team2_goals === undefined
-                    ) {
-                        return null;
-                    }
-
-                    const points = calculatePoints(
-                        prediction.predicted_team1_goals,
-                        prediction.predicted_team2_goals,
-                        match.actual_team1_goals,
-                        match.actual_team2_goals
-                    );
-
-                    return {
-                        points,
-                        kickoffTime: new Date(match.kickoff_at).getTime(),
-                        isExactScore: points === 50,
-                        isCorrectWinner: points === 10,
-                        isWinningPrediction: points > 0,
-                    };
-                })
-                .filter(Boolean)
-                .sort((a, b) => a.kickoffTime - b.kickoffTime);
-
-            const totalPoints = completedPredictions.reduce((sum, prediction) => {
-                return sum + prediction.points;
-            }, 0);
-
-            const exactScoreCount = completedPredictions.filter((prediction) => {
-                return prediction.isExactScore;
-            }).length;
-
-            const correctWinnerCount = completedPredictions.filter((prediction) => {
-                return prediction.isCorrectWinner;
-            }).length;
-
-            const bestCorrectStreak = getBestCorrectPredictionStreak(completedPredictions);
-
-            return {
-                id: participant.id,
-                name: participant.name,
-                sortOrder: Number.isFinite(Number(participant.sort_order)) ? Number(participant.sort_order) : 9999,
-                points: totalPoints,
-                predictionCount: predictions.length,
-                completedPredictionCount: completedPredictions.length,
-                exactScoreCount,
-                correctWinnerCount,
-                bestCorrectStreak,
-            };
-        })
+    const rows = (participantsResult.data || [])
+        .map((participant) => buildLeaderboardRow(participant, completedMatches))
         .sort(compareLeaderboardRows);
+
+    applyTieBreakerMarkers(rows);
 
     const leader = rows[0];
     const second = rows[1];
@@ -1389,7 +1399,7 @@ async function loadLeaderboard() {
     ].filter(Boolean);
 
     leaderboard.innerHTML = `
-    <div class="leaderboard-stage leaderboard-stage-v36-lite">
+    <div class="leaderboard-stage leaderboard-stage-v38-tiebreaks">
       ${leader ? `
         <div class="leaderboard-story-card leaderboard-story-hype">
           <div class="leaderboard-story-visual" aria-hidden="true">
@@ -1415,14 +1425,14 @@ async function loadLeaderboard() {
             <div class="podium-card podium-rank-${item.rank}">
               <span class="podium-medal">${item.icon}</span>
               <span class="podium-name">${escapeHtml(item.row.name)}</span>
-              <span class="podium-points">${item.row.points}</span>
+              <span class="podium-points">${formatLeaderboardPointsDisplay(item.row, "podium")}</span>
               <span class="podium-label">نقطة</span>
             </div>
           `).join("")}
         </div>
       ` : ""}
 
-      <table class="table leaderboard-table leaderboard-table-v36-lite">
+      <table class="table leaderboard-table leaderboard-table-v38-tiebreaks">
         <thead>
           <tr>
             <th>المركز</th>
@@ -1435,7 +1445,7 @@ async function loadLeaderboard() {
             <tr class="leaderboard-row leaderboard-rank-${index + 1}">
               <td><span class="rank-badge">${index + 1}</span></td>
               <td class="leaderboard-name">${escapeHtml(row.name)}</td>
-              <td class="leaderboard-points">${row.points}</td>
+              <td class="leaderboard-points">${formatLeaderboardPointsDisplay(row, "table")}</td>
             </tr>
           `).join("")}
         </tbody>
@@ -1444,18 +1454,149 @@ async function loadLeaderboard() {
   `;
 }
 
+function buildLeaderboardRow(participant, completedMatches) {
+    const predictions = participant.predictions || [];
+    const predictionMap = new Map();
+
+    predictions.forEach((prediction) => {
+        if (prediction.match_id) {
+            predictionMap.set(prediction.match_id, prediction);
+        }
+    });
+
+    const completedPredictions = completedMatches.map((match) => {
+        const prediction = predictionMap.get(match.id);
+        const kickoffTime = new Date(match.kickoff_at).getTime();
+        const stage = getPredictionStage(match);
+
+        if (!prediction) {
+            return {
+                points: 0,
+                kickoffTime,
+                stage,
+                totalGoalError: MISSING_PREDICTION_TOTAL_GOAL_ERROR,
+                goalDifferenceError: MISSING_PREDICTION_GOAL_DIFFERENCE_ERROR,
+                isExactScore: false,
+                isWinningPrediction: false,
+                missingPrediction: true,
+            };
+        }
+
+        const points = calculatePoints(
+            prediction.predicted_team1_goals,
+            prediction.predicted_team2_goals,
+            match.actual_team1_goals,
+            match.actual_team2_goals
+        );
+
+        return {
+            points,
+            kickoffTime,
+            stage,
+            totalGoalError: calculateTotalGoalError(prediction, match),
+            goalDifferenceError: calculateGoalDifferenceError(prediction, match),
+            isExactScore: points === 50,
+            isWinningPrediction: points > 0,
+            missingPrediction: false,
+        };
+    });
+
+    const totalPoints = completedPredictions.reduce((sum, prediction) => sum + prediction.points, 0);
+    const exactScoreCount = completedPredictions.filter((prediction) => prediction.isExactScore).length;
+    const bestCorrectStreak = getBestScoringPredictionStreak(completedPredictions);
+    const totalGoalError = completedPredictions.reduce((sum, prediction) => sum + prediction.totalGoalError, 0);
+    const goalDifferenceError = completedPredictions.reduce((sum, prediction) => sum + prediction.goalDifferenceError, 0);
+    const laterStagePoints = getLaterStagePoints(completedPredictions);
+    const scoreReachedTime = getScoreReachedTime(completedPredictions, totalPoints);
+
+    return {
+        id: participant.id,
+        name: participant.name,
+        points: totalPoints,
+        predictionCount: predictions.length,
+        completedPredictionCount: completedPredictions.filter((prediction) => !prediction.missingPrediction).length,
+        exactScoreCount,
+        bestCorrectStreak,
+        totalGoalError,
+        goalDifferenceError,
+        laterStagePoints,
+        scoreReachedTime,
+        tieBreakerRuleNumber: null,
+    };
+}
+
+function calculateTotalGoalError(prediction, match) {
+    return (
+        Math.abs(Number(prediction.predicted_team1_goals) - Number(match.actual_team1_goals)) +
+        Math.abs(Number(prediction.predicted_team2_goals) - Number(match.actual_team2_goals))
+    );
+}
+
+function calculateGoalDifferenceError(prediction, match) {
+    const predictedDifference = Number(prediction.predicted_team1_goals) - Number(prediction.predicted_team2_goals);
+    const actualDifference = Number(match.actual_team1_goals) - Number(match.actual_team2_goals);
+
+    return Math.abs(predictedDifference - actualDifference);
+}
+
+function getLaterStagePoints(completedPredictions) {
+    const stagePoints = LEADERBOARD_STAGE_PRIORITY.reduce((acc, stage) => {
+        acc[stage] = 0;
+        return acc;
+    }, {});
+
+    completedPredictions.forEach((prediction) => {
+        const stage = prediction.stage || "GROUP_STAGE";
+        stagePoints[stage] = (stagePoints[stage] || 0) + prediction.points;
+    });
+
+    return stagePoints;
+}
+
+function getScoreReachedTime(completedPredictions, totalPoints) {
+    if (totalPoints <= 0) {
+        return Number.POSITIVE_INFINITY;
+    }
+
+    let runningPoints = 0;
+
+    for (const prediction of completedPredictions) {
+        runningPoints += prediction.points;
+
+        if (runningPoints >= totalPoints) {
+            return prediction.kickoffTime;
+        }
+    }
+
+    return Number.POSITIVE_INFINITY;
+}
+
 function compareLeaderboardRows(a, b) {
     return (
         b.points - a.points ||
         b.exactScoreCount - a.exactScoreCount ||
         b.bestCorrectStreak - a.bestCorrectStreak ||
-        b.correctWinnerCount - a.correctWinnerCount ||
-        a.sortOrder - b.sortOrder ||
+        a.totalGoalError - b.totalGoalError ||
+        a.goalDifferenceError - b.goalDifferenceError ||
+        compareLaterStagePoints(a, b) ||
+        a.scoreReachedTime - b.scoreReachedTime ||
         a.name.localeCompare(b.name, "ar")
     );
 }
 
-function getBestCorrectPredictionStreak(completedPredictions) {
+function compareLaterStagePoints(a, b) {
+    for (const stage of LEADERBOARD_STAGE_PRIORITY) {
+        const difference = (b.laterStagePoints[stage] || 0) - (a.laterStagePoints[stage] || 0);
+
+        if (difference !== 0) {
+            return difference;
+        }
+    }
+
+    return 0;
+}
+
+function getBestScoringPredictionStreak(completedPredictions) {
     let currentStreak = 0;
     let bestStreak = 0;
 
@@ -1471,6 +1612,155 @@ function getBestCorrectPredictionStreak(completedPredictions) {
 
     return bestStreak;
 }
+
+function applyTieBreakerMarkers(rows) {
+    const rowsByPoints = rows.reduce((groups, row) => {
+        if (!groups[row.points]) {
+            groups[row.points] = [];
+        }
+
+        groups[row.points].push(row);
+        return groups;
+    }, {});
+
+    Object.values(rowsByPoints).forEach((tiedRows) => {
+        if (tiedRows.length < 2) return;
+
+        const ruleNumber = getFirstTieBreakerRuleForGroup(tiedRows);
+
+        tiedRows.forEach((row) => {
+            row.tieBreakerRuleNumber = ruleNumber;
+        });
+    });
+}
+
+function getFirstTieBreakerRuleForGroup(rows) {
+    if (hasDifferentValues(rows, "exactScoreCount")) return 2;
+    if (hasDifferentValues(rows, "bestCorrectStreak")) return 3;
+    if (hasDifferentValues(rows, "totalGoalError")) return 4;
+    if (hasDifferentValues(rows, "goalDifferenceError")) return 5;
+    if (hasDifferentLaterStagePoints(rows)) return 6;
+    if (hasDifferentValues(rows, "scoreReachedTime")) return 7;
+    return 8;
+}
+
+function hasDifferentValues(rows, fieldName) {
+    const firstValue = rows[0][fieldName];
+
+    return rows.some((row) => row[fieldName] !== firstValue);
+}
+
+function hasDifferentLaterStagePoints(rows) {
+    const firstSignature = getLaterStagePointsSignature(rows[0]);
+
+    return rows.some((row) => getLaterStagePointsSignature(row) !== firstSignature);
+}
+
+function getLaterStagePointsSignature(row) {
+    return LEADERBOARD_STAGE_PRIORITY
+        .map((stage) => row.laterStagePoints[stage] || 0)
+        .join("|");
+}
+
+function formatLeaderboardPointsDisplay(row, context = "table") {
+    const popupId = `tie-rule-popover-${row.id}-${context}`;
+
+    return `
+        <span class="leaderboard-points-wrap leaderboard-points-wrap-${context}">
+            <span class="leaderboard-points-number">${row.points}</span>
+            ${formatTieBreakerBadge(row, popupId)}
+        </span>
+    `;
+}
+
+function formatTieBreakerBadge(row, popupId) {
+    if (!row.tieBreakerRuleNumber) return "";
+
+    const ruleNumber = row.tieBreakerRuleNumber;
+    const rule = TIE_BREAKER_RULES[ruleNumber] || TIE_BREAKER_RULES[8];
+
+    return `
+        <span class="tie-rule-anchor">
+           <button
+    type="button"
+    class="tie-rule-badge"
+    data-tie-popup-id="${escapeHtml(popupId)}"
+    onclick="toggleTieRulePopup(event, this.dataset.tiePopupId)"
+    aria-label="معلومة عن سبب كسر التعادل"
+    title="سبب كسر التعادل"
+>ℹ</button>
+            <span id="${escapeHtml(popupId)}" class="tie-rule-popover hidden" role="status">
+                <strong>${escapeHtml(rule.title)}</strong>
+                <span>${escapeHtml(rule.description)}</span>
+                <em>${escapeHtml(formatTieBreakerValue(row, ruleNumber))}</em>
+            </span>
+        </span>
+    `;
+}
+
+function formatTieBreakerValue(row, ruleNumber) {
+    if (ruleNumber === 2) {
+        return `هذا المشارك لديه ${row.exactScoreCount} نتيجة بالملّي.`;
+    }
+
+    if (ruleNumber === 3) {
+        return `أطول سلسلة صحيحة لهذا المشارك: ${row.bestCorrectStreak}.`;
+    }
+
+    if (ruleNumber === 4) {
+        return `إجمالي خطأ الأهداف: ${row.totalGoalError}.`;
+    }
+
+    if (ruleNumber === 5) {
+        return `إجمالي خطأ فارق الأهداف: ${row.goalDifferenceError}.`;
+    }
+
+    if (ruleNumber === 6) {
+        return formatLaterStagePointsValue(row);
+    }
+
+    if (ruleNumber === 7) {
+        return Number.isFinite(row.scoreReachedTime)
+            ? `وصل إلى نقاطه الحالية في ${new Date(row.scoreReachedTime).toLocaleString("ar-SA")}.`
+            : "لم تسجل نقطة حاسمة بعد.";
+    }
+
+    return "تم استخدام الاسم كحل أخير ونادر جداً.";
+}
+
+function formatLaterStagePointsValue(row) {
+    const nonZeroStages = LEADERBOARD_STAGE_PRIORITY
+        .filter((stage) => (row.laterStagePoints[stage] || 0) > 0)
+        .map((stage) => `${LEADERBOARD_STAGE_LABELS[stage]}: ${row.laterStagePoints[stage]}`);
+
+    if (nonZeroStages.length === 0) {
+        return "لا توجد نقاط في المراحل المتأخرة لهذا المشارك.";
+    }
+
+    return nonZeroStages.join("، ");
+}
+
+function closeTieRulePopups(exceptPopupId = null) {
+    document.querySelectorAll(".tie-rule-popover").forEach((popup) => {
+        if (exceptPopupId && popup.id === exceptPopupId) return;
+        popup.classList.add("hidden");
+    });
+}
+
+function toggleTieRulePopup(event, popupId) {
+    event.stopPropagation();
+
+    const popup = document.getElementById(popupId);
+    if (!popup) return;
+
+    const shouldOpen = popup.classList.contains("hidden");
+    closeTieRulePopups(popupId);
+    popup.classList.toggle("hidden", !shouldOpen);
+}
+
+document.addEventListener("click", () => {
+    closeTieRulePopups();
+});
 
 const adminPassword = document.getElementById("adminPassword");
 const adminMatchSelect = document.getElementById("adminMatchSelect");

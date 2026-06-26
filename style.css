@@ -2699,6 +2699,7 @@ body::before {
    =============================== */
 
 @media (max-width: 700px) {
+
   #myPredictions .predictions-table,
   #adminParticipantPredictions .predictions-table {
     table-layout: fixed !important;
@@ -2801,6 +2802,7 @@ body::before {
    =============================== */
 
 @media (max-width: 700px) {
+
   #myPredictions .predictions-table,
   #adminParticipantPredictions .predictions-table {
     table-layout: fixed !important;
@@ -2933,10 +2935,10 @@ body::before {
   border-radius: 28px;
   text-align: center;
   background:
-    linear-gradient(145deg, rgba(255,255,255,.16), rgba(255,255,255,.07)),
+    linear-gradient(145deg, rgba(255, 255, 255, .16), rgba(255, 255, 255, .07)),
     rgba(12, 18, 38, .92);
   border: 1px solid rgba(241, 216, 154, .35);
-  box-shadow: 0 28px 80px rgba(0,0,0,.45);
+  box-shadow: 0 28px 80px rgba(0, 0, 0, .45);
   color: #f7f1e3;
 }
 
@@ -2972,13 +2974,11 @@ body::before {
     padding: 26px 16px 42px !important;
     align-items: flex-start !important;
     background:
-      linear-gradient(
-        180deg,
+      linear-gradient(180deg,
         rgba(5, 8, 23, 0.06) 0%,
         rgba(5, 8, 23, 0.16) 32%,
         rgba(5, 8, 23, 0.76) 56%,
-        rgba(5, 8, 23, 0.96) 100%
-      ),
+        rgba(5, 8, 23, 0.96) 100%),
       url("assets/world-cup-hero-v24.jpg") top center / 100% auto no-repeat,
       radial-gradient(circle at 50% 8%, rgba(241, 216, 154, 0.16), transparent 28%),
       linear-gradient(135deg, var(--wc-bg-1), var(--wc-bg-2) 52%, var(--wc-bg-3)) !important;
@@ -3561,7 +3561,7 @@ button {
   text-align: center;
 }
 
-.dashboard.admin-dashboard .dashboard-top > div {
+.dashboard.admin-dashboard .dashboard-top>div {
   min-width: 0;
 }
 
@@ -3660,7 +3660,8 @@ button {
   #participantSearchInput,
   #pinInput {
     min-height: 46px !important;
-    font-size: 16px !important; /* prevents mobile browser zoom */
+    font-size: 16px !important;
+    /* prevents mobile browser zoom */
   }
 
   .participant-list {
@@ -3832,6 +3833,7 @@ button {
 }
 
 @media (max-width: 480px) {
+
   .leaderboard-table th,
   .leaderboard-table td {
     padding-inline: 8px !important;
@@ -4349,14 +4351,14 @@ button {
     radial-gradient(circle at 90% 15%, rgba(241, 216, 154, .18), transparent 28%),
     linear-gradient(135deg, rgba(5, 8, 23, .62), rgba(255, 255, 255, .065));
   border: 1px solid rgba(241, 216, 154, .18);
-  box-shadow: 0 16px 36px rgba(0, 0, 0, .18), inset 0 1px 0 rgba(255,255,255,.06);
+  box-shadow: 0 16px 36px rgba(0, 0, 0, .18), inset 0 1px 0 rgba(255, 255, 255, .06);
 }
 
 .prediction-summary-title h4 {
   margin: 0;
   color: #fff7d7;
   font-size: clamp(22px, 3vw, 30px);
-  text-shadow: 0 8px 24px rgba(0,0,0,.28);
+  text-shadow: 0 8px 24px rgba(0, 0, 0, .28);
 }
 
 .prediction-summary-grid {
@@ -4410,7 +4412,7 @@ button {
   font-size: 19px;
   font-weight: 1000;
   line-height: 1;
-  box-shadow: inset 0 1px 0 rgba(255,255,255,.32);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .32);
 }
 
 .points-pill small {
@@ -4422,12 +4424,12 @@ button {
 
 .points-pill-exact {
   background: linear-gradient(135deg, #fff7c8, #f59e0b);
-  box-shadow: 0 0 26px rgba(245, 158, 11, .26), inset 0 1px 0 rgba(255,255,255,.42);
+  box-shadow: 0 0 26px rgba(245, 158, 11, .26), inset 0 1px 0 rgba(255, 255, 255, .42);
 }
 
 .points-pill-correct {
   background: linear-gradient(135deg, #bfdbfe, #38bdf8 45%, #34d6bd);
-  box-shadow: 0 0 24px rgba(56, 189, 248, .22), inset 0 1px 0 rgba(255,255,255,.40);
+  box-shadow: 0 0 24px rgba(56, 189, 248, .22), inset 0 1px 0 rgba(255, 255, 255, .40);
 }
 
 .points-pill-zero,
@@ -4466,7 +4468,7 @@ button {
     radial-gradient(circle at 95% 18%, rgba(52, 214, 189, .20), transparent 30%),
     linear-gradient(135deg, rgba(125, 23, 56, .72), rgba(9, 14, 36, .74) 42%, rgba(202, 164, 93, .30));
   border: 1px solid rgba(241, 216, 154, .30);
-  box-shadow: 0 22px 56px rgba(0, 0, 0, .28), inset 0 1px 0 rgba(255,255,255,.10);
+  box-shadow: 0 22px 56px rgba(0, 0, 0, .28), inset 0 1px 0 rgba(255, 255, 255, .10);
 }
 
 .leaderboard-story-hype::before {
@@ -4481,7 +4483,7 @@ button {
   mix-blend-mode: screen;
 }
 
-.leaderboard-story-hype > * {
+.leaderboard-story-hype>* {
   position: relative;
   z-index: 1;
 }
@@ -4494,7 +4496,7 @@ button {
   border-radius: 22px;
   background: rgba(5, 8, 23, .40);
   border: 1px solid rgba(241, 216, 154, .18);
-  box-shadow: inset 0 1px 0 rgba(255,255,255,.08);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .08);
   overflow: hidden;
 }
 
@@ -4504,7 +4506,7 @@ button {
   height: 100%;
   max-height: 116px;
   object-fit: contain;
-  filter: saturate(1.09) contrast(1.04) drop-shadow(0 12px 24px rgba(0,0,0,.28));
+  filter: saturate(1.09) contrast(1.04) drop-shadow(0 12px 24px rgba(0, 0, 0, .28));
 }
 
 .leaderboard-story-copy .eyebrow {
@@ -4540,10 +4542,10 @@ button {
   padding: 10px;
   border-radius: 20px;
   background:
-    radial-gradient(circle at 50% 0%, rgba(255,255,255,.14), transparent 38%),
+    radial-gradient(circle at 50% 0%, rgba(255, 255, 255, .14), transparent 38%),
     rgba(5, 8, 23, .48);
   border: 1px solid rgba(241, 216, 154, .17);
-  box-shadow: inset 0 1px 0 rgba(255,255,255,.07);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .07);
 }
 
 .story-metrics strong {
@@ -4981,7 +4983,7 @@ button {
     border-radius: 18px !important;
   }
 
-  .dashboard-top > div {
+  .dashboard-top>div {
     display: flex !important;
     align-items: baseline !important;
     gap: 6px !important;
@@ -5120,7 +5122,7 @@ button {
   mix-blend-mode: screen;
 }
 
-.available-stage-hype > * {
+.available-stage-hype>* {
   position: relative;
   z-index: 1;
 }
@@ -5352,7 +5354,7 @@ body.site-stage-theme .hero h1::after {
 
 body.site-stage-theme .eyebrow,
 body.site-stage-theme .table th,
-body.site-stage-theme #leaderboardTab > h3,
+body.site-stage-theme #leaderboardTab>h3,
 body.site-stage-theme .leaderboard-points,
 body.site-stage-theme .podium-points,
 body.site-stage-theme .prediction-summary-grid strong,
@@ -5627,7 +5629,7 @@ body.site-stage-theme #leaderboardTab::after {
   z-index: 0;
 }
 
-body.site-stage-theme #leaderboardTab > * {
+body.site-stage-theme #leaderboardTab>* {
   position: relative;
   z-index: 1;
 }
@@ -6010,5 +6012,294 @@ body.site-stage-theme .points-pill-pending::before {
   body.site-stage-theme .points-pill-exact small,
   body.site-stage-theme .points-pill-correct small {
     font-size: 8px !important;
+  }
+}
+
+/* ===============================
+   V38 leaderboard tie-breaker badges
+   =============================== */
+
+.leaderboard-stage-v38-tiebreaks,
+.leaderboard-table-v38-tiebreaks,
+.leaderboard-table-v38-tiebreaks tbody,
+.leaderboard-table-v38-tiebreaks tr,
+.leaderboard-table-v38-tiebreaks td,
+.leaderboard-podium,
+.podium-card {
+  overflow: visible !important;
+}
+
+.leaderboard-points {
+  position: relative;
+  overflow: visible !important;
+}
+
+.leaderboard-points-wrap {
+  direction: ltr;
+  display: inline-block;
+  position: relative;
+  white-space: nowrap;
+  line-height: 1;
+}
+
+.leaderboard-points-number {
+  direction: ltr;
+  unicode-bidi: isolate;
+  display: inline-block;
+}
+
+.tie-rule-anchor {
+  position: absolute;
+  top: 50%;
+  inset-inline-end: -31px;
+  transform: translateY(-50%);
+  direction: rtl;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 50;
+}
+
+.tie-rule-badge {
+  position: relative !important;
+  z-index: 1 !important;
+  width: 23px !important;
+  height: 23px !important;
+  min-width: 23px !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  border-radius: 999px !important;
+  display: inline-grid !important;
+  place-items: center !important;
+  background: #ffffff !important;
+  color: #11101a !important;
+  border: 1px solid rgba(255, 255, 255, 0.95) !important;
+  box-shadow:
+    0 0 0 2px rgba(var(--stage-rgb, 202, 164, 93), 0.20),
+    0 7px 15px rgba(0, 0, 0, 0.20),
+    inset 0 1px 0 rgba(255, 255, 255, 0.90) !important;
+  font-size: 12px !important;
+  font-weight: 1000 !important;
+  line-height: 1 !important;
+  cursor: pointer !important;
+  transform: none !important;
+}
+
+.tie-rule-badge:hover,
+.tie-rule-badge:focus-visible {
+  filter: brightness(1.08);
+  transform: translateY(-1px) !important;
+}
+
+.tie-rule-popover {
+  position: absolute;
+  top: calc(100% + 9px);
+  inset-inline-end: 0;
+  width: min(290px, 76vw);
+  padding: 12px 13px 13px;
+  border-radius: 18px;
+  direction: rtl;
+  text-align: right;
+  color: #f7f1e3;
+  background:
+    radial-gradient(circle at 92% 0%, rgba(var(--stage-rgb, 202, 164, 93), 0.22), transparent 34%),
+    linear-gradient(145deg, rgba(8, 13, 30, 0.98), rgba(20, 24, 46, 0.96));
+  border: 1px solid rgba(var(--stage-rgb, 202, 164, 93), 0.38);
+  box-shadow:
+    0 22px 46px rgba(0, 0, 0, 0.42),
+    inset 0 1px 0 rgba(255, 255, 255, 0.07);
+  z-index: 999999 !important;
+  white-space: normal;
+}
+
+.tie-rule-anchor:has(.tie-rule-popover:not(.hidden)) {
+  z-index: 999999 !important;
+}
+
+.tie-rule-anchor:has(.tie-rule-popover:not(.hidden)) .tie-rule-popover {
+  z-index: 999999 !important;
+}
+
+.tie-rule-popover::before {
+  content: "";
+  position: absolute;
+  top: -7px;
+  inset-inline-end: 9px;
+  width: 13px;
+  height: 13px;
+  transform: rotate(45deg);
+  background: rgba(10, 15, 32, 0.98);
+  border-top: 1px solid rgba(var(--stage-rgb, 202, 164, 93), 0.38);
+  border-left: 1px solid rgba(var(--stage-rgb, 202, 164, 93), 0.38);
+}
+
+.tie-rule-popover strong,
+.tie-rule-popover span,
+.tie-rule-popover em {
+  display: block;
+  position: relative;
+  z-index: 1;
+}
+
+.tie-rule-popover strong {
+  margin-bottom: 6px;
+  color: var(--stage-accent, #f1d89a);
+  font-size: 13px;
+  font-weight: 1000;
+  line-height: 1.5;
+}
+
+.tie-rule-popover span {
+  color: rgba(247, 241, 227, 0.78);
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1.75;
+}
+
+.tie-rule-popover em {
+  margin-top: 8px;
+  padding: 7px 9px;
+  border-radius: 12px;
+  color: rgba(247, 241, 227, 0.92);
+  background: rgba(var(--stage-rgb, 202, 164, 93), 0.12);
+  border: 1px solid rgba(var(--stage-rgb, 202, 164, 93), 0.17);
+  font-style: normal;
+  font-size: 12px;
+  font-weight: 900;
+  line-height: 1.6;
+}
+
+.podium-points .tie-rule-anchor {
+  inset-inline-end: -29px;
+}
+
+.podium-points .tie-rule-badge {
+  width: 22px !important;
+  height: 22px !important;
+  min-width: 22px !important;
+  font-size: 11px !important;
+}
+
+.podium-points .tie-rule-popover {
+  top: auto;
+  bottom: calc(100% + 9px);
+  inset-inline-end: 50%;
+  transform: translateX(50%);
+}
+
+.podium-points .tie-rule-popover::before {
+  top: auto;
+  bottom: -7px;
+  inset-inline-end: 50%;
+  transform: translateX(50%) rotate(45deg);
+  border-top: 0;
+  border-left: 0;
+  border-bottom: 1px solid rgba(var(--stage-rgb, 202, 164, 93), 0.38);
+  border-right: 1px solid rgba(var(--stage-rgb, 202, 164, 93), 0.38);
+}
+
+@media (max-width: 700px) {
+  .leaderboard-points-wrap {
+    display: inline-block;
+  }
+
+  .tie-rule-badge {
+    width: 21px !important;
+    height: 21px !important;
+    min-width: 21px !important;
+    font-size: 10.5px !important;
+  }
+
+  .tie-rule-popover {
+    width: min(250px, 82vw);
+    padding: 10px 11px 11px;
+    inset-inline-end: -8px;
+  }
+
+  .tie-rule-popover strong {
+    font-size: 12px;
+  }
+
+  .tie-rule-popover span,
+  .tie-rule-popover em {
+    font-size: 11px;
+  }
+
+  .podium-points .tie-rule-badge,
+  .podium-points .tie-rule-popover {
+    display: none !important;
+  }
+}
+/* ===============================
+   V38 final hard fix: tie-break info icon must stay white
+   This must remain at the VERY END of style.css.
+   Reason: the global stage-theme button rule is very specific and uses !important.
+   =============================== */
+
+html body.site-stage-theme button.tie-rule-badge.tie-rule-badge,
+html body.site-stage-theme .leaderboard-stage-v38-tiebreaks .tie-rule-anchor > button.tie-rule-badge,
+html body.site-stage-theme .leaderboard-table-v38-tiebreaks .leaderboard-points button.tie-rule-badge,
+html body.site-stage-theme .podium-card .podium-points button.tie-rule-badge {
+  -webkit-appearance: none !important;
+  appearance: none !important;
+
+  width: 23px !important;
+  height: 23px !important;
+  min-width: 23px !important;
+  max-width: 23px !important;
+  min-height: 23px !important;
+  max-height: 23px !important;
+
+  padding: 0 !important;
+  margin: 0 !important;
+  border-radius: 999px !important;
+
+  display: inline-grid !important;
+  place-items: center !important;
+
+  background: #ffffff !important;
+  background-color: #ffffff !important;
+  background-image: none !important;
+  background-size: auto !important;
+  background-clip: padding-box !important;
+
+  color: #11101a !important;
+  border: 1px solid rgba(255, 255, 255, 0.98) !important;
+
+  box-shadow:
+    0 0 0 2px rgba(255, 255, 255, 0.18),
+    0 6px 14px rgba(0, 0, 0, 0.24),
+    inset 0 1px 0 rgba(255, 255, 255, 0.95) !important;
+
+  font-size: 12px !important;
+  font-weight: 1000 !important;
+  line-height: 1 !important;
+  text-align: center !important;
+
+  filter: none !important;
+  transform: none !important;
+}
+
+html body.site-stage-theme button.tie-rule-badge.tie-rule-badge:hover,
+html body.site-stage-theme button.tie-rule-badge.tie-rule-badge:focus-visible {
+  background: #ffffff !important;
+  background-color: #ffffff !important;
+  background-image: none !important;
+  color: #11101a !important;
+  filter: none !important;
+  transform: translateY(-1px) !important;
+}
+
+@media (max-width: 700px) {
+  html body.site-stage-theme button.tie-rule-badge.tie-rule-badge,
+  html body.site-stage-theme .leaderboard-stage-v38-tiebreaks .tie-rule-anchor > button.tie-rule-badge,
+  html body.site-stage-theme .leaderboard-table-v38-tiebreaks .leaderboard-points button.tie-rule-badge {
+    width: 21px !important;
+    height: 21px !important;
+    min-width: 21px !important;
+    max-width: 21px !important;
+    min-height: 21px !important;
+    max-height: 21px !important;
+    font-size: 10.5px !important;
   }
 }
