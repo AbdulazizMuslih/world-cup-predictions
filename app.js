@@ -37,8 +37,18 @@ let tabHistory = [];
 let allowLeavingPage = false;
 let dashboardRefreshTimer = null;
 
-const APP_VERSION = "38.1";
+const APP_VERSION = "38.3";
 let updateCheckTimer = null;
+
+let availableTeamNameResizeTimer = null;
+
+window.addEventListener("resize", () => {
+    clearTimeout(availableTeamNameResizeTimer);
+
+    availableTeamNameResizeTimer = setTimeout(() => {
+        scheduleAvailableTeamNameFit();
+    }, 120);
+});
 
 document.addEventListener("DOMContentLoaded", init);
 
@@ -552,6 +562,8 @@ async function loadAvailableMatches() {
         }).join("")}
         `;
     }).join("");
+
+    scheduleAvailableTeamNameFit();
 }
 
 async function savePrediction(matchId) {
@@ -691,6 +703,76 @@ function formatAvailableTeamBlock(teamName, side = "") {
             <span class="available-team-name">${safeTeamName}</span>
         </span>
     `;
+}
+
+function scheduleAvailableTeamNameFit() {
+    requestAnimationFrame(() => {
+        fitAvailableTeamNames();
+
+        // Re-check after flags/fonts finish painting so the layout stays correct
+        // on desktop, tablet, and mobile.
+        setTimeout(fitAvailableTeamNames, 80);
+        setTimeout(fitAvailableTeamNames, 240);
+    });
+}
+
+function fitAvailableTeamNames() {
+    const matchups = document.querySelectorAll("#availableMatches .available-matchup");
+
+    matchups.forEach((matchup) => {
+        const teamNames = Array.from(matchup.querySelectorAll(".available-team-name"));
+
+        if (teamNames.length === 0) return;
+
+        teamNames.forEach((teamName) => {
+            teamName.style.fontSize = "";
+            teamName.style.letterSpacing = "";
+        });
+
+        const matchupWidth = matchup.getBoundingClientRect().width;
+        const isVerySmall = matchupWidth <= 340;
+        const isSmall = matchupWidth <= 460;
+        const isMedium = matchupWidth <= 620;
+
+        const minimumFontSize = isVerySmall ? 11 : isSmall ? 12 : isMedium ? 13 : 14;
+        let currentFontSize = Math.min(
+            ...teamNames.map((teamName) => parseFloat(window.getComputedStyle(teamName).fontSize) || 20)
+        );
+
+        let attempts = 0;
+
+        while (
+            teamNames.some(availableTeamNameNeedsFit) &&
+            currentFontSize > minimumFontSize &&
+            attempts < 24
+        ) {
+            currentFontSize -= 0.5;
+
+            teamNames.forEach((teamName) => {
+                teamName.style.fontSize = `${currentFontSize}px`;
+            });
+
+            attempts += 1;
+        }
+
+        if (teamNames.some(availableTeamNameNeedsFit)) {
+            teamNames.forEach((teamName) => {
+                teamName.style.letterSpacing = "-0.055em";
+            });
+        }
+    });
+}
+
+function availableTeamNameNeedsFit(teamName) {
+    const style = window.getComputedStyle(teamName);
+    const fontSize = parseFloat(style.fontSize) || 16;
+    const lineHeight = parseFloat(style.lineHeight) || fontSize * 1.12;
+    const allowedHeight = lineHeight * 2.25;
+
+    return (
+        teamName.scrollWidth > teamName.clientWidth + 1 ||
+        teamName.scrollHeight > allowedHeight
+    );
 }
 
 function escapeHtml(value) {
