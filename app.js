@@ -37,7 +37,7 @@ let tabHistory = [];
 let allowLeavingPage = false;
 let dashboardRefreshTimer = null;
 
-const APP_VERSION = "38";
+const APP_VERSION = "38.1";
 let updateCheckTimer = null;
 
 document.addEventListener("DOMContentLoaded", init);
@@ -679,6 +679,20 @@ function formatTeamFlag(teamName) {
     `;
 }
 
+function formatAvailableTeamBlock(teamName, side = "") {
+    const safeTeamName = escapeHtml(teamName);
+    const sideClass = side ? ` available-team-${side}` : "";
+
+    return `
+        <span class="available-team${sideClass}" title="${safeTeamName}">
+            <span class="available-team-flag" aria-hidden="true">
+                ${formatTeamFlag(teamName)}
+            </span>
+            <span class="available-team-name">${safeTeamName}</span>
+        </span>
+    `;
+}
+
 function escapeHtml(value) {
     return String(value)
         .replaceAll("&", "&amp;")
@@ -961,10 +975,10 @@ function renderAvailableMatchCard(match, existingPrediction) {
                 <span class="match-stage-live">متاحة الآن</span>
             </div>
 
-            <div class="match-title">
-                <span>${escapeHtml(match.team1)}</span>
-                <span class="vs">ضد</span>
-                <span>${escapeHtml(match.team2)}</span>
+            <div class="match-title available-matchup">
+                ${formatAvailableTeamBlock(match.team1, "home")}
+                <span class="vs available-vs">ضد</span>
+                ${formatAvailableTeamBlock(match.team2, "away")}
             </div>
 
             <p class="kickoff">
