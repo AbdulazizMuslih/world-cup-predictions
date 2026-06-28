@@ -39,6 +39,7 @@ let dashboardRefreshTimer = null;
 
 const APP_VERSION = "38.3";
 let updateCheckTimer = null;
+const SITE_STAGE_CACHE_KEY = "wcSiteStage";
 
 let availableTeamNameResizeTimer = null;
 
@@ -68,7 +69,8 @@ daiDaiAudio.addEventListener("ended", () => {
 
 async function init() {
     setupTabs();
-    applySiteStageTheme("GROUP_STAGE");
+
+    applySiteStageTheme(getCachedSiteStage());
 
     await checkForAppUpdate(false);
 
@@ -976,6 +978,16 @@ function getTournamentProgressStageForSiteTheme(matches = []) {
     return "SEMI_FINALS";
 }
 
+function getCachedSiteStage() {
+    const cachedStage = localStorage.getItem(SITE_STAGE_CACHE_KEY);
+
+    if (cachedStage && STAGE_THEME_META[cachedStage]) {
+        return cachedStage;
+    }
+
+    return "GROUP_STAGE";
+}
+
 async function loadSiteStageThemeFromTournamentProgress() {
     try {
         const { data: matches, error } = await db
@@ -985,14 +997,17 @@ async function loadSiteStageThemeFromTournamentProgress() {
 
         if (error) {
             console.error(error);
-            applySiteStageTheme("GROUP_STAGE");
+            applySiteStageTheme(getCachedSiteStage());
             return;
         }
 
-        applySiteStageTheme(getTournamentProgressStageForSiteTheme(matches || []));
+        const resolvedStage = getTournamentProgressStageForSiteTheme(matches || []);
+
+        localStorage.setItem(SITE_STAGE_CACHE_KEY, resolvedStage);
+        applySiteStageTheme(resolvedStage);
     } catch (error) {
         console.error("Site stage theme load failed:", error);
-        applySiteStageTheme("GROUP_STAGE");
+        applySiteStageTheme(getCachedSiteStage());
     }
 }
 
