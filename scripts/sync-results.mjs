@@ -328,7 +328,7 @@ async function normalizeUpsertAndScore(apiMatches, exactFilter, label) {
 
 async function runNormalSync() {
     const now = new Date();
-    const fromTime = new Date(now.getTime() - 4 * MS.hour);
+    const fromTime = new Date(now.getTime() - 8 * MS.hour);
     const toTime = new Date(now.getTime() + 24 * MS.hour);
     const apiUrl = buildWindowApiUrl(fromTime, toTime);
 
@@ -348,7 +348,7 @@ async function runNormalSync() {
 
 async function getActiveMatches() {
     const now = new Date();
-    const fromTime = new Date(now.getTime() - 2 * MS.hour);
+    const fromTime = new Date(now.getTime() - 8 * MS.hour);
 
     const path =
         "matches" +
