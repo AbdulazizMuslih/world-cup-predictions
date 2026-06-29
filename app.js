@@ -37,7 +37,7 @@ let tabHistory = [];
 let allowLeavingPage = false;
 let dashboardRefreshTimer = null;
 
-const APP_VERSION = "38.5";
+const APP_VERSION = "38.6";
 let updateCheckTimer = null;
 const SITE_STAGE_CACHE_KEY = "wcSiteStage";
 
@@ -2161,25 +2161,27 @@ async function saveAdminPrediction() {
         ? calculatePoints(team1Goals, team2Goals, match.actual_team1_goals, match.actual_team2_goals)
         : 0;
 
-    const { error } = await db
-        .from("predictions")
-        .upsert(
-            {
-                participant_id: participantId,
-                match_id: matchId,
-                predicted_team1_goals: team1Goals,
-                predicted_team2_goals: team2Goals,
-                points,
-                updated_at: new Date().toISOString(),
-            },
-            {
-                onConflict: "participant_id,match_id",
-            }
-        );
+    const { error } = await db.rpc("admin_upsert_prediction", {
+        admin_password: adminPassword.value,
+        target_participant_id: participantId,
+        target_match_id: matchId,
+        team1_goals: team1Goals,
+        team2_goals: team2Goals,
+    });
 
     if (error) {
         console.error(error);
-        adminPredictionMessage.textContent = "تعذر حفظ توقع المشارك.";
+
+        const errorMessage = String(error.message || "");
+        const errorDetails = String(error.details || "");
+        const rpcMissing =
+            error.code === "PGRST202" ||
+            errorMessage.includes("admin_upsert_prediction") ||
+            errorDetails.includes("admin_upsert_prediction");
+
+        adminPredictionMessage.textContent = rpcMissing
+            ? "تعذر حفظ توقع المشارك. يجب تشغيل ملف Supabase SQL الخاص بالإدارة أولاً."
+            : "تعذر حفظ توقع المشارك.";
         return;
     }
 
