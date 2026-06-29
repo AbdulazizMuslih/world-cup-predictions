@@ -6,7 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#10162d" />
     <title>توقعات كأس العالم 2026</title>
-    <link rel="stylesheet" href="style.css?v=38.4" />
+    <link rel="stylesheet" href="style.css?v=38.5" />
 </head>
 
 <body>
@@ -112,20 +112,54 @@
                 <section id="adminTab" class="tab-panel hidden">
                     <h3>الإدارة</h3>
 
-                    <div class="admin-box">
-                        <label>كلمة مرور الإدارة</label>
-                        <input id="adminPassword" type="password" placeholder="أدخل كلمة مرور الإدارة" />
+                    <div class="admin-management-grid">
+                        <div class="admin-box admin-manual-prediction-box participant-predictions-card">
+                            <div class="participant-predictions-header">
+                                <div>
+                                    <p class="eyebrow">إدخال توقع</p>
+                                    <h3>توقع عن مشارك</h3>
+                                </div>
+                            </div>
 
-                        <label>المباراة</label>
-                        <select id="adminMatchSelect"></select>
+                            <label class="admin-select-label">المشارك</label>
+                            <select id="adminPredictionParticipantSelect" class="admin-participant-select">
+                                <option value="">اختر المشارك</option>
+                            </select>
 
-                        <div class="score-row">
-                            <input id="actualTeam1Goals" type="number" min="0" placeholder="أهداف الفريق الأول" />
-                            <input id="actualTeam2Goals" type="number" min="0" placeholder="أهداف الفريق الثاني" />
+                            <label class="admin-select-label">المباراة</label>
+                            <select id="adminPredictionMatchSelect" class="admin-participant-select">
+                                <option value="">اختر المباراة</option>
+                            </select>
+
+                            <div id="adminPredictionCard" class="admin-prediction-card-target">
+                                <p class="admin-empty-state">اختر المشارك ثم المباراة لإدخال أو تعديل التوقع.</p>
+                            </div>
+
+                            <p id="adminPredictionMessage" class="message"></p>
                         </div>
 
-                        <button id="saveResultBtn">حفظ النتيجة</button>
-                        <p id="adminMessage" class="message"></p>
+                        <div class="admin-box admin-result-box">
+                            <div class="participant-predictions-header">
+                                <div>
+                                    <p class="eyebrow">تسجيل نتيجة</p>
+                                    <h3>نتيجة مباراة</h3>
+                                </div>
+                            </div>
+
+                            <label>كلمة مرور الإدارة</label>
+                            <input id="adminPassword" type="password" placeholder="أدخل كلمة مرور الإدارة" />
+
+                            <label>المباراة</label>
+                            <select id="adminMatchSelect"></select>
+
+                            <div class="score-row">
+                                <input id="actualTeam1Goals" type="number" min="0" placeholder="أهداف الفريق الأول" />
+                                <input id="actualTeam2Goals" type="number" min="0" placeholder="أهداف الفريق الثاني" />
+                            </div>
+
+                            <button id="saveResultBtn">حفظ النتيجة</button>
+                            <p id="adminMessage" class="message"></p>
+                        </div>
                     </div>
                 </section>
 
@@ -153,7 +187,7 @@
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="app.js?v=38.4"></script>
+    <script src="app.js?v=38.5"></script>
 </body>
 
 </html>

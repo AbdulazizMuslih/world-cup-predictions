@@ -37,7 +37,7 @@ let tabHistory = [];
 let allowLeavingPage = false;
 let dashboardRefreshTimer = null;
 
-const APP_VERSION = "38.4";
+const APP_VERSION = "38.5";
 let updateCheckTimer = null;
 const SITE_STAGE_CACHE_KEY = "wcSiteStage";
 
@@ -176,6 +176,10 @@ async function loadParticipants() {
 
     adminParticipantSelect.innerHTML = `<option value="">اختر المشارك</option>`;
 
+    if (adminPredictionParticipantSelect) {
+        adminPredictionParticipantSelect.innerHTML = `<option value="">اختر المشارك</option>`;
+    }
+
     data.forEach((participant) => {
         const option = document.createElement("option");
         option.value = participant.id;
@@ -186,6 +190,13 @@ async function loadParticipants() {
         adminOption.value = participant.id;
         adminOption.textContent = participant.name;
         adminParticipantSelect.appendChild(adminOption);
+
+        if (adminPredictionParticipantSelect) {
+            const adminPredictionOption = document.createElement("option");
+            adminPredictionOption.value = participant.id;
+            adminPredictionOption.textContent = participant.name;
+            adminPredictionParticipantSelect.appendChild(adminPredictionOption);
+        }
 
         const participantVisual = getParticipantVisual(participant.name);
 
@@ -324,7 +335,7 @@ async function openAdminDashboard(password = ADMIN_PASSWORD, rememberAdmin = tru
     await loadLeaderboard();
     await loadAdminMatches();
 
-    startDashboardTabSession("admin");
+    startDashboardTabSession("leaderboard");
     startDashboardAutoRefresh();
 }
 
@@ -424,6 +435,12 @@ function goToDashboardTab(tabName) {
 
     tabHistory.push(tabName);
     activateTab(tabName);
+
+    if (isAdminMode && tabName === "admin") {
+        loadAdminMatches()
+            .then(() => loadAdminPredictionForSelectedMatch())
+            .catch((error) => console.error("Admin prediction match refresh failed:", error));
+    }
 }
 
 function installBackGuard() {
@@ -451,6 +468,10 @@ function startDashboardAutoRefresh() {
 
             if (isAdminMode) {
                 await loadAdminMatches();
+
+                if (adminPredictionParticipantSelect?.value && adminPredictionMatchSelect?.value) {
+                    await loadAdminPredictionForSelectedMatch();
+                }
 
                 if (adminParticipantSelect.value) {
                     await loadAdminParticipantPredictions(adminParticipantSelect.value);
@@ -1881,23 +1902,303 @@ const saveResultBtn = document.getElementById("saveResultBtn");
 const adminMessage = document.getElementById("adminMessage");
 const adminParticipantSelect = document.getElementById("adminParticipantSelect");
 const adminParticipantPredictions = document.getElementById("adminParticipantPredictions");
+const adminPredictionParticipantSelect = document.getElementById("adminPredictionParticipantSelect");
+const adminPredictionMatchSelect = document.getElementById("adminPredictionMatchSelect");
+const adminPredictionCard = document.getElementById("adminPredictionCard");
+const adminPredictionMessage = document.getElementById("adminPredictionMessage");
+
+let adminPredictionMatches = [];
+
+function isAdminPredictionMatchActive(match) {
+    const status = String(match.status || "").toLowerCase();
+
+    if (status === "live") return true;
+    if (status === "completed") return false;
+
+    const kickoffTime = new Date(match.kickoff_at).getTime();
+    const now = Date.now();
+
+    return Number.isFinite(kickoffTime) && kickoffTime <= now && !hasActualScore(match);
+}
+
+function getAdminPredictionMatchStatusLabel(match) {
+    const status = String(match.status || "").toLowerCase();
+
+    if (isAdminPredictionMatchActive(match)) return "🔴 مباشر الآن";
+    if (status === "completed") return "✅ مكتملة";
+
+    return "⏳ مجدولة";
+}
+
+function sortAdminPredictionMatches(matches = []) {
+    return [...matches].sort((a, b) => {
+        const activeDifference =
+            Number(isAdminPredictionMatchActive(b)) - Number(isAdminPredictionMatchActive(a));
+
+        if (activeDifference !== 0) return activeDifference;
+
+        return new Date(b.kickoff_at).getTime() - new Date(a.kickoff_at).getTime();
+    });
+}
+
+function formatAdminPredictionMatchOptionLabel(match) {
+    const kickoffLabel = new Date(match.kickoff_at).toLocaleString("ar-SA");
+    return `${getAdminPredictionMatchStatusLabel(match)} — ${kickoffLabel} — ${match.team1} ضد ${match.team2}`;
+}
 
 async function loadAdminMatches() {
+    const previousResultMatchId = adminMatchSelect.value;
+    const previousPredictionMatchId = adminPredictionMatchSelect?.value || "";
+
     const { data, error } = await db
         .from("matches")
         .select("*")
-        .order("kickoff_at");
+        .order("kickoff_at", { ascending: false });
 
     if (error) return;
 
+    adminPredictionMatches = sortAdminPredictionMatches(data || []);
+
     adminMatchSelect.innerHTML = "";
 
-    data.forEach((match) => {
-        const option = document.createElement("option");
-        option.value = match.id;
-        option.textContent = `${match.team1} vs ${match.team2}`;
-        adminMatchSelect.appendChild(option);
+    if (adminPredictionMatchSelect) {
+        adminPredictionMatchSelect.innerHTML = `<option value="">اختر المباراة</option>`;
+    }
+
+    adminPredictionMatches.forEach((match) => {
+        const matchLabel = formatAdminPredictionMatchOptionLabel(match);
+
+        const resultOption = document.createElement("option");
+        resultOption.value = match.id;
+        resultOption.textContent = matchLabel;
+        adminMatchSelect.appendChild(resultOption);
+
+        if (adminPredictionMatchSelect) {
+            const predictionOption = document.createElement("option");
+            predictionOption.value = match.id;
+            predictionOption.textContent = matchLabel;
+            adminPredictionMatchSelect.appendChild(predictionOption);
+        }
     });
+
+    if (previousResultMatchId) {
+        adminMatchSelect.value = previousResultMatchId;
+    }
+
+    if (adminPredictionMatchSelect && previousPredictionMatchId) {
+        adminPredictionMatchSelect.value = previousPredictionMatchId;
+    }
+
+    if (adminPredictionMatchSelect && !adminPredictionMatchSelect.value) {
+        const activeMatch = adminPredictionMatches.find(isAdminPredictionMatchActive);
+
+        if (activeMatch) {
+            adminPredictionMatchSelect.value = activeMatch.id;
+        }
+    }
+}
+
+async function loadAdminPredictionForSelectedMatch() {
+    if (!adminPredictionParticipantSelect || !adminPredictionMatchSelect || !adminPredictionCard) return;
+
+    const participantId = adminPredictionParticipantSelect.value;
+    const matchId = adminPredictionMatchSelect.value;
+    const selectedParticipantName =
+        adminPredictionParticipantSelect.options[adminPredictionParticipantSelect.selectedIndex]?.textContent || "";
+
+    adminPredictionMessage.textContent = "";
+
+    if (!participantId || !matchId) {
+        adminPredictionCard.innerHTML = `<p class="admin-empty-state">اختر المشارك ثم المباراة لإدخال أو تعديل التوقع.</p>`;
+        return;
+    }
+
+    let match = adminPredictionMatches.find((item) => item.id === matchId);
+
+    if (!match) {
+        const { data: fetchedMatch, error: matchError } = await db
+            .from("matches")
+            .select("*")
+            .eq("id", matchId)
+            .single();
+
+        if (matchError || !fetchedMatch) {
+            adminPredictionCard.innerHTML = `<p class="admin-empty-state">تعذر تحميل المباراة المختارة.</p>`;
+            return;
+        }
+
+        match = fetchedMatch;
+    }
+
+    const { data: existingPrediction, error: predictionError } = await db
+        .from("predictions")
+        .select("predicted_team1_goals, predicted_team2_goals, points")
+        .eq("participant_id", participantId)
+        .eq("match_id", matchId)
+        .maybeSingle();
+
+    if (predictionError) {
+        console.error(predictionError);
+        adminPredictionCard.innerHTML = `<p class="admin-empty-state">تعذر تحميل التوقع الحالي.</p>`;
+        return;
+    }
+
+    adminPredictionCard.innerHTML = renderAdminPredictionMatchCard(
+        match,
+        existingPrediction,
+        selectedParticipantName
+    );
+
+    scheduleAvailableTeamNameFit();
+}
+
+function renderAdminPredictionMatchCard(match, existingPrediction, participantName) {
+    const stage = getPredictionStage(match);
+    const meta = getStageThemeMeta(stage);
+    const cardClasses = [
+        "match-card",
+        "available-stage-card",
+        "admin-manual-prediction-card",
+        existingPrediction ? "match-card-predicted" : ""
+    ].filter(Boolean).join(" ");
+
+    const savedPredictionHtml = existingPrediction
+        ? `
+        <div class="saved-prediction-card">
+            <div class="saved-prediction-row">
+                <span class="saved-prediction-title">✅ التوقع الحالي</span>
+                <span class="saved-score">
+                    ${existingPrediction.predicted_team1_goals} - ${existingPrediction.predicted_team2_goals}
+                </span>
+            </div>
+            <div class="saved-prediction-note">
+                يوجد توقع محفوظ لهذا المشارك، ويمكنك تعديله من هنا.
+            </div>
+        </div>
+      `
+        : "";
+
+    return `
+        <div class="${cardClasses}">
+            <div class="match-stage-row">
+                <span class="match-stage-pill">${meta.icon} ${meta.kicker}</span>
+                <span class="match-stage-live">إدخال إداري</span>
+            </div>
+
+            <p class="admin-manual-prediction-for">
+                توقع عن: <strong>${escapeHtml(participantName)}</strong>
+            </p>
+
+            <div class="match-title available-matchup">
+                ${formatAvailableTeamBlock(match.team1, "home")}
+                <span class="vs available-vs">ضد</span>
+                ${formatAvailableTeamBlock(match.team2, "away")}
+            </div>
+
+            <p class="kickoff">
+                ${getAdminPredictionMatchStatusLabel(match)} — وقت المباراة: ${new Date(match.kickoff_at).toLocaleString("ar-SA")}
+            </p>
+
+            ${savedPredictionHtml}
+
+            <div class="score-row">
+                <input
+                    id="adminPredictTeam1Goals"
+                    type="number"
+                    min="0"
+                    placeholder="${escapeHtml(match.team1)}"
+                    value="${existingPrediction ? existingPrediction.predicted_team1_goals : ""}"
+                />
+                <input
+                    id="adminPredictTeam2Goals"
+                    type="number"
+                    min="0"
+                    placeholder="${escapeHtml(match.team2)}"
+                    value="${existingPrediction ? existingPrediction.predicted_team2_goals : ""}"
+                />
+            </div>
+
+            <button onclick="saveAdminPrediction()">
+                ${existingPrediction ? "تحديث توقع المشارك" : "حفظ توقع المشارك"}
+            </button>
+        </div>
+    `;
+}
+
+async function saveAdminPrediction() {
+    if (!adminPredictionParticipantSelect || !adminPredictionMatchSelect) return;
+
+    if (adminPassword.value !== ADMIN_PASSWORD) {
+        adminPredictionMessage.textContent = "كلمة مرور الإدارة غير صحيحة.";
+        return;
+    }
+
+    const participantId = adminPredictionParticipantSelect.value;
+    const matchId = adminPredictionMatchSelect.value;
+    const team1Input = document.getElementById("adminPredictTeam1Goals");
+    const team2Input = document.getElementById("adminPredictTeam2Goals");
+
+    if (!participantId || !matchId || !team1Input || !team2Input) {
+        adminPredictionMessage.textContent = "الرجاء اختيار المشارك والمباراة.";
+        return;
+    }
+
+    const team1Goals = Number(team1Input.value);
+    const team2Goals = Number(team2Input.value);
+
+    if (
+        !Number.isInteger(team1Goals) ||
+        !Number.isInteger(team2Goals) ||
+        team1Goals < 0 ||
+        team2Goals < 0
+    ) {
+        adminPredictionMessage.textContent = "الرجاء إدخال توقع صحيح.";
+        return;
+    }
+
+    const match = adminPredictionMatches.find((item) => item.id === matchId);
+    const points = match && hasActualScore(match)
+        ? calculatePoints(team1Goals, team2Goals, match.actual_team1_goals, match.actual_team2_goals)
+        : 0;
+
+    const { error } = await db
+        .from("predictions")
+        .upsert(
+            {
+                participant_id: participantId,
+                match_id: matchId,
+                predicted_team1_goals: team1Goals,
+                predicted_team2_goals: team2Goals,
+                points,
+                updated_at: new Date().toISOString(),
+            },
+            {
+                onConflict: "participant_id,match_id",
+            }
+        );
+
+    if (error) {
+        console.error(error);
+        adminPredictionMessage.textContent = "تعذر حفظ توقع المشارك.";
+        return;
+    }
+
+    adminPredictionMessage.textContent = "تم حفظ توقع المشارك.";
+
+    await loadAdminPredictionForSelectedMatch();
+    await loadLeaderboard();
+
+    if (adminParticipantSelect.value === participantId) {
+        await loadAdminParticipantPredictions(participantId);
+    }
+}
+
+if (adminPredictionParticipantSelect) {
+    adminPredictionParticipantSelect.addEventListener("change", loadAdminPredictionForSelectedMatch);
+}
+
+if (adminPredictionMatchSelect) {
+    adminPredictionMatchSelect.addEventListener("change", loadAdminPredictionForSelectedMatch);
 }
 
 saveResultBtn.addEventListener("click", async () => {
@@ -1910,7 +2211,7 @@ saveResultBtn.addEventListener("click", async () => {
     const team1Goals = Number(actualTeam1Goals.value);
     const team2Goals = Number(actualTeam2Goals.value);
 
-    if (!Number.isInteger(team1Goals) || !Number.isInteger(team2Goals)) {
+    if (!Number.isInteger(team1Goals) || !Number.isInteger(team2Goals) || team1Goals < 0 || team2Goals < 0) {
         adminMessage.textContent = "الرجاء إدخال نتيجة صحيحة.";
         return;
     }
