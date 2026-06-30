@@ -1180,7 +1180,7 @@ function renderPredictionTable(matches, options = {}) {
 }
 
 function renderPredictionRow(match, pointsFormatter) {
-    const prediction = match.predictions[0];
+    const prediction = getMatchPrediction(match);
     const livePoints = calculateLivePredictionPoints(prediction, match);
     const rowClass = getPredictionRowClass(livePoints, match);
     const stage = getPredictionStage(match);
@@ -1190,12 +1190,15 @@ function renderPredictionRow(match, pointsFormatter) {
         <tr class="${rowClass}">
             <td class="match-name-cell">${formatMatchCell(match.team1, match.team2)}</td>
             <td>
-                ${formatTeamScore(
-        match.team1,
-        prediction.predicted_team1_goals,
-        match.team2,
-        prediction.predicted_team2_goals
-    )}
+                ${prediction
+            ? formatTeamScore(
+                match.team1,
+                prediction.predicted_team1_goals,
+                match.team2,
+                prediction.predicted_team2_goals
+            )
+            : `<span class="pending-score">لا توقع</span>`
+        }
             </td>
             <td>
                 ${hasActualScore(match)
@@ -1253,6 +1256,10 @@ function renderPredictionStageSections(matches, options = {}) {
 }
 
 function calculateLivePredictionPoints(prediction, match) {
+    if (!prediction) {
+        return 0;
+    }
+
     if (!hasActualScore(match)) {
         return prediction.points || 0;
     }
@@ -1288,9 +1295,26 @@ function formatPointPill(points, match) {
     return `<span class="points-pill points-pill-zero">${points}</span>`;
 }
 
-async function loadMyPredictions() {
-    if (!currentParticipant) return;
+function getMatchPrediction(match) {
+    return Array.isArray(match.predictions) && match.predictions.length > 0
+        ? match.predictions[0]
+        : null;
+}
 
+function hasParticipantPrediction(match) {
+    return Boolean(getMatchPrediction(match));
+}
+
+function shouldShowInPredictionHistory(match) {
+    return (
+        hasParticipantPrediction(match) ||
+        hasActualScore(match) ||
+        match.status === "live" ||
+        match.status === "completed"
+    );
+}
+
+async function loadParticipantPredictionHistory(participantId) {
     const { data, error } = await db
         .from("matches")
         .select(`
@@ -1304,16 +1328,31 @@ async function loadMyPredictions() {
             winner_side,
             actual_team1_goals,
             actual_team2_goals,
-            predictions!inner (
+            predictions (
                 predicted_team1_goals,
                 predicted_team2_goals,
                 points,
                 participant_id
             )
         `)
-        .eq("predictions.participant_id", currentParticipant.id);
+        .eq("predictions.participant_id", participantId)
+        .order("kickoff_at", { ascending: false });
 
     if (error) {
+        throw error;
+    }
+
+    return (data || []).filter(shouldShowInPredictionHistory);
+}
+
+async function loadMyPredictions() {
+    if (!currentParticipant) return;
+
+    let data;
+
+    try {
+        data = await loadParticipantPredictionHistory(currentParticipant.id);
+    } catch (error) {
         console.error(error);
         myPredictions.innerHTML = `<p>تعذر تحميل التوقعات.</p>`;
         return;
@@ -1329,10 +1368,13 @@ async function loadMyPredictions() {
     });
 
     const summary = sortedMatches.reduce((acc, match) => {
-        const prediction = match.predictions[0];
+        const prediction = getMatchPrediction(match);
         const livePoints = calculateLivePredictionPoints(prediction, match);
 
-        acc.totalPredictions += 1;
+        if (prediction) {
+            acc.totalPredictions += 1;
+        }
+
         acc.totalPoints += livePoints;
 
         if (hasActualScore(match)) {
@@ -1375,29 +1417,11 @@ async function loadAdminParticipantPredictions(participantId) {
     const selectedName =
         adminParticipantSelect.options[adminParticipantSelect.selectedIndex]?.textContent || "";
 
-    const { data, error } = await db
-        .from("matches")
-        .select(`
-            id,
-            team1,
-            team2,
-            kickoff_at,
-            status,
-            stage,
-            score_duration,
-            winner_side,
-            actual_team1_goals,
-            actual_team2_goals,
-            predictions!inner (
-                predicted_team1_goals,
-                predicted_team2_goals,
-                points,
-                participant_id
-            )
-        `)
-        .eq("predictions.participant_id", participantId);
+    let data;
 
-    if (error) {
+    try {
+        data = await loadParticipantPredictionHistory(participantId);
+    } catch (error) {
         console.error(error);
         adminParticipantPredictions.innerHTML = `<p>تعذر تحميل توقعات المشارك.</p>`;
         return;
@@ -1440,29 +1464,29 @@ const LEADERBOARD_STAGE_LABELS = {
     GROUP_STAGE: "دور المجموعات"
 };
 
-const MISSING_PREDICTION_TOTAL_GOAL_ERROR = 99;
-const MISSING_PREDICTION_GOAL_DIFFERENCE_ERROR = 99;
+const MISSING_PREDICTION_TOTAL_GOAL_ERROR = 3;
+const MISSING_PREDICTION_GOAL_DIFFERENCE_ERROR = 3;
 
 const TIE_BREAKER_RULES = {
     2: {
-        title: "قاعدة ٢: عدد نتائج بالملّي",
-        description: "عند تساوي النقاط، يتقدم من لديه عدد أكبر من توقعات 50."
+        title: "قاعدة ٢: عدد التوقعات الصحيحة",
+        description: "عند تساوي النقاط، يتقدم من لديه عدد أكبر من توقعات 10 أو 50."
     },
     3: {
-        title: "قاعدة ٣: أطول سلسلة صحيحة",
-        description: "تحتسب كل توقعات 50 و10 كسلسلة صحيحة، وأي 0 يقطع السلسلة."
-    },
-    4: {
-        title: "قاعدة ٤: أقل خطأ في مجموع الأهداف",
+        title: "قاعدة ٣: أقل خطأ في مجموع الأهداف",
         description: "نحسب مدى قرب توقع أهداف الفريقين من النتيجة الفعلية. الأقل خطأ يتقدم."
     },
-    5: {
-        title: "قاعدة ٥: أقل خطأ في فارق الأهداف",
+    4: {
+        title: "قاعدة ٤: أقل خطأ في فارق الأهداف",
         description: "نقارن مدى قرب توقع هامش الفوز أو التعادل من الواقع. الأقل خطأ يتقدم."
     },
-    6: {
-        title: "قاعدة ٦: الأفضل في المراحل المتأخرة",
+    5: {
+        title: "قاعدة ٥: الأفضل في المراحل المتأخرة",
         description: "نقارن نقاط النهائي ثم المركز الثالث ثم نصف النهائي ثم ربع النهائي ثم دور الـ16 ثم دور الـ32 ثم المجموعات."
+    },
+    6: {
+        title: "قاعدة ٦: أطول سلسلة صحيحة",
+        description: "تحتسب كل توقعات 50 و10 كسلسلة صحيحة، وأي 0 أو لا توقع يقطع السلسلة."
     },
     7: {
         title: "قاعدة ٧: الأسبق للوصول للنقاط الحالية",
@@ -1631,10 +1655,11 @@ function buildLeaderboardRow(participant, completedMatches) {
             isWinningPrediction: points > 0,
             missingPrediction: false,
         };
-    });
+    }).sort((a, b) => a.kickoffTime - b.kickoffTime);
 
     const totalPoints = completedPredictions.reduce((sum, prediction) => sum + prediction.points, 0);
     const exactScoreCount = completedPredictions.filter((prediction) => prediction.isExactScore).length;
+    const correctPredictionCount = completedPredictions.filter((prediction) => prediction.isWinningPrediction).length;
     const bestCorrectStreak = getBestScoringPredictionStreak(completedPredictions);
     const totalGoalError = completedPredictions.reduce((sum, prediction) => sum + prediction.totalGoalError, 0);
     const goalDifferenceError = completedPredictions.reduce((sum, prediction) => sum + prediction.goalDifferenceError, 0);
@@ -1648,6 +1673,7 @@ function buildLeaderboardRow(participant, completedMatches) {
         predictionCount: predictions.length,
         completedPredictionCount: completedPredictions.filter((prediction) => !prediction.missingPrediction).length,
         exactScoreCount,
+        correctPredictionCount,
         bestCorrectStreak,
         totalGoalError,
         goalDifferenceError,
@@ -1691,8 +1717,11 @@ function getScoreReachedTime(completedPredictions, totalPoints) {
     }
 
     let runningPoints = 0;
+    const chronologicalPredictions = [...completedPredictions].sort((a, b) => {
+        return a.kickoffTime - b.kickoffTime;
+    });
 
-    for (const prediction of completedPredictions) {
+    for (const prediction of chronologicalPredictions) {
         runningPoints += prediction.points;
 
         if (runningPoints >= totalPoints) {
@@ -1706,11 +1735,11 @@ function getScoreReachedTime(completedPredictions, totalPoints) {
 function compareLeaderboardRows(a, b) {
     return (
         b.points - a.points ||
-        b.exactScoreCount - a.exactScoreCount ||
-        b.bestCorrectStreak - a.bestCorrectStreak ||
+        b.correctPredictionCount - a.correctPredictionCount ||
         a.totalGoalError - b.totalGoalError ||
         a.goalDifferenceError - b.goalDifferenceError ||
         compareLaterStagePoints(a, b) ||
+        b.bestCorrectStreak - a.bestCorrectStreak ||
         a.scoreReachedTime - b.scoreReachedTime ||
         a.name.localeCompare(b.name, "ar")
     );
@@ -1731,8 +1760,11 @@ function compareLaterStagePoints(a, b) {
 function getBestScoringPredictionStreak(completedPredictions) {
     let currentStreak = 0;
     let bestStreak = 0;
+    const chronologicalPredictions = [...completedPredictions].sort((a, b) => {
+        return a.kickoffTime - b.kickoffTime;
+    });
 
-    completedPredictions.forEach((prediction) => {
+    chronologicalPredictions.forEach((prediction) => {
         if (prediction.isWinningPrediction) {
             currentStreak += 1;
             bestStreak = Math.max(bestStreak, currentStreak);
@@ -1746,33 +1778,33 @@ function getBestScoringPredictionStreak(completedPredictions) {
 }
 
 function applyTieBreakerMarkers(rows) {
-    const rowsByPoints = rows.reduce((groups, row) => {
-        if (!groups[row.points]) {
-            groups[row.points] = [];
+    rows.forEach((row) => {
+        row.tieBreakerRuleNumber = null;
+    });
+
+    rows.forEach((row, index) => {
+        const previousRow = rows[index - 1];
+        const nextRow = rows[index + 1];
+
+        if (previousRow && previousRow.points === row.points) {
+            row.tieBreakerRuleNumber = getTieBreakerRuleBetweenRows(previousRow, row);
+            return;
         }
 
-        groups[row.points].push(row);
-        return groups;
-    }, {});
-
-    Object.values(rowsByPoints).forEach((tiedRows) => {
-        if (tiedRows.length < 2) return;
-
-        const ruleNumber = getFirstTieBreakerRuleForGroup(tiedRows);
-
-        tiedRows.forEach((row) => {
-            row.tieBreakerRuleNumber = ruleNumber;
-        });
+        if (nextRow && nextRow.points === row.points) {
+            row.tieBreakerRuleNumber = getTieBreakerRuleBetweenRows(row, nextRow);
+        }
     });
 }
 
-function getFirstTieBreakerRuleForGroup(rows) {
-    if (hasDifferentValues(rows, "exactScoreCount")) return 2;
-    if (hasDifferentValues(rows, "bestCorrectStreak")) return 3;
-    if (hasDifferentValues(rows, "totalGoalError")) return 4;
-    if (hasDifferentValues(rows, "goalDifferenceError")) return 5;
-    if (hasDifferentLaterStagePoints(rows)) return 6;
-    if (hasDifferentValues(rows, "scoreReachedTime")) return 7;
+function getTieBreakerRuleBetweenRows(a, b) {
+    if (!a || !b || a.points !== b.points) return null;
+    if (a.correctPredictionCount !== b.correctPredictionCount) return 2;
+    if (a.totalGoalError !== b.totalGoalError) return 3;
+    if (a.goalDifferenceError !== b.goalDifferenceError) return 4;
+    if (getLaterStagePointsSignature(a) !== getLaterStagePointsSignature(b)) return 5;
+    if (a.bestCorrectStreak !== b.bestCorrectStreak) return 6;
+    if (a.scoreReachedTime !== b.scoreReachedTime) return 7;
     return 8;
 }
 
@@ -1796,11 +1828,14 @@ function getLaterStagePointsSignature(row) {
 
 function formatLeaderboardPointsDisplay(row, context = "table") {
     const popupId = `tie-rule-popover-${row.id}-${context}`;
+    const tieBreakerBadge = context === "podium"
+        ? ""
+        : formatTieBreakerBadge(row, popupId);
 
     return `
         <span class="leaderboard-points-wrap leaderboard-points-wrap-${context}">
             <span class="leaderboard-points-number">${row.points}</span>
-            ${formatTieBreakerBadge(row, popupId)}
+            ${tieBreakerBadge}
         </span>
     `;
 }
@@ -1832,23 +1867,23 @@ function formatTieBreakerBadge(row, popupId) {
 
 function formatTieBreakerValue(row, ruleNumber) {
     if (ruleNumber === 2) {
-        return `هذا المشارك لديه ${row.exactScoreCount} نتيجة بالملّي.`;
+        return `هذا المشارك لديه ${row.correctPredictionCount} توقع صحيح.`;
     }
 
     if (ruleNumber === 3) {
-        return `أطول سلسلة صحيحة لهذا المشارك: ${row.bestCorrectStreak}.`;
-    }
-
-    if (ruleNumber === 4) {
         return `إجمالي خطأ الأهداف: ${row.totalGoalError}.`;
     }
 
-    if (ruleNumber === 5) {
+    if (ruleNumber === 4) {
         return `إجمالي خطأ فارق الأهداف: ${row.goalDifferenceError}.`;
     }
 
-    if (ruleNumber === 6) {
+    if (ruleNumber === 5) {
         return formatLaterStagePointsValue(row);
+    }
+
+    if (ruleNumber === 6) {
+        return `أطول سلسلة صحيحة لهذا المشارك: ${row.bestCorrectStreak}.`;
     }
 
     if (ruleNumber === 7) {
