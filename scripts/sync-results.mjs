@@ -179,23 +179,38 @@ function getScorePart(scorePart) {
     };
 }
 
-function addScoreParts(first, second) {
-    const hasAnyScore =
-        Number.isInteger(first.home) ||
-        Number.isInteger(first.away) ||
-        Number.isInteger(second.home) ||
-        Number.isInteger(second.away);
+function hasCompleteScorePart(scorePart) {
+    return Number.isInteger(scorePart?.home) && Number.isInteger(scorePart?.away);
+}
 
-    if (!hasAnyScore) {
+function addScoreParts(first, second) {
+    if (!hasCompleteScorePart(first)) {
         return { home: null, away: null };
     }
 
+    if (!hasCompleteScorePart(second)) {
+        return first;
+    }
+
     return {
-        home: (Number.isInteger(first.home) ? first.home : 0) +
-            (Number.isInteger(second.home) ? second.home : 0),
-        away: (Number.isInteger(first.away) ? first.away : 0) +
-            (Number.isInteger(second.away) ? second.away : 0)
+        home: first.home + second.home,
+        away: first.away + second.away
     };
+}
+
+function subtractScoreParts(total, partToRemove) {
+    if (!hasCompleteScorePart(total) || !hasCompleteScorePart(partToRemove)) {
+        return { home: null, away: null };
+    }
+
+    const home = total.home - partToRemove.home;
+    const away = total.away - partToRemove.away;
+
+    if (home < 0 || away < 0) {
+        return { home: null, away: null };
+    }
+
+    return { home, away };
 }
 
 function getScoringResultForPredictions(apiMatch) {
@@ -203,13 +218,38 @@ function getScoringResultForPredictions(apiMatch) {
     const duration = score.duration || "REGULAR";
     const fullTime = getScorePart(score.fullTime);
 
-    if (duration === "EXTRA_TIME" || duration === "PENALTY_SHOOTOUT") {
-        const regularTime = getScorePart(score.regularTime);
-        const extraTime = getScorePart(score.extraTime);
-        const footballScore = addScoreParts(regularTime, extraTime);
+    if (duration === "EXTRA_TIME") {
+        if (hasCompleteScorePart(fullTime)) {
+            return fullTime;
+        }
 
-        if (Number.isInteger(footballScore.home) && Number.isInteger(footballScore.away)) {
-            return footballScore;
+        return addScoreParts(
+            getScorePart(score.regularTime),
+            getScorePart(score.extraTime)
+        );
+    }
+
+    if (duration === "PENALTY_SHOOTOUT") {
+        const regularAndExtraTimeScore = addScoreParts(
+            getScorePart(score.regularTime),
+            getScorePart(score.extraTime)
+        );
+
+        if (hasCompleteScorePart(regularAndExtraTimeScore)) {
+            return regularAndExtraTimeScore;
+        }
+
+        if (hasCompleteScorePart(fullTime) && fullTime.home === fullTime.away) {
+            return fullTime;
+        }
+
+        const scoreWithoutPenalties = subtractScoreParts(
+            fullTime,
+            getScorePart(score.penalties)
+        );
+
+        if (hasCompleteScorePart(scoreWithoutPenalties)) {
+            return scoreWithoutPenalties;
         }
     }
 
