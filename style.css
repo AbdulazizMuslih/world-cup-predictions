@@ -5074,15 +5074,15 @@ button {
 }
 
 .stage-theme-third-place {
-  --stage-accent: #fcd34d;
-  --stage-accent-2: #b45309;
-  --stage-rgb: 245, 158, 11;
+  --stage-accent: #c084fc;
+  --stage-accent-2: #7c3aed;
+  --stage-rgb: 124, 58, 237;
 }
 
 .stage-theme-final {
-  --stage-accent: #d8b56d;
-  --stage-accent-2: #8c6a2e;
-  --stage-rgb: 198, 158, 82;
+  --stage-accent: #fff2b2;
+  --stage-accent-2: #d4af37;
+  --stage-rgb: 212, 175, 55;
 }
 
 .available-stage-grid {
@@ -5855,22 +5855,22 @@ body.stage-theme-semi-finals {
 }
 
 body.stage-theme-third-place {
-  --stage-accent: #f0b36f;
-  --stage-accent-2: #9c5b24;
-  --stage-rgb: 156, 91, 36;
-  --stage-on-accent: #11101a;
-  --stage-exact: #cd7f32;
-  --stage-exact-rgb: 205, 127, 50;
+  --stage-accent: #c084fc;
+  --stage-accent-2: #7c3aed;
+  --stage-rgb: 124, 58, 237;
+  --stage-on-accent: #ffffff;
+  --stage-exact: #e879f9;
+  --stage-exact-rgb: 232, 121, 249;
   --stage-exact-text: #11101a;
 }
 
 body.stage-theme-final {
-  --stage-accent: #e6c77a;
-  --stage-accent-2: #9f742f;
-  --stage-rgb: 159, 116, 47;
+  --stage-accent: #fff2b2;
+  --stage-accent-2: #d4af37;
+  --stage-rgb: 212, 175, 55;
   --stage-on-accent: #11101a;
-  --stage-exact: #d9b45a;
-  --stage-exact-rgb: 217, 180, 90;
+  --stage-exact: #facc15;
+  --stage-exact-rgb: 250, 204, 21;
   --stage-exact-text: #11101a;
 }
 
