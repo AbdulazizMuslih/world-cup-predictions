@@ -37,7 +37,7 @@ let tabHistory = [];
 let allowLeavingPage = false;
 let dashboardRefreshTimer = null;
 
-const APP_VERSION = "38.8";
+const APP_VERSION = "38.9";
 let updateCheckTimer = null;
 const SITE_STAGE_CACHE_KEY = "wcSiteStage";
 
@@ -2316,6 +2316,45 @@ async function recalculatePoints(matchId, actualTeam1GoalsValue, actualTeam2Goal
     }
 }
 
+function getVersionFromAssetUrl(assetUrl) {
+    if (!assetUrl) return "";
+
+    try {
+        return new URL(assetUrl, window.location.href).searchParams.get("v") || "";
+    } catch (error) {
+        return "";
+    }
+}
+
+function getCurrentHtmlShellVersions() {
+    const appScript = Array.from(document.scripts).find((script) => {
+        return /(^|\/)app\.js$/i.test(new URL(script.src || "", window.location.href).pathname);
+    });
+
+    const styleLink = Array.from(document.querySelectorAll('link[rel="stylesheet"]')).find((link) => {
+        return /(^|\/)style\.css$/i.test(new URL(link.href || "", window.location.href).pathname);
+    });
+
+    return {
+        appJs: getVersionFromAssetUrl(appScript?.getAttribute("src") || appScript?.src),
+        styleCss: getVersionFromAssetUrl(styleLink?.getAttribute("href") || styleLink?.href)
+    };
+}
+
+function isCurrentHtmlShellVersion(latestVersion) {
+    const shellVersions = getCurrentHtmlShellVersions();
+
+    return (
+        shellVersions.appJs === latestVersion &&
+        shellVersions.styleCss === latestVersion
+    );
+}
+
+function buildUpdateUrl(latestVersion) {
+    const baseUrl = `${window.location.origin}${window.location.pathname}`;
+    return `${baseUrl}?v=${encodeURIComponent(latestVersion)}&t=${Date.now()}`;
+}
+
 async function checkForAppUpdate(forceReload = false) {
     try {
         const response = await fetch(`version.json?t=${Date.now()}`, {
@@ -2329,8 +2368,11 @@ async function checkForAppUpdate(forceReload = false) {
 
         if (!latestVersion) return;
 
-        if (latestVersion === APP_VERSION) {
+        const htmlShellIsCurrent = isCurrentHtmlShellVersion(latestVersion);
+
+        if (latestVersion === APP_VERSION && htmlShellIsCurrent) {
             sessionStorage.removeItem("wcReloadAttemptedVersion");
+            sessionStorage.removeItem("wcReloadAttemptedUpdateKey");
             localStorage.removeItem("wcNeedsRefresh");
             localStorage.setItem("wcLoadedVersion", APP_VERSION);
             return;
@@ -2338,25 +2380,32 @@ async function checkForAppUpdate(forceReload = false) {
 
         localStorage.setItem("wcNeedsRefresh", "true");
 
+        const shellVersions = getCurrentHtmlShellVersions();
+        const updateKey = [
+            `app=${APP_VERSION}`,
+            `latest=${latestVersion}`,
+            `js=${shellVersions.appJs || "none"}`,
+            `css=${shellVersions.styleCss || "none"}`
+        ].join("|");
+
+        const reloadAttemptedUpdateKey = sessionStorage.getItem("wcReloadAttemptedUpdateKey");
         const reloadAttemptedVersion = sessionStorage.getItem("wcReloadAttemptedVersion");
 
-        if (reloadAttemptedVersion !== latestVersion || forceReload) {
+        if (forceReload || reloadAttemptedUpdateKey !== updateKey || reloadAttemptedVersion !== latestVersion) {
             sessionStorage.setItem("wcReloadAttemptedVersion", latestVersion);
+            sessionStorage.setItem("wcReloadAttemptedUpdateKey", updateKey);
 
-            const baseUrl = `${window.location.origin}${window.location.pathname}`;
-            const updateUrl = `${baseUrl}?v=${encodeURIComponent(latestVersion)}&t=${Date.now()}`;
-
-            window.location.replace(updateUrl);
+            window.location.replace(buildUpdateUrl(latestVersion));
             return;
         }
 
-        showUpdateRequiredOverlay(latestVersion);
+        showUpdateRequiredOverlay(latestVersion, shellVersions);
     } catch (error) {
         console.warn("Version check failed:", error);
     }
 }
 
-function showUpdateRequiredOverlay(latestVersion) {
+function showUpdateRequiredOverlay(latestVersion, shellVersions = getCurrentHtmlShellVersions()) {
     if (document.getElementById("updateRequiredOverlay")) return;
 
     const overlay = document.createElement("div");
@@ -2368,7 +2417,12 @@ function showUpdateRequiredOverlay(latestVersion) {
             <div class="update-required-icon">⚽</div>
             <h2>تم تحديث الموقع</h2>
             <p>
-                يوجد إصدار جديد من المسابقة. الرجاء التحديث للمتابعة بأحدث النتائج والتصميم.
+                يوجد إصدار جديد من المسابقة أو أن المتصفح ما زال يستخدم ملفات قديمة.
+                الرجاء التحديث للمتابعة بأحدث النتائج والتصميم.
+            </p>
+            <p class="update-required-debug">
+                الإصدار الحالي: ${APP_VERSION} — المطلوب: ${latestVersion}<br />
+                الملفات: JS ${shellVersions.appJs || "غير معروف"} / CSS ${shellVersions.styleCss || "غير معروف"}
             </p>
             <button type="button" id="forceRefreshBtn">
                 تحديث الآن
@@ -2382,10 +2436,7 @@ function showUpdateRequiredOverlay(latestVersion) {
         sessionStorage.removeItem("wcReloadAttemptedVersion");
         localStorage.removeItem("wcNeedsRefresh");
 
-        const baseUrl = `${window.location.origin}${window.location.pathname}`;
-        const updateUrl = `${baseUrl}?v=${encodeURIComponent(latestVersion)}&t=${Date.now()}`;
-
-        window.location.replace(updateUrl);
+        window.location.replace(buildUpdateUrl(latestVersion));
     });
 }
 

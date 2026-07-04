@@ -6845,3 +6845,21 @@ body.site-stage-theme #availableMatches .available-stage-card.match-card-predict
     padding: 16px;
   }
 }
+
+/* ===============================
+   V38.9 update overlay debug line
+   Shows stale JS/CSS cache-buster versions when refresh is required
+   =============================== */
+.update-required-debug {
+  margin-top: -10px !important;
+  margin-bottom: 18px !important;
+  padding: 10px 12px;
+  border-radius: 14px;
+  direction: ltr;
+  unicode-bidi: isolate;
+  font-size: 12px !important;
+  line-height: 1.6 !important;
+  color: rgba(247, 241, 227, 0.70) !important;
+  background: rgba(5, 8, 23, 0.34);
+  border: 1px solid rgba(241, 216, 154, 0.18);
+}
