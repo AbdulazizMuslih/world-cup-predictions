@@ -78,6 +78,9 @@ const MS = {
     day: 24 * 60 * 60 * 1000
 };
 
+const NORMAL_SYNC_LOOKBACK_HOURS = 36;
+const CORRECTION_SYNC_LOOKBACK_HOURS = 36;
+
 function toArabicTeamName(name) {
     if (!name) return "غير محدد";
     return TEAM_ARABIC_NAMES[name] || name;
@@ -183,6 +186,30 @@ function hasCompleteScorePart(scorePart) {
     return Number.isInteger(scorePart?.home) && Number.isInteger(scorePart?.away);
 }
 
+function isDrawScorePart(scorePart) {
+    return hasCompleteScorePart(scorePart) && scorePart.home === scorePart.away;
+}
+
+function makePenaltyShootoutScoreSafeDraw(scorePart) {
+    if (!hasCompleteScorePart(scorePart)) {
+        return { home: null, away: null };
+    }
+
+    if (scorePart.home === scorePart.away) {
+        return scorePart;
+    }
+
+    // A penalty shootout can only happen after a drawn football score.
+    // Some API snapshots briefly expose the winner side as 1-0 or 0-1 during/after pens.
+    // Never store that as the match score; repair it to the nearest valid drawn score.
+    const safestDrawScore = Math.max(scorePart.home, scorePart.away);
+
+    return {
+        home: safestDrawScore,
+        away: safestDrawScore
+    };
+}
+
 function addScoreParts(first, second) {
     if (!hasCompleteScorePart(first)) {
         return { home: null, away: null };
@@ -216,41 +243,51 @@ function subtractScoreParts(total, partToRemove) {
 function getScoringResultForPredictions(apiMatch) {
     const score = apiMatch.score || {};
     const duration = score.duration || "REGULAR";
+    const apiStatus = apiMatch.status || "";
+
     const fullTime = getScorePart(score.fullTime);
+    const regularTime = getScorePart(score.regularTime);
+    const extraTime = getScorePart(score.extraTime);
+    const penalties = getScorePart(score.penalties);
 
     if (duration === "EXTRA_TIME") {
         if (hasCompleteScorePart(fullTime)) {
             return fullTime;
         }
 
-        return addScoreParts(
-            getScorePart(score.regularTime),
-            getScorePart(score.extraTime)
-        );
+        return addScoreParts(regularTime, extraTime);
     }
 
     if (duration === "PENALTY_SHOOTOUT") {
-        const regularAndExtraTimeScore = addScoreParts(
-            getScorePart(score.regularTime),
-            getScorePart(score.extraTime)
-        );
+        const regularAndExtraTimeScore = addScoreParts(regularTime, extraTime);
 
-        if (hasCompleteScorePart(regularAndExtraTimeScore)) {
+        // Best source: regular-time score + extra-time goals.
+        // Only accept it for penalties if it is a draw, because penalty shootouts only happen after a draw.
+        if (isDrawScorePart(regularAndExtraTimeScore)) {
             return regularAndExtraTimeScore;
         }
 
-        if (hasCompleteScorePart(fullTime) && fullTime.home === fullTime.away) {
+        // Some API snapshots already expose the pre-penalty football score in fullTime.
+        if (isDrawScorePart(fullTime)) {
             return fullTime;
         }
 
-        const scoreWithoutPenalties = subtractScoreParts(
-            fullTime,
-            getScorePart(score.penalties)
-        );
+        // Other snapshots include penalties in fullTime. Remove penalties only if the result becomes a draw.
+        const scoreWithoutPenalties = subtractScoreParts(fullTime, penalties);
 
-        if (hasCompleteScorePart(scoreWithoutPenalties)) {
+        if (isDrawScorePart(scoreWithoutPenalties)) {
             return scoreWithoutPenalties;
         }
+
+        // During an active shootout, do not save a non-draw 1-0/0-1 snapshot as the actual result.
+        // Wait for the next correction/full sync when the API exposes a reliable draw.
+        if (apiStatus !== "FINISHED") {
+            return { home: null, away: null };
+        }
+
+        // Last-resort protection for finished penalty matches: the football score must be a draw.
+        // This prevents wrong stored results such as Egypt 1-0 Australia after penalties.
+        return makePenaltyShootoutScoreSafeDraw(fullTime);
     }
 
     return fullTime;
@@ -368,7 +405,7 @@ async function normalizeUpsertAndScore(apiMatches, exactFilter, label) {
 
 async function runNormalSync() {
     const now = new Date();
-    const fromTime = new Date(now.getTime() - 8 * MS.hour);
+    const fromTime = new Date(now.getTime() - NORMAL_SYNC_LOOKBACK_HOURS * MS.hour);
     const toTime = new Date(now.getTime() + 24 * MS.hour);
     const apiUrl = buildWindowApiUrl(fromTime, toTime);
 
@@ -388,7 +425,7 @@ async function runNormalSync() {
 
 async function getActiveMatches() {
     const now = new Date();
-    const fromTime = new Date(now.getTime() - 8 * MS.hour);
+    const fromTime = new Date(now.getTime() - CORRECTION_SYNC_LOOKBACK_HOURS * MS.hour);
 
     const path =
         "matches" +
@@ -406,15 +443,15 @@ async function getActiveMatches() {
 }
 
 async function runCorrectionSync() {
-    console.log("Running active match correction sync.");
+    console.log("Running recent match correction sync.");
 
     const { now, fromTime, matches } = await getActiveMatches();
 
-    console.log(`Active match window: ${fromTime.toISOString()} to ${now.toISOString()}`);
-    console.log(`Active matches found in Supabase: ${matches.length}`);
+    console.log(`Recent correction window: ${fromTime.toISOString()} to ${now.toISOString()}`);
+    console.log(`Recent matches found in Supabase: ${matches.length}`);
 
     if (matches.length === 0) {
-        console.log("No active matches. Skipping football-data API call.");
+        console.log("No recent matches. Skipping football-data API call.");
         return;
     }
 
