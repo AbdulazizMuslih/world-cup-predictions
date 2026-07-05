@@ -18,6 +18,49 @@ const loginForm = document.getElementById("loginForm");
 const dashboard = document.getElementById("dashboard");
 const welcomeName = document.getElementById("welcomeName");
 
+const openSiteMenuBtn = document.getElementById("openSiteMenuBtn");
+const closeSiteMenuBtn = document.getElementById("closeSiteMenuBtn");
+const siteMenuDrawer = document.getElementById("siteMenuDrawer");
+const siteMenuOverlay = document.getElementById("siteMenuOverlay");
+const profileQuickBtn = document.getElementById("profileQuickBtn");
+const menuProfileCard = document.getElementById("menuProfileCard");
+const menuProfileAvatar = document.getElementById("menuProfileAvatar");
+const menuProfileName = document.getElementById("menuProfileName");
+const menuProfileMeta = document.getElementById("menuProfileMeta");
+const profilePageTitle = document.getElementById("profilePageTitle");
+
+const MENU_PAGE_IDS = {
+    profile: "profileTab",
+    highlights: "highlightsTab",
+    statistics: "statisticsTab",
+    journey: "journeyTab",
+    awards: "awardsTab",
+    about: "aboutTab",
+    contact: "contactTab"
+};
+
+const MENU_PAGE_LABELS = {
+    profile: "الملف الشخصي",
+    highlights: "الأضواء",
+    statistics: "الإحصائيات",
+    journey: "رحلة البطولة",
+    awards: "الجوائز",
+    about: "عن المسابقة",
+    contact: "تواصل معنا"
+};
+
+const AI_POSTS_TABLE = "ai_posts";
+const aiPostsCache = new Map();
+const aiPostsLoadState = new Map();
+
+const AI_SECTION_EMPTY_MESSAGES = {
+    highlights: "لم يتم نشر أضواء ذكية بعد. ستظهر هنا بعد اكتمال كل مباراتين وتوليد المنشور تلقائياً.",
+    statistics: "لم يتم نشر إحصائيات ذكية بعد. ستظهر هنا عندما يبدأ توليد محتوى الإحصائيات.",
+    journey: "رحلة البطولة ستُبنى تدريجياً مع تقدم المباريات ونشر محطات جديدة.",
+    awards: "الشارات والجوائز ستظهر هنا بعد توليدها من بيانات المسابقة.",
+    profile: "تعليق الملف الشخصي سيظهر هنا بعد توليد محتوى AI الخاص بالمشارك."
+};
+
 const availableMatches = document.getElementById("availableMatches");
 const myPredictions = document.getElementById("myPredictions");
 const leaderboard = document.getElementById("leaderboard");
@@ -37,7 +80,7 @@ let tabHistory = [];
 let allowLeavingPage = false;
 let dashboardRefreshTimer = null;
 
-const APP_VERSION = "38.9";
+const APP_VERSION = "39.0";
 let updateCheckTimer = null;
 const SITE_STAGE_CACHE_KEY = "wcSiteStage";
 
@@ -69,6 +112,7 @@ daiDaiAudio.addEventListener("ended", () => {
 
 async function init() {
     setupTabs();
+    setupSiteMenu();
 
     applySiteStageTheme(getCachedSiteStage());
 
@@ -120,6 +164,7 @@ async function restoreParticipantSession() {
 async function openParticipantDashboard(participant, rememberParticipant = true) {
     currentParticipant = participant;
     welcomeName.textContent = participant.name;
+    updateMenuProfileCard();
 
     if (rememberParticipant) {
         localStorage.setItem(
@@ -318,6 +363,7 @@ async function openAdminDashboard(password = ADMIN_PASSWORD, rememberAdmin = tru
     localStorage.removeItem("wcParticipant");
 
     welcomeName.textContent = "الإدارة";
+    updateMenuProfileCard();
 
     loginCard.classList.add("hidden");
     dashboard.classList.remove("hidden");
@@ -353,6 +399,7 @@ adminLoginBtn.addEventListener("click", async () => {
 logoutBtn.addEventListener("click", () => {
     currentParticipant = null;
     isAdminMode = false;
+    updateMenuProfileCard();
     stopDashboardAutoRefresh();
 
     localStorage.removeItem("wcParticipant");
@@ -385,6 +432,616 @@ logoutBtn.addEventListener("click", () => {
     activateTab("available");
 });
 
+
+function setupSiteMenu() {
+    if (openSiteMenuBtn) {
+        openSiteMenuBtn.addEventListener("click", openSiteMenu);
+    }
+
+    if (closeSiteMenuBtn) {
+        closeSiteMenuBtn.addEventListener("click", closeSiteMenu);
+    }
+
+    if (siteMenuOverlay) {
+        siteMenuOverlay.addEventListener("click", closeSiteMenu);
+    }
+
+    document.querySelectorAll("[data-menu-tab]").forEach((button) => {
+        button.addEventListener("click", () => {
+            handleSiteMenuTab(button.dataset.menuTab);
+        });
+    });
+
+    document.querySelectorAll("[data-menu-page]").forEach((button) => {
+        button.addEventListener("click", () => {
+            handleSiteMenuPage(button.dataset.menuPage);
+        });
+    });
+
+    document.addEventListener("keydown", (event) => {
+        if (event.key === "Escape" && siteMenuDrawer && !siteMenuDrawer.classList.contains("hidden")) {
+            closeSiteMenu();
+        }
+    });
+
+    updateMenuProfileCard();
+}
+
+function openSiteMenu() {
+    if (!siteMenuDrawer || !siteMenuOverlay) return;
+
+    siteMenuOverlay.classList.remove("hidden");
+    siteMenuDrawer.classList.remove("hidden");
+    document.body.classList.add("site-menu-open");
+
+    openSiteMenuBtn?.setAttribute("aria-expanded", "true");
+    siteMenuDrawer.setAttribute("aria-hidden", "false");
+    siteMenuOverlay.setAttribute("aria-hidden", "false");
+
+    updateMenuProfileCard();
+    updateSiteMenuActiveState(currentTabName);
+}
+
+function closeSiteMenu() {
+    if (!siteMenuDrawer || !siteMenuOverlay) return;
+
+    siteMenuOverlay.classList.add("hidden");
+    siteMenuDrawer.classList.add("hidden");
+    document.body.classList.remove("site-menu-open");
+
+    openSiteMenuBtn?.setAttribute("aria-expanded", "false");
+    siteMenuDrawer.setAttribute("aria-hidden", "true");
+    siteMenuOverlay.setAttribute("aria-hidden", "true");
+}
+
+function handleSiteMenuTab(tabName) {
+    if (!tabName) return;
+
+    if (tabName === "available" || tabName === "mine") {
+        if (!currentParticipant) {
+            showLoginNudge("سجّل الدخول أولاً لعرض هذا القسم.");
+            return;
+        }
+    }
+
+    if ((tabName === "admin" || tabName === "adminPredictions") && !isAdminMode) {
+        showLoginNudge("هذا القسم خاص بالإدارة.");
+        return;
+    }
+
+    if (dashboard.classList.contains("hidden")) {
+        showLoginNudge("سجّل الدخول أولاً لعرض هذا القسم.");
+        return;
+    }
+
+    closeSiteMenu();
+    goToDashboardTab(tabName);
+    scrollDashboardIntoView();
+}
+
+function handleSiteMenuPage(pageName) {
+    if (!pageName) return;
+
+    if (pageName === "home") {
+        closeSiteMenu();
+        window.scrollTo({ top: 0, behavior: "smooth" });
+        return;
+    }
+
+    if (!MENU_PAGE_IDS[pageName]) return;
+
+    if (dashboard.classList.contains("hidden")) {
+        showLoginNudge("سجّل الدخول أولاً لعرض هذا القسم.");
+        return;
+    }
+
+    closeSiteMenu();
+    goToDashboardTab(pageName);
+    scrollDashboardIntoView();
+}
+
+function showLoginNudge(message) {
+    closeSiteMenu();
+
+    loginMessage.textContent = message;
+    loginCard.classList.remove("hidden");
+
+    if (dashboard.classList.contains("hidden")) {
+        loginCard.scrollIntoView({ behavior: "smooth", block: "center" });
+    } else {
+        dashboard.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+}
+
+function scrollDashboardIntoView() {
+    dashboard.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+function updateMenuProfileCard() {
+    if (!menuProfileName || !menuProfileMeta || !menuProfileAvatar) return;
+
+    if (isAdminMode) {
+        menuProfileAvatar.textContent = "🛠️";
+        menuProfileName.textContent = "الإدارة";
+        menuProfileMeta.textContent = "لوحة التحكم وإدارة التوقعات";
+        profileQuickBtn?.classList.add("site-profile-ready");
+        return;
+    }
+
+    if (currentParticipant) {
+        const visual = getParticipantVisual(currentParticipant.name);
+        menuProfileAvatar.textContent = visual.icon;
+        menuProfileAvatar.style.setProperty("--participant-accent", visual.color);
+        menuProfileName.textContent = currentParticipant.name;
+        menuProfileMeta.textContent = "ملفك، شاراتك، ولحظاتك في البطولة";
+        profileQuickBtn?.classList.add("site-profile-ready");
+        return;
+    }
+
+    menuProfileAvatar.textContent = "👤";
+    menuProfileAvatar.style.removeProperty("--participant-accent");
+    menuProfileName.textContent = "الملف الشخصي";
+    menuProfileMeta.textContent = "سجّل الدخول لعرض النقاط والشارات";
+    profileQuickBtn?.classList.remove("site-profile-ready");
+}
+
+function updateSiteMenuActiveState(activeKey) {
+    document.querySelectorAll(".site-menu-link, .site-menu-profile-card").forEach((button) => {
+        const isActive = button.dataset.menuTab === activeKey || button.dataset.menuPage === activeKey;
+        button.classList.toggle("site-menu-link-active", isActive);
+    });
+}
+
+async function renderProfilePageShell() {
+    const profileSummary = document.getElementById("profileSummary");
+    const profileBadges = document.getElementById("profileBadges");
+    const profileAiStory = document.getElementById("profileAiStory");
+
+    if (!profileSummary) return;
+
+    if (profilePageTitle) {
+        profilePageTitle.textContent = currentParticipant
+            ? `رحلة ${currentParticipant.name}`
+            : isAdminMode
+                ? "ملف الإدارة"
+                : "رحلة المشارك";
+    }
+
+    if (isAdminMode) {
+        profileSummary.innerHTML = `
+            <div class="placeholder-card">
+                ملف الإدارة جاهز لعرض ملخصات تشغيلية لاحقاً عن الأضواء، التوليد التلقائي، والمباريات المكتملة.
+            </div>
+        `;
+        if (profileBadges) profileBadges.innerHTML = "";
+        if (profileAiStory) profileAiStory.innerHTML = "";
+        return;
+    }
+
+    if (!currentParticipant) {
+        profileSummary.innerHTML = `<div class="placeholder-card">سجّل الدخول لعرض ملفك الشخصي.</div>`;
+        if (profileBadges) profileBadges.innerHTML = "";
+        if (profileAiStory) profileAiStory.innerHTML = "";
+        return;
+    }
+
+    profileSummary.innerHTML = `<div class="placeholder-card">جاري تحميل ملفك الشخصي...</div>`;
+    if (profileBadges) profileBadges.innerHTML = "";
+    if (profileAiStory) profileAiStory.innerHTML = "";
+
+    try {
+        const [profileStats, profilePosts] = await Promise.all([
+            loadParticipantProfileStats(currentParticipant.id),
+            loadAiPosts("profile", { participantId: currentParticipant.id, useCache: false })
+        ]);
+
+        const visual = getParticipantVisual(currentParticipant.name);
+        const primaryProfilePost = profilePosts[0];
+
+        profileSummary.innerHTML = renderProfileSummary(currentParticipant, visual, profileStats);
+
+        if (profileBadges) {
+            profileBadges.innerHTML = renderProfileBadges(profileStats);
+        }
+
+        if (profileAiStory) {
+            profileAiStory.innerHTML = primaryProfilePost
+                ? renderAiPostCard(primaryProfilePost, { compact: true })
+                : `<div class="placeholder-card">${AI_SECTION_EMPTY_MESSAGES.profile}</div>`;
+        }
+    } catch (error) {
+        console.error("Profile page load failed:", error);
+        profileSummary.innerHTML = `<div class="placeholder-card">تعذر تحميل الملف الشخصي حالياً.</div>`;
+    }
+}
+
+async function renderMenuPageContent(tabName) {
+    if (tabName === "profile") {
+        await renderProfilePageShell();
+        return;
+    }
+
+    if (tabName === "highlights") {
+        await renderHighlightsPage();
+        return;
+    }
+
+    if (tabName === "statistics") {
+        await renderAiCardSection("statistics", "statisticsCards");
+        return;
+    }
+
+    if (tabName === "journey") {
+        await renderJourneyPage();
+        return;
+    }
+
+    if (tabName === "awards") {
+        await renderAwardsPage();
+        return;
+    }
+
+    if (tabName === "about") {
+        renderAboutPage();
+    }
+}
+
+function runMenuPageRenderer(tabName) {
+    if (!MENU_PAGE_IDS[tabName]) return;
+
+    renderMenuPageContent(tabName).catch((error) => {
+        console.error(`Menu page render failed for ${tabName}:`, error);
+    });
+}
+
+async function renderHighlightsPage() {
+    const featuredContainer = document.getElementById("highlightsFeaturedPost");
+    const feedContainer = document.getElementById("aiHighlightsFeed");
+
+    if (!featuredContainer || !feedContainer) return;
+
+    featuredContainer.innerHTML = `<div class="placeholder-card">جاري تحميل الأضواء...</div>`;
+    feedContainer.innerHTML = "";
+
+    const posts = await loadAiPosts("highlights");
+
+    if (posts.length === 0) {
+        featuredContainer.innerHTML = `<div class="placeholder-card">${AI_SECTION_EMPTY_MESSAGES.highlights}</div>`;
+        return;
+    }
+
+    const [featuredPost, ...restPosts] = posts;
+    featuredContainer.innerHTML = renderAiPostCard(featuredPost, { featured: true });
+    feedContainer.innerHTML = restPosts.length > 0
+        ? restPosts.map((post) => renderAiPostCard(post)).join("")
+        : `<div class="placeholder-card">سيظهر المزيد من الأضواء مع تقدم البطولة.</div>`;
+}
+
+async function renderAiCardSection(sectionKey, containerId) {
+    const container = document.getElementById(containerId);
+
+    if (!container) return;
+
+    container.innerHTML = `<div class="placeholder-card">جاري تحميل المحتوى...</div>`;
+
+    const posts = await loadAiPosts(sectionKey);
+
+    container.innerHTML = posts.length > 0
+        ? posts.map((post) => renderAiPostCard(post, { compact: true })).join("")
+        : `<div class="placeholder-card">${AI_SECTION_EMPTY_MESSAGES[sectionKey] || "لا يوجد محتوى منشور حالياً."}</div>`;
+}
+
+async function renderJourneyPage() {
+    const container = document.getElementById("journeyTimeline");
+
+    if (!container) return;
+
+    container.innerHTML = `<div class="placeholder-card">جاري تحميل رحلة البطولة...</div>`;
+
+    const posts = await loadAiPosts("journey");
+
+    container.innerHTML = posts.length > 0
+        ? posts.map((post, index) => renderJourneyItem(post, index)).join("")
+        : `<div class="placeholder-card">${AI_SECTION_EMPTY_MESSAGES.journey}</div>`;
+}
+
+async function renderAwardsPage() {
+    const container = document.getElementById("awardsGrid");
+
+    if (!container) return;
+
+    container.innerHTML = `<div class="placeholder-card">جاري تحميل الشارات...</div>`;
+
+    const posts = await loadAiPosts("awards");
+
+    container.innerHTML = posts.length > 0
+        ? posts.map((post) => renderAwardCard(post)).join("")
+        : `<div class="placeholder-card">${AI_SECTION_EMPTY_MESSAGES.awards}</div>`;
+}
+
+function renderAboutPage() {
+    const rulesSummary = document.getElementById("rulesSummary");
+
+    if (!rulesSummary || rulesSummary.dataset.rendered === "true") return;
+
+    rulesSummary.dataset.rendered = "true";
+    rulesSummary.innerHTML = `
+        <div class="info-card rules-card">
+            <strong>٥٠ نقطة</strong>
+            <span>إذا كان التوقع مطابقاً للنتيجة بالضبط.</span>
+        </div>
+        <div class="info-card rules-card">
+            <strong>١٠ نقاط</strong>
+            <span>إذا كان الفائز أو التعادل صحيحاً، حتى لو اختلفت النتيجة.</span>
+        </div>
+        <div class="info-card rules-card">
+            <strong>إغلاق التوقع</strong>
+            <span>يمكن تعديل التوقع حتى بداية المباراة فقط.</span>
+        </div>
+    `;
+}
+
+async function loadAiPosts(sectionKey, options = {}) {
+    const participantId = options.participantId || null;
+    const cacheKey = participantId ? `${sectionKey}:${participantId}` : sectionKey;
+
+    if (options.useCache !== false && aiPostsCache.has(cacheKey)) {
+        return aiPostsCache.get(cacheKey);
+    }
+
+    if (aiPostsLoadState.has(cacheKey)) {
+        return aiPostsLoadState.get(cacheKey);
+    }
+
+    const loadPromise = (async () => {
+        let query = db
+            .from(AI_POSTS_TABLE)
+            .select(`
+                id,
+                section_key,
+                title_ar,
+                subtitle_ar,
+                body_ar,
+                icon,
+                cards_json,
+                participant_id,
+                source_completed_match_count,
+                source_match_ids,
+                display_order,
+                created_at
+            `)
+            .eq("visible", true)
+            .eq("section_key", sectionKey)
+            .order("display_order", { ascending: false })
+            .order("created_at", { ascending: false })
+            .limit(30);
+
+        if (participantId) {
+            query = query.eq("participant_id", participantId);
+        }
+
+        const { data, error } = await query;
+
+        if (error) {
+            console.warn(`AI posts table not ready or failed for ${sectionKey}:`, error.message || error);
+            aiPostsCache.set(cacheKey, []);
+            return [];
+        }
+
+        const posts = (data || []).map(normalizeAiPost);
+        aiPostsCache.set(cacheKey, posts);
+        return posts;
+    })();
+
+    aiPostsLoadState.set(cacheKey, loadPromise);
+
+    try {
+        return await loadPromise;
+    } finally {
+        aiPostsLoadState.delete(cacheKey);
+    }
+}
+
+function normalizeAiPost(post) {
+    return {
+        ...post,
+        icon: post.icon || "✨",
+        cards: normalizeJsonArray(post.cards_json)
+    };
+}
+
+function normalizeJsonArray(value) {
+    if (Array.isArray(value)) return value;
+
+    if (!value) return [];
+
+    if (typeof value === "string") {
+        try {
+            const parsed = JSON.parse(value);
+            return Array.isArray(parsed) ? parsed : [];
+        } catch (error) {
+            return [];
+        }
+    }
+
+    return [];
+}
+
+function renderAiPostCard(post, options = {}) {
+    const classes = [
+        "ai-post-card",
+        options.featured ? "ai-post-card-featured" : "",
+        options.compact ? "ai-post-card-compact" : ""
+    ].filter(Boolean).join(" ");
+
+    const cards = post.cards || [];
+    const completedCountText = Number.isInteger(post.source_completed_match_count)
+        ? `${post.source_completed_match_count} مباراة مكتملة`
+        : "محتوى ذكي";
+
+    return `
+        <article class="${classes}">
+            <div class="ai-post-head">
+                <span class="ai-post-icon" aria-hidden="true">${escapeHtml(post.icon || "✨")}</span>
+                <div>
+                    <p class="ai-post-meta">${completedCountText}</p>
+                    <h4>${escapeHtml(post.title_ar || "منشور ذكي")}</h4>
+                </div>
+            </div>
+
+            ${post.subtitle_ar ? `<p class="ai-post-subtitle">${escapeHtml(post.subtitle_ar)}</p>` : ""}
+            ${post.body_ar ? `<p class="ai-post-body">${escapeHtml(post.body_ar)}</p>` : ""}
+
+            ${cards.length > 0 ? `
+                <div class="ai-post-mini-grid">
+                    ${cards.slice(0, 4).map((card) => renderAiMiniCard(card)).join("")}
+                </div>
+            ` : ""}
+        </article>
+    `;
+}
+
+function renderAiMiniCard(card) {
+    return `
+        <div class="ai-mini-card">
+            <span>${escapeHtml(card.icon || "•")}</span>
+            <strong>${escapeHtml(card.label || card.title || "لقطة")}</strong>
+            <small>${escapeHtml(card.text || card.value || "")}</small>
+        </div>
+    `;
+}
+
+function renderJourneyItem(post, index) {
+    return `
+        <article class="journey-item">
+            <span class="journey-step">${index + 1}</span>
+            ${renderAiPostCard(post, { compact: true })}
+        </article>
+    `;
+}
+
+function renderAwardCard(post) {
+    return `
+        <article class="award-card">
+            <div class="award-icon" aria-hidden="true">${escapeHtml(post.icon || "🏅")}</div>
+            <div>
+                <p class="ai-post-meta">شارة ذكية</p>
+                <h4>${escapeHtml(post.title_ar || "جائزة")}</h4>
+                <p>${escapeHtml(post.body_ar || "")}</p>
+            </div>
+        </article>
+    `;
+}
+
+async function loadParticipantProfileStats(participantId) {
+    const { data, error } = await db
+        .from("matches")
+        .select(`
+            id,
+            team1,
+            team2,
+            kickoff_at,
+            stage,
+            actual_team1_goals,
+            actual_team2_goals,
+            predictions!inner (
+                predicted_team1_goals,
+                predicted_team2_goals,
+                points,
+                participant_id
+            )
+        `)
+        .eq("predictions.participant_id", participantId);
+
+    if (error) {
+        throw error;
+    }
+
+    const matches = data || [];
+    const finishedMatches = matches.filter(hasActualScore);
+
+    const stats = finishedMatches.reduce((acc, match) => {
+        const prediction = match.predictions?.[0];
+        const points = prediction ? calculateLivePredictionPoints(prediction, match) : 0;
+
+        acc.totalPoints += points;
+        acc.finishedPredictions += 1;
+
+        if (points === 50) acc.exactScores += 1;
+        if (points === 10) acc.correctOutcomes += 1;
+        if (points > 0) acc.scoringPredictions += 1;
+
+        const stage = getPredictionStage(match);
+        acc.stagePoints[stage] = (acc.stagePoints[stage] || 0) + points;
+
+        return acc;
+    }, {
+        totalPredictions: matches.length,
+        finishedPredictions: 0,
+        scoringPredictions: 0,
+        exactScores: 0,
+        correctOutcomes: 0,
+        totalPoints: 0,
+        stagePoints: {}
+    });
+
+    const bestStage = Object.entries(stats.stagePoints)
+        .sort((a, b) => b[1] - a[1])[0];
+
+    stats.bestStage = bestStage ? (LEADERBOARD_STAGE_LABELS[bestStage[0]] || bestStage[0]) : "بانتظار النتائج";
+
+    return stats;
+}
+
+function renderProfileSummary(participant, visual, stats) {
+    return `
+        <div class="profile-hero-card" style="--participant-accent: ${visual.color}">
+            <div class="profile-hero-avatar" aria-hidden="true">${visual.icon}</div>
+            <div>
+                <p class="eyebrow">الملف الشخصي</p>
+                <h4>${escapeHtml(participant.name)}</h4>
+                <p>ملخص سريع من بياناتك الحالية. التعليق الذكي سيظهر عندما يتم توليد محتوى AI للملف.</p>
+            </div>
+        </div>
+
+        <div class="profile-stat-grid">
+            <div class="profile-stat-card"><strong>${stats.totalPoints}</strong><span>نقطة</span></div>
+            <div class="profile-stat-card"><strong>${stats.totalPredictions}</strong><span>توقع</span></div>
+            <div class="profile-stat-card"><strong>${stats.exactScores}</strong><span>بالملّي</span></div>
+            <div class="profile-stat-card"><strong>${stats.scoringPredictions}</strong><span>توقع صحيح</span></div>
+            <div class="profile-stat-card profile-stat-card-wide"><strong>${escapeHtml(stats.bestStage)}</strong><span>أفضل مرحلة</span></div>
+        </div>
+    `;
+}
+
+function renderProfileBadges(stats) {
+    const badges = [];
+
+    if (stats.exactScores > 0) {
+        badges.push({ icon: "🎯", title: "عينك على النتيجة", text: `${stats.exactScores} توقع بالملّي حتى الآن.` });
+    }
+
+    if (stats.scoringPredictions >= 3) {
+        badges.push({ icon: "🔥", title: "داخل المنافسة", text: `${stats.scoringPredictions} توقعات جابت نقاط.` });
+    }
+
+    if (stats.totalPredictions > 0 && stats.finishedPredictions === 0) {
+        badges.push({ icon: "⏳", title: "بانتظار الحسم", text: "توقعاتك موجودة، والنتائج القادمة تحدد القصة." });
+    }
+
+    if (badges.length === 0) {
+        return `<div class="placeholder-card">الشارات ستظهر هنا مع تقدم نتائجك في البطولة.</div>`;
+    }
+
+    return badges.map((badge) => `
+        <div class="badge-card">
+            <span aria-hidden="true">${badge.icon}</span>
+            <strong>${escapeHtml(badge.title)}</strong>
+            <small>${escapeHtml(badge.text)}</small>
+        </div>
+    `).join("");
+}
+
 function setupTabs() {
     const tabs = document.querySelectorAll(".tab");
 
@@ -404,6 +1061,13 @@ function activateTab(tabName) {
         leaderboard: document.getElementById("leaderboardTab"),
         admin: document.getElementById("adminTab"),
         adminPredictions: document.getElementById("adminPredictionsTab"),
+        profile: document.getElementById(MENU_PAGE_IDS.profile),
+        highlights: document.getElementById(MENU_PAGE_IDS.highlights),
+        statistics: document.getElementById(MENU_PAGE_IDS.statistics),
+        journey: document.getElementById(MENU_PAGE_IDS.journey),
+        awards: document.getElementById(MENU_PAGE_IDS.awards),
+        about: document.getElementById(MENU_PAGE_IDS.about),
+        contact: document.getElementById(MENU_PAGE_IDS.contact),
     };
 
     if (!panels[tabName]) return;
@@ -422,6 +1086,9 @@ function activateTab(tabName) {
 
     panels[tabName].classList.remove("hidden");
     currentTabName = tabName;
+    updateSiteMenuActiveState(tabName);
+
+    runMenuPageRenderer(tabName);
 }
 
 function startDashboardTabSession(tabName) {

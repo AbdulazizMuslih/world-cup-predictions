@@ -6,11 +6,68 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#10162d" />
     <title>توقعات كأس العالم 2026</title>
-    <link rel="stylesheet" href="style.css?v=38.9" />
+    <link rel="stylesheet" href="style.css?v=39.0" />
 </head>
 
 <body>
     <div class="app-shell">
+        <button
+            id="openSiteMenuBtn"
+            class="site-corner-btn site-menu-corner-btn"
+            type="button"
+            aria-label="فتح القائمة"
+            aria-haspopup="dialog"
+            aria-controls="siteMenuDrawer"
+        >
+            <span class="site-menu-icon" aria-hidden="true">
+                <span></span>
+                <span></span>
+                <span></span>
+            </span>
+        </button>
+
+        <button
+            id="profileQuickBtn"
+            class="site-corner-btn site-profile-corner-btn"
+            type="button"
+            data-menu-page="profile"
+            aria-label="الملف الشخصي"
+        >
+            <span class="site-profile-icon" aria-hidden="true">👤</span>
+        </button>
+
+        <div id="effectsLayer" class="effects-layer" aria-hidden="true"></div>
+        <div id="screenEventRegion" class="screen-event-region" aria-live="polite" aria-atomic="false"></div>
+
+        <div id="siteMenuOverlay" class="site-menu-overlay hidden" aria-hidden="true"></div>
+        <aside id="siteMenuDrawer" class="site-menu-drawer hidden" role="dialog" aria-modal="true" aria-labelledby="siteMenuTitle" aria-hidden="true">
+            <div class="site-menu-head">
+                <button id="closeSiteMenuBtn" class="site-menu-close" type="button" aria-label="إغلاق القائمة">×</button>
+                <h2 id="siteMenuTitle">القائمة</h2>
+            </div>
+
+            <button id="menuProfileCard" class="site-menu-profile-card" type="button" data-menu-page="profile">
+                <span id="menuProfileAvatar" class="site-menu-profile-avatar" aria-hidden="true">👤</span>
+                <span class="site-menu-profile-copy">
+                    <strong id="menuProfileName">الملف الشخصي</strong>
+                    <small id="menuProfileMeta">سجّل الدخول لعرض النقاط والشارات</small>
+                </span>
+            </button>
+
+            <nav class="site-menu-nav" aria-label="روابط الموقع">
+                <button class="site-menu-link" type="button" data-menu-page="home">الرئيسية</button>
+                <button class="site-menu-link" type="button" data-menu-tab="available">المباريات المتاحة</button>
+                <button class="site-menu-link" type="button" data-menu-tab="mine">توقعاتي</button>
+                <button class="site-menu-link" type="button" data-menu-tab="leaderboard">الترتيب</button>
+                <button class="site-menu-link" type="button" data-menu-page="highlights">الأضواء</button>
+                <button class="site-menu-link" type="button" data-menu-page="statistics">الإحصائيات</button>
+                <button class="site-menu-link" type="button" data-menu-page="journey">رحلة البطولة</button>
+                <button class="site-menu-link" type="button" data-menu-page="awards">الجوائز</button>
+                <button class="site-menu-link" type="button" data-menu-page="about">عن المسابقة</button>
+                <button class="site-menu-link" type="button" data-menu-page="contact">تواصل معنا</button>
+            </nav>
+        </aside>
+
         <header class="hero">
             <div class="hero-overlay">
                 <p class="eyebrow">مسابقة توقعات خاصة</p>
@@ -25,10 +82,18 @@
                     <span>📈 ترتيب مباشر</span>
                 </div>
 
-                <div class="hero-actions">
-                    <button id="musicBtn" class="music-btn" type="button">
-                        ▶ شغّل Dai Dai
-                    </button>
+                <div class="hero-actions hero-actions-v39">
+                    <div id="musicCarousel" class="music-carousel" aria-label="مشغل الأغاني">
+                        <button id="musicPrevBtn" class="music-nav-btn" type="button" aria-label="الأغنية السابقة">‹</button>
+
+                        <div id="musicTrackList" class="music-track-list" role="list">
+                            <button id="musicBtn" class="music-btn music-track active" type="button" data-track-src="./assets/song.mp3?v=2" role="listitem">
+                                ▶ شغّل Dai Dai
+                            </button>
+                        </div>
+
+                        <button id="musicNextBtn" class="music-nav-btn" type="button" aria-label="الأغنية التالية">›</button>
+                    </div>
 
                     <audio id="daiDaiAudio" src="./assets/song.mp3?v=2" preload="auto"></audio>
                 </div>
@@ -109,10 +174,114 @@
                     <div id="leaderboard"></div>
                 </section>
 
+                <section id="profileTab" class="tab-panel menu-page-panel hidden" data-menu-page="profile">
+                    <div class="menu-page-header">
+                        <p class="eyebrow">الملف الشخصي</p>
+                        <h3 id="profilePageTitle">رحلة المشارك</h3>
+                        <p class="menu-page-subtitle">ملخص النقاط، الشارات، أفضل اللحظات، ولمحة ذكية عن أسلوب التوقع.</p>
+                    </div>
+
+                    <div id="profileSummary" class="profile-summary-grid">
+                        <div class="placeholder-card">سيظهر هنا ملخص المشارك بعد ربط الصفحة بالبيانات.</div>
+                    </div>
+
+                    <div id="profileBadges" class="badge-grid"></div>
+                    <div id="profileAiStory" class="ai-story-card"></div>
+                </section>
+
+                <section id="highlightsTab" class="tab-panel menu-page-panel hidden" data-menu-page="highlights">
+                    <div class="menu-page-header">
+                        <p class="eyebrow">الأضواء</p>
+                        <h3>لقطات البطولة</h3>
+                        <p class="menu-page-subtitle">منشورات ذكية وخفيفة تُولد بعد كل مباراتين بناءً على البيانات المتاحة وقتها فقط.</p>
+                    </div>
+
+                    <div id="highlightsFeaturedPost" class="ai-featured-post"></div>
+                    <div id="aiHighlightsFeed" class="ai-post-feed" aria-live="polite">
+                        <div class="placeholder-card">منشورات الأضواء ستظهر هنا بعد ربط التوليد التلقائي.</div>
+                    </div>
+                </section>
+
+                <section id="statisticsTab" class="tab-panel menu-page-panel hidden" data-menu-page="statistics">
+                    <div class="menu-page-header">
+                        <p class="eyebrow">الإحصائيات</p>
+                        <h3>أرقام لها قصة</h3>
+                        <p class="menu-page-subtitle">إحصائيات مختصرة مع تعليق ذكي يشرح اللقطة بدون تحويلها إلى تقرير طويل.</p>
+                    </div>
+
+                    <div id="statisticsCards" class="stats-grid">
+                        <div class="placeholder-card">إحصائيات البطولة ستظهر هنا.</div>
+                    </div>
+                </section>
+
+                <section id="journeyTab" class="tab-panel menu-page-panel hidden" data-menu-page="journey">
+                    <div class="menu-page-header">
+                        <p class="eyebrow">رحلة البطولة</p>
+                        <h3>القصة من البداية إلى التتويج</h3>
+                        <p class="menu-page-subtitle">صفحة زمنية تجمع أهم التحولات، الصدمات، لحظات الصعود، ونهاية المسابقة.</p>
+                    </div>
+
+                    <div id="journeyTimeline" class="journey-timeline">
+                        <div class="placeholder-card">رحلة البطولة ستُبنى تدريجياً مع تقدم المباريات.</div>
+                    </div>
+                </section>
+
+                <section id="awardsTab" class="tab-panel menu-page-panel hidden" data-menu-page="awards">
+                    <div class="menu-page-header">
+                        <p class="eyebrow">الجوائز</p>
+                        <h3>شارات وإنجازات المسابقة</h3>
+                        <p class="menu-page-subtitle">جوائز خفيفة للمشاركين حسب الأداء، السلاسل، التوقعات الدقيقة، وأبرز لحظات البطولة.</p>
+                    </div>
+
+                    <div id="awardsGrid" class="awards-grid">
+                        <div class="placeholder-card">الشارات والجوائز ستظهر هنا بعد ربط الحسابات.</div>
+                    </div>
+                </section>
+
+                <section id="aboutTab" class="tab-panel menu-page-panel hidden" data-menu-page="about">
+                    <div class="menu-page-header">
+                        <p class="eyebrow">عن المسابقة</p>
+                        <h3>فكرة الموقع وطريقة اللعب</h3>
+                    </div>
+
+                    <div class="info-card">
+                        <p>مسابقة خاصة لتوقع نتائج كأس العالم 2026، تجمع بين التوقعات، الترتيب المباشر، الأضواء، الجوائز، ورحلة البطولة.</p>
+                    </div>
+
+                    <div id="rulesSummary" class="rules-summary-grid"></div>
+                </section>
+
+                <section id="contactTab" class="tab-panel menu-page-panel hidden" data-menu-page="contact">
+                    <div class="menu-page-header">
+                        <p class="eyebrow">تواصل معنا</p>
+                        <h3>للاستفسار أو التعديل</h3>
+                    </div>
+
+                    <div class="info-card">
+                        <p>لأي استفسار أو ملاحظة على التوقعات، تواصل مع منظم المسابقة.</p>
+                    </div>
+                </section>
+
                 <section id="adminTab" class="tab-panel hidden">
                     <h3>الإدارة</h3>
 
                     <div class="admin-management-grid">
+                        <div class="admin-box ai-admin-box participant-predictions-card">
+                            <div class="participant-predictions-header">
+                                <div>
+                                    <p class="eyebrow">الأضواء الذكية</p>
+                                    <h3>توليد منشورات AI</h3>
+                                </div>
+                            </div>
+
+                            <p class="admin-empty-state">
+                                سيتم ربط هذا القسم لاحقاً بتوليد تلقائي بعد كل مباراتين، مع استخدام البيانات المتاحة فقط في وقت التوليد.
+                            </p>
+
+                            <button id="generateAiContentBtn" class="secondary-btn" type="button" disabled>التوليد التلقائي قريباً</button>
+                            <p id="aiAdminMessage" class="message"></p>
+                        </div>
+
                         <div class="admin-box admin-manual-prediction-box participant-predictions-card">
                             <div class="participant-predictions-header">
                                 <div>
@@ -186,8 +355,34 @@
         </main>
     </div>
 
+    <script id="aiContentPlan" type="application/json">
+        {
+          "plannedVersion": "39.0",
+          "postCadenceCompletedMatches": 2,
+          "tone": {
+            "language": "ar",
+            "style": "fun_light_short_data_based",
+            "rules": [
+              "اكتب بالعربية فقط.",
+              "استخدم البيانات المتاحة فقط وقت التوليد.",
+              "لا تخترع نتائج أو مراكز أو شارات.",
+              "اجعل النص ممتعاً وخفيفاً، وليس تقريراً طويلاً.",
+              "لا تجعل النص كوميدياً بشكل مبالغ أو محرج لأي مشارك.",
+              "اجعل كل بطاقة قصيرة وواضحة."
+            ]
+          },
+          "sections": [
+            "highlights",
+            "statistics",
+            "journey",
+            "awards",
+            "profile"
+          ]
+        }
+    </script>
+
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="app.js?v=38.9"></script>
+    <script src="app.js?v=39.0"></script>
 </body>
 
 </html>
