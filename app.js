@@ -33,7 +33,6 @@ const MENU_PAGE_IDS = {
     profile: "profileTab",
     highlights: "highlightsTab",
     statistics: "statisticsTab",
-    journey: "journeyTab",
     awards: "awardsTab",
     about: "aboutTab",
     contact: "contactTab"
@@ -43,7 +42,6 @@ const MENU_PAGE_LABELS = {
     profile: "الملف الشخصي",
     highlights: "الأضواء",
     statistics: "الإحصائيات",
-    journey: "رحلة البطولة",
     awards: "الجوائز",
     about: "عن المسابقة",
     contact: "تواصل معنا"
@@ -56,7 +54,6 @@ const aiPostsLoadState = new Map();
 const AI_SECTION_EMPTY_MESSAGES = {
     highlights: "لم يتم نشر أضواء ذكية بعد. ستظهر هنا بعد اكتمال كل مباراتين وتوليد المنشور تلقائياً.",
     statistics: "لم يتم نشر إحصائيات ذكية بعد. ستظهر هنا عندما يبدأ توليد محتوى الإحصائيات.",
-    journey: "رحلة البطولة ستُبنى تدريجياً مع تقدم المباريات ونشر محطات جديدة.",
     awards: "الشارات والجوائز ستظهر هنا بعد توليدها من بيانات المسابقة.",
     profile: "تعليق الملف الشخصي سيظهر هنا بعد توليد محتوى AI الخاص بالمشارك."
 };
@@ -601,10 +598,10 @@ async function renderProfilePageShell() {
 
     if (profilePageTitle) {
         profilePageTitle.textContent = currentParticipant
-            ? `رحلة ${currentParticipant.name}`
+            ? `ملف ${currentParticipant.name}`
             : isAdminMode
                 ? "ملف الإدارة"
-                : "رحلة المشارك";
+                : "ملف المشارك";
     }
 
     if (isAdminMode) {
@@ -671,11 +668,6 @@ async function renderMenuPageContent(tabName) {
         return;
     }
 
-    if (tabName === "journey") {
-        await renderJourneyPage();
-        return;
-    }
-
     if (tabName === "awards") {
         await renderAwardsPage();
         return;
@@ -727,22 +719,8 @@ async function renderAiCardSection(sectionKey, containerId) {
     const posts = await loadAiPosts(sectionKey);
 
     container.innerHTML = posts.length > 0
-        ? posts.map((post) => renderAiPostCard(post, { compact: true })).join("")
+        ? renderAiPostCard(posts[0], { featured: sectionKey === "statistics" })
         : `<div class="placeholder-card">${AI_SECTION_EMPTY_MESSAGES[sectionKey] || "لا يوجد محتوى منشور حالياً."}</div>`;
-}
-
-async function renderJourneyPage() {
-    const container = document.getElementById("journeyTimeline");
-
-    if (!container) return;
-
-    container.innerHTML = `<div class="placeholder-card">جاري تحميل رحلة البطولة...</div>`;
-
-    const posts = await loadAiPosts("journey");
-
-    container.innerHTML = posts.length > 0
-        ? posts.map((post, index) => renderJourneyItem(post, index)).join("")
-        : `<div class="placeholder-card">${AI_SECTION_EMPTY_MESSAGES.journey}</div>`;
 }
 
 async function renderAwardsPage() {
@@ -755,7 +733,7 @@ async function renderAwardsPage() {
     const posts = await loadAiPosts("awards");
 
     container.innerHTML = posts.length > 0
-        ? posts.map((post) => renderAwardCard(post)).join("")
+        ? renderAwardPost(posts[0])
         : `<div class="placeholder-card">${AI_SECTION_EMPTY_MESSAGES.awards}</div>`;
 }
 
@@ -875,6 +853,7 @@ function renderAiPostCard(post, options = {}) {
     ].filter(Boolean).join(" ");
 
     const cards = post.cards || [];
+    const maxCards = post.section_key === "highlights" ? 4 : (post.section_key === "statistics" ? 6 : (options.featured ? 6 : 4));
     const completedCountText = Number.isInteger(post.source_completed_match_count)
         ? `${post.source_completed_match_count} مباراة مكتملة`
         : "محتوى ذكي";
@@ -894,28 +873,68 @@ function renderAiPostCard(post, options = {}) {
 
             ${cards.length > 0 ? `
                 <div class="ai-post-mini-grid">
-                    ${cards.slice(0, 4).map((card) => renderAiMiniCard(card)).join("")}
+                    ${cards.slice(0, maxCards).map((card) => renderAiMiniCard(card)).join("")}
                 </div>
             ` : ""}
         </article>
     `;
 }
 
+function getAiCardValue(card, keys, fallback = "") {
+    for (const key of keys) {
+        if (card && card[key] !== undefined && card[key] !== null && String(card[key]).trim() !== "") {
+            return card[key];
+        }
+    }
+
+    return fallback;
+}
+
 function renderAiMiniCard(card) {
+    const icon = getAiCardValue(card, ["icon", "icon_ar"], "•");
+    const label = getAiCardValue(card, ["label_ar", "label", "title_ar", "title"], "لقطة");
+    const value = getAiCardValue(card, ["value_ar", "value", "text_ar", "text"], "");
+    const note = getAiCardValue(card, ["note_ar", "note", "body_ar", "body"], "");
+    const type = String(card?.type || "moment").replace(/[^a-zA-Z0-9_-]/g, "");
+
     return `
-        <div class="ai-mini-card">
-            <span>${escapeHtml(card.icon || "•")}</span>
-            <strong>${escapeHtml(card.label || card.title || "لقطة")}</strong>
-            <small>${escapeHtml(card.text || card.value || "")}</small>
+        <div class="ai-mini-card ai-mini-card-${escapeHtml(type)}">
+            <span>${escapeHtml(icon)}</span>
+            <strong>${escapeHtml(label)}</strong>
+            ${value ? `<small>${escapeHtml(value)}</small>` : ""}
+            ${note ? `<small>${escapeHtml(note)}</small>` : ""}
         </div>
     `;
 }
 
-function renderJourneyItem(post, index) {
+function renderAwardPost(post) {
+    const cards = post.cards || [];
+
+    if (cards.length > 0) {
+        return cards.map((card) => renderAwardBadgeCard(card, post)).join("");
+    }
+
+    return renderAwardCard(post);
+}
+
+function renderAwardBadgeCard(card, post) {
+    const icon = getAiCardValue(card, ["icon", "icon_ar"], post.icon || "🏅");
+    const label = getAiCardValue(card, ["label_ar", "label", "title_ar", "title"], "شارة");
+    const value = getAiCardValue(card, ["value_ar", "value", "text_ar", "text"], "");
+    const note = getAiCardValue(card, ["note_ar", "note", "body_ar", "body"], "");
+    const completedCountText = Number.isInteger(post.source_completed_match_count)
+        ? `${post.source_completed_match_count} مباراة مكتملة`
+        : "شارة ذكية";
+
     return `
-        <article class="journey-item">
-            <span class="journey-step">${index + 1}</span>
-            ${renderAiPostCard(post, { compact: true })}
+        <article class="award-card award-card-badge">
+            <div class="award-icon" aria-hidden="true">${escapeHtml(icon)}</div>
+            <div>
+                <p class="ai-post-meta">${completedCountText}</p>
+                <h4>${escapeHtml(label)}</h4>
+                ${value ? `<strong class="award-card-winner">${escapeHtml(value)}</strong>` : ""}
+                ${note ? `<p>${escapeHtml(note)}</p>` : ""}
+            </div>
         </article>
     `;
 }
@@ -972,7 +991,28 @@ async function loadParticipantProfileStats(participantId) {
         if (points > 0) acc.scoringPredictions += 1;
 
         const stage = getPredictionStage(match);
-        acc.stagePoints[stage] = (acc.stagePoints[stage] || 0) + points;
+        const stageLabel = LEADERBOARD_STAGE_LABELS[stage] || stage;
+
+        if (!acc.stageStats[stage]) {
+            acc.stageStats[stage] = {
+                stage,
+                stageLabel,
+                predictions: 0,
+                points: 0,
+                exactScores: 0,
+                correctOutcomes: 0,
+                scoringPredictions: 0,
+                pointsPerPrediction: 0
+            };
+        }
+
+        acc.stageStats[stage].predictions += 1;
+        acc.stageStats[stage].points += points;
+        acc.stageStats[stage].pointsPerPrediction = Number((acc.stageStats[stage].points / acc.stageStats[stage].predictions).toFixed(1));
+
+        if (points === 50) acc.stageStats[stage].exactScores += 1;
+        if (points === 10) acc.stageStats[stage].correctOutcomes += 1;
+        if (points > 0) acc.stageStats[stage].scoringPredictions += 1;
 
         return acc;
     }, {
@@ -982,13 +1022,19 @@ async function loadParticipantProfileStats(participantId) {
         exactScores: 0,
         correctOutcomes: 0,
         totalPoints: 0,
-        stagePoints: {}
+        stageStats: {}
     });
 
-    const bestStage = Object.entries(stats.stagePoints)
-        .sort((a, b) => b[1] - a[1])[0];
+    const bestStage = Object.values(stats.stageStats)
+        .sort((a, b) => (
+            b.pointsPerPrediction - a.pointsPerPrediction ||
+            b.points - a.points ||
+            a.stageLabel.localeCompare(b.stageLabel, "ar")
+        ))[0];
 
-    stats.bestStage = bestStage ? (LEADERBOARD_STAGE_LABELS[bestStage[0]] || bestStage[0]) : "بانتظار النتائج";
+    stats.bestStage = bestStage
+        ? `${bestStage.stageLabel} (${bestStage.pointsPerPrediction} نقطة/توقع)`
+        : "بانتظار النتائج";
 
     return stats;
 }
@@ -1064,7 +1110,6 @@ function activateTab(tabName) {
         profile: document.getElementById(MENU_PAGE_IDS.profile),
         highlights: document.getElementById(MENU_PAGE_IDS.highlights),
         statistics: document.getElementById(MENU_PAGE_IDS.statistics),
-        journey: document.getElementById(MENU_PAGE_IDS.journey),
         awards: document.getElementById(MENU_PAGE_IDS.awards),
         about: document.getElementById(MENU_PAGE_IDS.about),
         contact: document.getElementById(MENU_PAGE_IDS.contact),
