@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import fs from "node:fs";
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -17,6 +18,12 @@ const GENERATE_PROFILES = String(process.env.GENERATE_PROFILES || "true").toLowe
 const MAX_HIGHLIGHTS = Math.min(90, Math.max(20, Number(process.env.MAX_HIGHLIGHTS || 60)));
 const MIN_APPROVED_EVENT_NOTES = Math.max(0, Number(process.env.MIN_APPROVED_EVENT_NOTES || 0));
 const REQUIRE_EVENT_NOTES_FOR_PUBLISH = String(process.env.REQUIRE_EVENT_NOTES_FOR_PUBLISH || "false").toLowerCase() === "true";
+const USE_TRUSTED_EVENT_NOTES = String(process.env.USE_TRUSTED_EVENT_NOTES || "true").toLowerCase() !== "false";
+const MAX_EVENT_NOTES_FOR_AI = Math.max(30, Math.min(180, Number(process.env.MAX_EVENT_NOTES_FOR_AI || 120)));
+const TRUSTED_EVENT_SOURCE_PATTERNS = (process.env.TRUSTED_EVENT_SOURCE_PATTERNS || "Football-Data.org,API-Football,GDELT")
+    .split(",")
+    .map((item) => item.trim().toLowerCase())
+    .filter(Boolean);
 
 const POSTS_TABLE = "ai_posts";
 const EVENT_NOTES_TABLE = "final_event_notes";
@@ -61,7 +68,9 @@ async function main() {
         maxHighlights: MAX_HIGHLIGHTS,
         approvedEventNotes: factsPack.audit.approvedEventNotes,
         draftEventNotes: factsPack.audit.draftEventNotes,
-        eventNotesRequiredForPublish: REQUIRE_EVENT_NOTES_FOR_PUBLISH
+        eventNotesRequiredForPublish: REQUIRE_EVENT_NOTES_FOR_PUBLISH,
+        useTrustedEventNotes: USE_TRUSTED_EVENT_NOTES,
+        maxEventNotesForAi: MAX_EVENT_NOTES_FOR_AI
     }, null, 2));
 
     if (!factsPack.audit.finalDataReady && !ALLOW_FINAL_PREVIEW) {
@@ -153,6 +162,64 @@ async function loadFinalEventNotes() {
     return optionalSupabaseFetch(
         `${EVENT_NOTES_TABLE}?select=${select}&order=created_at.asc`
     );
+}
+
+function isTrustedEventSource(note = {}) {
+    if (note.approved === true) return true;
+    if (!USE_TRUSTED_EVENT_NOTES) return false;
+
+    const sourceName = String(note.source_name || "").toLowerCase();
+    const sourceUrl = String(note.source_url || "").toLowerCase();
+
+    return TRUSTED_EVENT_SOURCE_PATTERNS.some((pattern) => {
+        return sourceName.includes(pattern) || sourceUrl.includes(pattern);
+    });
+}
+
+function eventNotePriority(note = {}) {
+    const type = String(note.event_type || "").toLowerCase();
+    const mood = String(note.mood || "").toLowerCase();
+    const priorityByType = {
+        news: 120,
+        red_card: 116,
+        var: 114,
+        penalty_shootout: 112,
+        extra_time: 110,
+        missed_penalty: 108,
+        penalty: 104,
+        goal: 100,
+        goal_fest: 94,
+        close_match: 88,
+        clean_sheet: 78,
+        official_result: 42,
+        winner_confirmed: 24
+    };
+    let priority = priorityByType[type] || 60;
+    if (["controversial", "dramatic", "sad", "proud", "exciting"].includes(mood)) priority += 8;
+    if (note.source_url) priority += 4;
+    return priority;
+}
+
+function selectTrustedEventNotes(notes = [], matches = []) {
+    const seen = new Set();
+    const sorted = (notes || [])
+        .filter(isTrustedEventSource)
+        .map((note) => ({
+            ...note,
+            _stageOrder: stageOrder(note.stage || getStageForEventNote(note, matches)),
+            _priority: eventNotePriority(note)
+        }))
+        .sort((a, b) => a._stageOrder - b._stageOrder || b._priority - a._priority || String(a.created_at || "").localeCompare(String(b.created_at || "")));
+
+    const selected = [];
+    for (const note of sorted) {
+        const key = [note.match_id || "general", note.event_type || "event", note.title_ar || ""].join("|");
+        if (seen.has(key)) continue;
+        seen.add(key);
+        selected.push(note);
+        if (selected.length >= MAX_EVENT_NOTES_FOR_AI) break;
+    }
+    return selected;
 }
 
 function countBy(values) {
@@ -258,7 +325,8 @@ async function buildFactsPack() {
     const participantMap = new Map(activeParticipants.map((participant) => [String(participant.id), participant]));
     const allMatches = matches || [];
     const allEventNoteRows = allEventNotes || [];
-    const approvedEventNotes = allEventNoteRows.filter((note) => note.approved === true);
+    const trustedEventNotes = selectTrustedEventNotes(allEventNoteRows, allMatches);
+    const approvedEventNotes = trustedEventNotes;
     const draftEventNotes = allEventNoteRows.filter((note) => note.approved !== true);
     const completedMatches = allMatches.filter(hasActualScore);
     const completedIds = completedMatches.map((match) => match.id);
@@ -295,7 +363,9 @@ async function buildFactsPack() {
             activeParticipants: activeParticipants.length,
             inactiveParticipants: allParticipants.filter((p) => p.active === false).map((p) => p.name),
             approvedEventNotes: approvedEventNotes.length,
+            rawEventNotes: allEventNoteRows.length,
             draftEventNotes: draftEventNotes.length,
+            trustedEventNotesUsed: approvedEventNotes.length,
             approvedEventNotesWithSource: approvedEventNotes.filter((note) => Boolean(note.source_url || note.source_name)).length,
             approvedEventNotesByStage: countBy(approvedEventNotes.map((note) => note.stage || getStageForEventNote(note, allMatches) || "unspecified")),
             approvedEventNotesByMood: countBy(approvedEventNotes.map((note) => note.mood || "unspecified")),
@@ -320,6 +390,7 @@ async function buildFactsPack() {
             "اكتب بالعربية فقط.",
             "لا تخترع نتائج أو بطاقات حمراء أو هوشات أو أحداث كرة قدم غير موجودة حرفياً في eventNotes أو match facts.",
             "أي منشور عن حدث كروي حقيقي يجب أن يعتمد على eventNotes فقط، ويفضل ذكر source_note_id في source_fact.",
+            "eventNotes قد تكون approved=true أو من مصدر موثوق مثل Football-Data/API-Football/GDELT حسب إعدادات السكربت، فلا تستخدم شيئاً خارجها.",
             "الأضواء ليست شارات. اكتبها كمنشورات/لقطات timeline ممتعة، حزينة، فخورة، مثيرة للجدل، حماسية، أو مفاجئة.",
             "لا تجعل القصة عن البطل فقط. كل مشارك نشط يجب أن يظهر مرة واحدة على الأقل في الأضواء.",
             "لا تفضح قلة المشاركة ولا تسخر من أحد.",
@@ -595,25 +666,59 @@ function stageOrder(stage) {
 
 async function generateFinalContent(factsPack) {
     const prompt = buildPrompt(factsPack);
+    const messages = [
+        {
+            role: "system",
+            content: "أنت كاتب عربي خفيف الظل لمسابقة توقعات عائلية/أصدقاء. تكتب منشورات قصيرة جداً من حقائق محسوبة فقط، ولا تخترع أي واقعة. أعد JSON صحيح فقط بدون markdown."
+        },
+        { role: "user", content: prompt }
+    ];
+
+    const content = await requestAiContent(messages, {
+        temperature: AI_TEMPERATURE,
+        maxTokens: AI_MAX_TOKENS,
+        responseFormat: true
+    });
+
+    try {
+        return parseJsonContent(content);
+    } catch (firstError) {
+        writeAiDebugFile("ai-posts-invalid-output.json", content);
+        console.warn("AI returned malformed JSON. Saved raw response to ai-posts-invalid-output.json and trying one repair call...");
+
+        const repairedContent = await repairJsonWithAi(content);
+        try {
+            return parseJsonContent(repairedContent);
+        } catch (repairError) {
+            writeAiDebugFile("ai-posts-repair-output.json", repairedContent);
+            throw new Error(
+                `AI returned malformed JSON and the repair attempt also failed. ` +
+                `Raw response saved to ai-posts-invalid-output.json. Repair response saved to ai-posts-repair-output.json. ` +
+                `Original error: ${firstError.message}. Repair error: ${repairError.message}`
+            );
+        }
+    }
+}
+
+async function requestAiContent(messages, options = {}) {
+    const body = {
+        model: AI_MODEL,
+        temperature: options.temperature ?? AI_TEMPERATURE,
+        max_tokens: options.maxTokens ?? AI_MAX_TOKENS,
+        messages
+    };
+
+    if (options.responseFormat !== false) {
+        body.response_format = { type: "json_object" };
+    }
+
     const response = await fetch(`${AI_BASE_URL}/chat/completions`, {
         method: "POST",
         headers: {
             Authorization: `Bearer ${AI_API_KEY}`,
             "Content-Type": "application/json"
         },
-        body: JSON.stringify({
-            model: AI_MODEL,
-            temperature: AI_TEMPERATURE,
-            max_tokens: AI_MAX_TOKENS,
-            response_format: { type: "json_object" },
-            messages: [
-                {
-                    role: "system",
-                    content: "أنت كاتب عربي خفيف الظل لمسابقة توقعات عائلية/أصدقاء. تكتب منشورات قصيرة جداً من حقائق محسوبة فقط، ولا تخترع أي واقعة."
-                },
-                { role: "user", content: prompt }
-            ]
-        })
+        body: JSON.stringify(body)
     });
 
     if (!response.ok) {
@@ -622,8 +727,40 @@ async function generateFinalContent(factsPack) {
     }
 
     const json = await response.json();
-    const content = json.choices?.[0]?.message?.content || "";
-    return parseJsonContent(content);
+    return json.choices?.[0]?.message?.content || "";
+}
+
+async function repairJsonWithAi(badContent) {
+    const repairPrompt = `
+حوّل النص التالي إلى JSON صحيح فقط.
+لا تضف أي شرح.
+لا تغير المعنى.
+لا تضف حقائق جديدة.
+يجب أن يكون الشكل النهائي كائناً فيه highlights و profile_messages فقط.
+
+النص المراد إصلاحه:
+${String(badContent || "").slice(0, 45000)}
+`.trim();
+
+    return requestAiContent([
+        {
+            role: "system",
+            content: "أنت أداة إصلاح JSON. مهمتك الوحيدة تحويل النص إلى JSON صالح فقط، بدون markdown وبدون شرح."
+        },
+        { role: "user", content: repairPrompt }
+    ], {
+        temperature: 0,
+        maxTokens: AI_MAX_TOKENS,
+        responseFormat: true
+    });
+}
+
+function writeAiDebugFile(filename, content) {
+    try {
+        fs.writeFileSync(filename, String(content || ""), "utf8");
+    } catch (error) {
+        console.warn(`Could not write ${filename}: ${error.message}`);
+    }
 }
 
 function buildPrompt(factsPack) {
@@ -675,14 +812,84 @@ ${JSON.stringify(factsPack, null, 2)}
 }
 
 function parseJsonContent(content) {
-    const trimmed = String(content || "").trim();
-    try {
-        return JSON.parse(trimmed);
-    } catch (error) {
-        const match = trimmed.match(/\{[\s\S]*\}/);
-        if (match) return JSON.parse(match[0]);
-        throw error;
+    const trimmed = stripMarkdownJsonFence(String(content || "").trim());
+    const candidates = [
+        trimmed,
+        extractBalancedJsonObject(trimmed),
+        lightRepairJsonText(trimmed),
+        lightRepairJsonText(extractBalancedJsonObject(trimmed))
+    ].filter(Boolean);
+
+    let lastError = null;
+    const seen = new Set();
+    for (const candidate of candidates) {
+        if (seen.has(candidate)) continue;
+        seen.add(candidate);
+        try {
+            return JSON.parse(candidate);
+        } catch (error) {
+            lastError = error;
+        }
     }
+
+    throw lastError || new Error("Could not parse AI JSON content.");
+}
+
+function stripMarkdownJsonFence(value) {
+    return String(value || "")
+        .replace(/^```(?:json)?\s*/i, "")
+        .replace(/\s*```$/i, "")
+        .trim();
+}
+
+function extractBalancedJsonObject(value) {
+    const text = String(value || "");
+    const start = text.indexOf("{");
+    if (start === -1) return "";
+
+    let depth = 0;
+    let inString = false;
+    let escaped = false;
+
+    for (let index = start; index < text.length; index += 1) {
+        const char = text[index];
+
+        if (inString) {
+            if (escaped) {
+                escaped = false;
+            } else if (char === "\\") {
+                escaped = true;
+            } else if (char === '"') {
+                inString = false;
+            }
+            continue;
+        }
+
+        if (char === '"') {
+            inString = true;
+        } else if (char === "{") {
+            depth += 1;
+        } else if (char === "}") {
+            depth -= 1;
+            if (depth === 0) {
+                return text.slice(start, index + 1);
+            }
+        }
+    }
+
+    return text.slice(start);
+}
+
+function lightRepairJsonText(value) {
+    return String(value || "")
+        .replace(/^```(?:json)?\s*/i, "")
+        .replace(/\s*```$/i, "")
+        .replace(/[“”]/g, '"')
+        .replace(/[‘’]/g, "'")
+        .replace(/,\s*([}\]])/g, "$1")
+        .replace(/}\s*\n\s*{/g, "},{")
+        .replace(/]\s*\n\s*"profile_messages"/g, '],"profile_messages"')
+        .trim();
 }
 
 function normalizeAiOutputToRows(output, factsPack) {

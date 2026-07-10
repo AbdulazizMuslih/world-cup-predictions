@@ -84,6 +84,8 @@ const EXPECTED_WORLD_CUP_MATCH_COUNT = 104;
 const FINAL_AI_HIGHLIGHTS_SECTION = "final_highlights";
 const FINAL_AI_PROFILE_SECTION = "final_profile";
 const FINAL_RECAP_MAX_HIGHLIGHTS = 80;
+const SHOW_LIVE_FINAL_STATS = true;
+const SHOW_PUBLISHED_HIGHLIGHTS_BEFORE_FINAL = true;
 let updateCheckTimer = null;
 const SITE_STAGE_CACHE_KEY = "wcSiteStage";
 
@@ -1221,7 +1223,10 @@ function setupFinalRecapClickGuards() {
         "seasonHighlights",
         "statisticsCards",
         "statisticsBadges",
-        "seasonRecap"
+        "seasonRecap",
+        "highlightsTab",
+        "statisticsTab",
+        "seasonRecapTab"
     ];
 
     recapContainerIds.forEach((containerId) => {
@@ -1231,7 +1236,7 @@ function setupFinalRecapClickGuards() {
 
         container.addEventListener("click", (event) => {
             const interactiveElement = event.target.closest(
-                "a, button, input, select, textarea, label, summary, [role='button'], [data-menu-page], [data-menu-tab]"
+                "a, button, input, select, textarea, label, summary, [role='button']"
             );
 
             if (interactiveElement) return;
@@ -1262,7 +1267,7 @@ function setupPassiveFinalCardClickGuard() {
         if (!passiveCard) return;
 
         const interactiveElement = event.target.closest(
-            "a, button, input, select, textarea, label, summary, [role='button'], [data-menu-page], [data-menu-tab]"
+            "a, button, input, select, textarea, label, summary, [role='button']"
         );
 
         if (interactiveElement) return;
@@ -3395,15 +3400,15 @@ async function renderSeasonHighlightsPage() {
             return;
         }
 
-        if (!isFinalRecapAvailable(recap)) {
-            container.innerHTML = renderFinalRecapLockedMessage(recap, "الأضواء");
-            return;
-        }
-
         const posts = await loadAiPosts(FINAL_AI_HIGHLIGHTS_SECTION, {
             limit: FINAL_RECAP_MAX_HIGHLIGHTS,
             useCache: false
         });
+
+        if (!isFinalRecapAvailable(recap) && (!SHOW_PUBLISHED_HIGHLIGHTS_BEFORE_FINAL || !posts.length)) {
+            container.innerHTML = renderFinalRecapLockedMessage(recap, "الأضواء");
+            return;
+        }
 
         if (!posts.length) {
             container.innerHTML = renderFinalHighlightsNotGeneratedMessage(recap);
@@ -3436,7 +3441,7 @@ function renderFinalAiHighlights(posts, recap) {
         <section class="season-highlight-hero season-highlight-hero-ai">
             <p class="eyebrow">أضواء الختام</p>
             <h4>قصة البطولة في لقطات</h4>
-            <p>منشورات قصيرة تم توليد نصها بعد قفل البيانات. الأرقام والوقائع محسوبة من قاعدة البيانات، والنص فقط تمت صياغته بشكل ممتع.</p>
+            <p>${recap?.seasonStats?.isTournamentComplete ? "منشورات قصيرة بعد قفل البيانات النهائية." : "أضواء متجددة حتى الآن، وتتحدث تلقائياً بعد النتائج القادمة."} الأرقام والوقائع محسوبة من قاعدة البيانات، والنص فقط تمت صياغته بشكل ممتع.</p>
         </section>
 
         <div class="season-highlight-card-grid season-highlight-card-grid-ai">
@@ -3479,7 +3484,7 @@ async function renderStatisticsAndBadgesPage() {
             return;
         }
 
-        if (!isFinalRecapAvailable(recap)) {
+        if (!isFinalRecapAvailable(recap) && !SHOW_LIVE_FINAL_STATS) {
             statsContainer.innerHTML = renderFinalRecapLockedMessage(recap, "الإحصائيات والشارات");
             badgesContainer.innerHTML = "";
             return;
