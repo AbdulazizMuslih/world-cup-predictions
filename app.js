@@ -4,6 +4,8 @@ const SUPABASE_ANON_KEY = "sb_publishable_TQx_OZ-LeNYcQA7-DNdUQA_IqmC7HES";
 const db = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 const musicBtn = document.getElementById("musicBtn");
+const prevMusicBtn = document.getElementById("prevMusicBtn");
+const nextMusicBtn = document.getElementById("nextMusicBtn");
 const daiDaiAudio = document.getElementById("daiDaiAudio");
 
 let currentParticipant = null;
@@ -37,7 +39,7 @@ let tabHistory = [];
 let allowLeavingPage = false;
 let dashboardRefreshTimer = null;
 
-const APP_VERSION = "38.9.1";
+const APP_VERSION = "38.9.2";
 let updateCheckTimer = null;
 const SITE_STAGE_CACHE_KEY = "wcSiteStage";
 
@@ -53,18 +55,79 @@ window.addEventListener("resize", () => {
 
 document.addEventListener("DOMContentLoaded", init);
 
+const MUSIC_TRACKS = [
+    {
+        title: "❤️",
+        src: "./assets/song 2.mp3?v=38.9.2"
+    },
+    {
+        title: "Dai Dai",
+        src: "./assets/song.mp3?v=38.9.2"
+    }
+];
+
+let currentMusicTrackIndex = 0;
+
+function getCurrentMusicTrack() {
+    return MUSIC_TRACKS[currentMusicTrackIndex] || MUSIC_TRACKS[0];
+}
+
+function updateMusicButtonLabel(isPlaying = false) {
+    const track = getCurrentMusicTrack();
+    musicBtn.textContent = `${isPlaying ? "⏸ إيقاف" : "▶ شغّل"} ${track.title}`;
+    musicBtn.title = track.title;
+}
+
+function loadCurrentMusicTrack() {
+    const track = getCurrentMusicTrack();
+
+    if (daiDaiAudio.getAttribute("src") !== track.src) {
+        daiDaiAudio.setAttribute("src", track.src);
+        daiDaiAudio.load();
+    }
+
+    updateMusicButtonLabel(!daiDaiAudio.paused);
+}
+
+async function playCurrentMusicTrack() {
+    loadCurrentMusicTrack();
+    await daiDaiAudio.play();
+    updateMusicButtonLabel(true);
+}
+
+async function switchMusicTrack(direction) {
+    const wasPlaying = !daiDaiAudio.paused;
+
+    daiDaiAudio.pause();
+    currentMusicTrackIndex = (currentMusicTrackIndex + direction + MUSIC_TRACKS.length) % MUSIC_TRACKS.length;
+    loadCurrentMusicTrack();
+
+    if (wasPlaying) {
+        await playCurrentMusicTrack();
+    }
+}
+
+loadCurrentMusicTrack();
+
 musicBtn.addEventListener("click", async () => {
     if (daiDaiAudio.paused) {
-        await daiDaiAudio.play();
-        musicBtn.textContent = "⏸ إيقاف Dai Dai";
+        await playCurrentMusicTrack();
     } else {
         daiDaiAudio.pause();
-        musicBtn.textContent = "▶ شغّل Dai Dai";
+        updateMusicButtonLabel(false);
     }
 });
 
+prevMusicBtn.addEventListener("click", () => {
+    switchMusicTrack(-1);
+});
+
+nextMusicBtn.addEventListener("click", () => {
+    switchMusicTrack(1);
+});
+
 daiDaiAudio.addEventListener("ended", () => {
-    musicBtn.textContent = "▶ شغّل Dai Dai";
+    updateMusicButtonLabel(false);
 });
 
 async function init() {

@@ -6,7 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#10162d" />
     <title>توقعات كأس العالم 2026</title>
-    <link rel="stylesheet" href="style.css?v=38.9.1" />
+    <link rel="stylesheet" href="style.css?v=38.9.2" />
 </head>
 
 <body>
@@ -26,11 +26,17 @@
                 </div>
 
                 <div class="hero-actions">
-                    <button id="musicBtn" class="music-btn" type="button">
-                        ▶ شغّل Dai Dai
-                    </button>
+                    <div class="music-switcher" aria-label="اختيار الأغنية">
+                        <button id="prevMusicBtn" class="music-arrow-btn" type="button" aria-label="الأغنية السابقة">‹</button>
 
-                    <audio id="daiDaiAudio" src="./assets/song.mp3?v=2" preload="auto"></audio>
+                        <button id="musicBtn" class="music-btn" type="button">
+                            ▶ شغّل ❤️ 
+                        </button>
+
+                        <button id="nextMusicBtn" class="music-arrow-btn" type="button" aria-label="الأغنية التالية">›</button>
+                    </div>
+
+                    <audio id="daiDaiAudio" src="./assets/song 2.mp3?v=38.9.2" preload="auto"></audio>
                 </div>
             </div>
         </header>
@@ -187,7 +193,7 @@
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="app.js?v=38.9.1"></script>
+    <script src="app.js?v=38.9.2"></script>
 </body>
 
 </html>
