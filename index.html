@@ -328,12 +328,13 @@
           "plannedVersion": "39.0",
           "aiMode": "manual_final_only",
           "dataSource": "supabase_database",
-          "rule": "Code calculates all facts first. AI may only rewrite short fun phrases from locked calculated facts after the tournament ends.",
+          "rule": "Code calculates facts first. Gemini/OpenAI-compatible AI may only write final highlights/profile phrases from locked calculated facts, then saves drafts to ai_posts for review.",
           "liveSchedule": "disabled",
+          "publishRule": "final_highlights and final_profile rows stay visible=false until reviewed and approved.",
           "sections": [
-            "highlights",
+            "final_highlights",
             "statistics_and_badges",
-            "profile",
+            "final_profile",
             "season_closing"
           ],
           "tone": {

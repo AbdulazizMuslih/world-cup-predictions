@@ -1,16 +1,75 @@
-name: Generate Final Recap AI Phrases
+name: Generate Final Highlights AI Drafts
 
 on:
   workflow_dispatch:
+    inputs:
+      allow_preview_generation:
+        description: "Allow generation before all 104 matches are completed? Private testing only."
+        required: true
+        default: "false"
+        type: choice
+        options:
+          - "false"
+          - "true"
+      publish_visible:
+        description: "Insert posts as visible=true? Keep false for review/correction first."
+        required: true
+        default: "false"
+        type: choice
+        options:
+          - "false"
+          - "true"
+      max_highlights:
+        description: "Maximum highlight posts to ask for"
+        required: true
+        default: "60"
+      reset_existing:
+        description: "Delete old final_highlights/final_profile rows before inserting new drafts?"
+        required: true
+        default: "true"
+        type: choice
+        options:
+          - "true"
+          - "false"
+      min_approved_event_notes:
+        description: "Warn if approved final_event_notes count is below this number. Use 0 while preparing."
+        required: true
+        default: "0"
+      require_event_notes_for_publish:
+        description: "Block visible publishing if there are not enough approved final_event_notes. Keep true for final publish."
+        required: true
+        default: "true"
+        type: choice
+        options:
+          - "true"
+          - "false"
 
 jobs:
-  disabled-until-final:
+  generate-final-highlights:
     runs-on: ubuntu-latest
 
     steps:
-      - name: AI generation is intentionally disabled
-        run: |
-          echo "AI generation is disabled for v39 final recap testing."
-          echo "Use Audit Final Recap Data first."
-          echo "Final AI phrase generation will be enabled only after tournament data is locked."
-          exit 1
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Generate final highlights and profile messages
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          AI_API_KEY: ${{ secrets.AI_API_KEY }}
+          AI_BASE_URL: ${{ secrets.AI_BASE_URL }}
+          AI_MODEL: ${{ secrets.AI_MODEL }}
+          EXPECTED_WORLD_CUP_MATCH_COUNT: "104"
+          ALLOW_FINAL_PREVIEW: ${{ inputs.allow_preview_generation }}
+          PUBLISH_VISIBLE: ${{ inputs.publish_visible }}
+          MAX_HIGHLIGHTS: ${{ inputs.max_highlights }}
+          RESET_EXISTING_FINAL_AI: ${{ inputs.reset_existing }}
+          GENERATE_PROFILES: "true"
+          MIN_APPROVED_EVENT_NOTES: ${{ inputs.min_approved_event_notes }}
+          REQUIRE_EVENT_NOTES_FOR_PUBLISH: ${{ inputs.require_event_notes_for_publish }}
+        run: node scripts/generate-ai-posts.mjs

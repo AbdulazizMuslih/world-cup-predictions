@@ -80,7 +80,10 @@ let dashboardRefreshTimer = null;
 const APP_VERSION = "39.0";
 const PREDICTION_OPEN_HOURS = 72;
 const FINAL_RECAP_PREVIEW_PARAM = "previewFinal";
-const FINAL_RECAP_MAX_HIGHLIGHTS = 50;
+const EXPECTED_WORLD_CUP_MATCH_COUNT = 104;
+const FINAL_AI_HIGHLIGHTS_SECTION = "final_highlights";
+const FINAL_AI_PROFILE_SECTION = "final_profile";
+const FINAL_RECAP_MAX_HIGHLIGHTS = 80;
 let updateCheckTimer = null;
 const SITE_STAGE_CACHE_KEY = "wcSiteStage";
 
@@ -183,6 +186,7 @@ async function init() {
     setupTabs();
     setupSiteMenu();
     setupFinalRecapClickGuards();
+    setupPassiveFinalCardClickGuard();
 
     applySiteStageTheme(getCachedSiteStage());
 
@@ -539,14 +543,18 @@ function setupSiteMenu() {
         siteMenuOverlay.addEventListener("click", closeSiteMenu);
     }
 
-    document.querySelectorAll("[data-menu-tab]").forEach((button) => {
-        button.addEventListener("click", () => {
+    document.querySelectorAll("button[data-menu-tab], a[data-menu-tab], [role='button'][data-menu-tab]").forEach((button) => {
+        button.addEventListener("click", (event) => {
+            event.preventDefault();
+            event.stopPropagation();
             handleSiteMenuTab(button.dataset.menuTab);
         });
     });
 
-    document.querySelectorAll("[data-menu-page]").forEach((button) => {
-        button.addEventListener("click", () => {
+    document.querySelectorAll("button[data-menu-page], a[data-menu-page], [role='button'][data-menu-page]").forEach((button) => {
+        button.addEventListener("click", (event) => {
+            event.preventDefault();
+            event.stopPropagation();
             handleSiteMenuPage(button.dataset.menuPage);
         });
     });
@@ -726,7 +734,14 @@ async function renderProfilePageShell() {
     if (profileAiStory) profileAiStory.innerHTML = "";
 
     try {
-        const profileStats = await loadParticipantProfileStats(currentParticipant.id);
+        const [profileStats, finalProfilePosts] = await Promise.all([
+            loadParticipantProfileStats(currentParticipant.id),
+            loadAiPosts(FINAL_AI_PROFILE_SECTION, {
+                participantId: currentParticipant.id,
+                limit: 1,
+                useCache: false
+            })
+        ]);
         const visual = getParticipantVisual(currentParticipant.name);
 
         profileSummary.innerHTML = renderProfileSummary(currentParticipant, visual, profileStats);
@@ -736,7 +751,9 @@ async function renderProfilePageShell() {
         }
 
         if (profileAiStory) {
-            profileAiStory.innerHTML = renderProfileClosingNote(currentParticipant, profileStats);
+            profileAiStory.innerHTML = finalProfilePosts.length > 0
+                ? renderAiPostCard(finalProfilePosts[0], { compact: true })
+                : renderProfileClosingNote(currentParticipant, profileStats);
         }
     } catch (error) {
         console.error("Profile page load failed:", error);
@@ -888,7 +905,7 @@ async function loadAiPosts(sectionKey, options = {}) {
             .eq("section_key", sectionKey)
             .order("display_order", { ascending: false })
             .order("created_at", { ascending: false })
-            .limit(30);
+            .limit(options.limit || 30);
 
         if (participantId) {
             query = query.eq("participant_id", participantId);
@@ -1223,6 +1240,36 @@ function setupFinalRecapClickGuards() {
             event.stopPropagation();
         });
     });
+}
+
+
+function setupPassiveFinalCardClickGuard() {
+    const passiveSelectors = [
+        "#highlightsTab .season-highlight-card",
+        "#statisticsTab .stat-story-card",
+        "#statisticsTab .recap-award-card",
+        "#seasonRecapTab .season-thanks-card",
+        "#seasonRecapTab .season-thanks-mini-card",
+        "#profileTab .profile-hero-card",
+        "#profileTab .profile-stat-card",
+        "#profileTab .badge-card",
+        "#profileTab .ai-post-card"
+    ].join(", ");
+
+    document.addEventListener("click", (event) => {
+        const passiveCard = event.target.closest(passiveSelectors);
+
+        if (!passiveCard) return;
+
+        const interactiveElement = event.target.closest(
+            "a, button, input, select, textarea, label, summary, [role='button'], [data-menu-page], [data-menu-tab]"
+        );
+
+        if (interactiveElement) return;
+
+        event.preventDefault();
+        event.stopImmediatePropagation();
+    }, true);
 }
 
 function getDashboardPanelForScroll(tabName) {
@@ -3338,13 +3385,13 @@ async function renderSeasonHighlightsPage() {
 
     if (!container) return;
 
-    container.innerHTML = `<div class="placeholder-card">جاري تجهيز لقطات الختام...</div>`;
+    container.innerHTML = `<div class="placeholder-card">جاري تجهيز أضواء الختام...</div>`;
 
     try {
         const recap = await loadFinalRecapModel();
 
         if (!recap || recap.completedMatches.length === 0) {
-            container.innerHTML = `<div class="placeholder-card">ستظهر لقطات الختام بعد اكتمال بيانات البطولة.</div>`;
+            container.innerHTML = `<div class="placeholder-card">ستظهر أضواء الختام بعد اكتمال بيانات البطولة.</div>`;
             return;
         }
 
@@ -3353,11 +3400,65 @@ async function renderSeasonHighlightsPage() {
             return;
         }
 
-        container.innerHTML = renderSeasonHighlights(recap);
+        const posts = await loadAiPosts(FINAL_AI_HIGHLIGHTS_SECTION, {
+            limit: FINAL_RECAP_MAX_HIGHLIGHTS,
+            useCache: false
+        });
+
+        if (!posts.length) {
+            container.innerHTML = renderFinalHighlightsNotGeneratedMessage(recap);
+            return;
+        }
+
+        container.innerHTML = renderFinalAiHighlights(posts, recap);
     } catch (error) {
         console.error("Season highlights load failed:", error);
-        container.innerHTML = `<div class="placeholder-card">تعذر تحميل لقطات الختام حالياً.</div>`;
+        container.innerHTML = `<div class="placeholder-card">تعذر تحميل أضواء الختام حالياً.</div>`;
     }
+}
+
+function renderFinalHighlightsNotGeneratedMessage(recap) {
+    const completed = recap?.seasonStats?.completedMatches || 0;
+    const expected = recap?.seasonStats?.expectedMatches || EXPECTED_WORLD_CUP_MATCH_COUNT;
+
+    return `
+        <div class="placeholder-card final-recap-locked-card">
+            <strong>✨ الأضواء تحت التجهيز</strong>
+            <span>البيانات الحالية فيها ${completed} من ${expected} مباراة. سيتم نشر أضواء الختام بعد مراجعة اللقطات النهائية واعتمادها.</span>
+        </div>
+    `;
+}
+
+function renderFinalAiHighlights(posts, recap) {
+    const visiblePosts = posts.slice(0, FINAL_RECAP_MAX_HIGHLIGHTS);
+
+    return `
+        <section class="season-highlight-hero season-highlight-hero-ai">
+            <p class="eyebrow">أضواء الختام</p>
+            <h4>قصة البطولة في لقطات</h4>
+            <p>منشورات قصيرة تم توليد نصها بعد قفل البيانات. الأرقام والوقائع محسوبة من قاعدة البيانات، والنص فقط تمت صياغته بشكل ممتع.</p>
+        </section>
+
+        <div class="season-highlight-card-grid season-highlight-card-grid-ai">
+            ${visiblePosts.map(renderFinalAiHighlightPost).join("")}
+        </div>
+    `;
+}
+
+function renderFinalAiHighlightPost(post) {
+    const category = String(post.cards?.[0]?.category || post.cards?.[0]?.type || "story").replace(/[^a-zA-Z0-9_-]/g, "");
+    const stageLabel = post.subtitle_ar || post.cards?.[0]?.stage_ar || post.cards?.[0]?.stage || "لقطة ختامية";
+
+    return `
+        <article class="season-highlight-card season-highlight-card-ai season-highlight-card-${category}">
+            <span class="season-highlight-icon" aria-hidden="true">${escapeHtml(post.icon || "✨")}</span>
+            <div>
+                <small class="season-highlight-meta">${escapeHtml(stageLabel)}</small>
+                <h4>${escapeHtml(post.title_ar || "لقطة من البطولة")}</h4>
+                <p>${escapeHtml(post.body_ar || "")}</p>
+            </div>
+        </article>
+    `;
 }
 
 async function renderStatisticsAndBadgesPage() {
@@ -3532,7 +3633,7 @@ function buildParticipantHighlightCard(row, awards = [], matchFacts = []) {
         return {
             icon: visual.icon || "🎯",
             title: `${row.name} ${participantPhrase(row.name, "له", "لها")} توقيع بالملّي`,
-            description: `${row.exactScores} نتيجة كاملة. مو كثير كلام، بس ضربات نظيفة.`,
+            description: `${row.exactScores} نتيجة كاملة. لقطة قصيرة تستاهل التذكير.`,
             category: "participant"
         };
     }
@@ -3594,14 +3695,14 @@ function isFinalRecapAvailable(recap) {
 
 function renderFinalRecapLockedMessage(recap, sectionTitle) {
     const completed = recap?.seasonStats?.completedMatches || 0;
-    const total = recap?.seasonStats?.totalKnownMatches || completed;
+    const total = recap?.seasonStats?.expectedMatches || EXPECTED_WORLD_CUP_MATCH_COUNT;
     const remaining = Math.max(0, total - completed);
 
     return `
         <div class="placeholder-card final-recap-locked-card">
             <strong>🔒 ${escapeHtml(sectionTitle)} محفوظة للنهاية</strong>
-            <span>اكتملت ${completed} من ${total} مباراة معروفة${remaining ? `، والمتبقي ${remaining}.` : "."}</span>
-            <small>للاختبار فقط أضف <code>?previewFinal=1</code> على رابط الصفحة.</small>
+            <span>اكتملت ${completed} من ${total} مباراة${remaining ? `، والمتبقي ${remaining}.` : "."}</span>
+            <small>سيتم فتح هذا القسم بعد قفل نتائج البطولة وتجهيز المحتوى النهائي.</small>
         </div>
     `;
 }
@@ -3997,8 +4098,11 @@ function buildFinalRecapSeasonStats(participants, completedMatches, predictions,
     return {
         participantCount: participants.length,
         completedMatches: completedMatches.length,
+        expectedMatches: EXPECTED_WORLD_CUP_MATCH_COUNT,
         totalKnownMatches: allMatches.length || completedMatches.length,
+        missingKnownMatches: Math.max(0, EXPECTED_WORLD_CUP_MATCH_COUNT - (allMatches.length || 0)),
         remainingKnownMatches: Math.max(0, (allMatches.length || completedMatches.length) - completedMatches.length),
+        remainingExpectedMatches: Math.max(0, EXPECTED_WORLD_CUP_MATCH_COUNT - completedMatches.length),
         isTournamentComplete: isFinalRecapTournamentComplete(allMatches, completedMatches),
         totalPredictions,
         totalCorrect,
@@ -4020,13 +4124,11 @@ function buildFinalRecapSeasonStats(participants, completedMatches, predictions,
 function isFinalRecapTournamentComplete(allMatches = [], completedMatches = []) {
     if (!allMatches.length) return false;
 
-    const finalMatchCompleted = allMatches.some((match) => {
-        return (match.stage === "FINAL" || String(match.stage || "").toUpperCase() === "FINAL") && hasActualScore(match);
-    });
-
-    if (finalMatchCompleted) return true;
-
-    return allMatches.every((match) => hasActualScore(match));
+    return (
+        allMatches.length >= EXPECTED_WORLD_CUP_MATCH_COUNT &&
+        completedMatches.length >= EXPECTED_WORLD_CUP_MATCH_COUNT &&
+        allMatches.every((match) => hasActualScore(match))
+    );
 }
 
 function buildFinalRecapAwards(finalRows, seasonStats, matchFacts, snapshots) {

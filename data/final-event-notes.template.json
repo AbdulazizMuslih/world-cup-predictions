@@ -1,0 +1,15 @@
+{
+  "event_notes": [
+    {
+      "match_id": null,
+      "stage": "QUARTER_FINALS",
+      "event_type": "comeback",
+      "mood": "exciting",
+      "title_ar": "عنوان الحدث الموثق",
+      "details_ar": "وصف مختصر للحدث كما تأكدته من مصدر موثوق. لا تكتب توقعات أو كلام غير مؤكد هنا.",
+      "source_name": "اسم المصدر أو ملاحظة: مراجعة يدوية",
+      "source_url": null,
+      "approved": false
+    }
+  ]
+}
