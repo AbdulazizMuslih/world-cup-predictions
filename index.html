@@ -185,7 +185,7 @@
                     <div class="menu-page-header">
                         <p class="eyebrow">الأضواء</p>
                         <h3>لقطات الختام</h3>
-                        <p class="menu-page-subtitle">أبرز سوالف المسابقة بعد النهاية: اللقب، الرجعة، المفاجآت، واللحظات التي تستاهل تنحفظ.</p>
+                        <p class="menu-page-subtitle">تفتح بعد نهاية البطولة: أضواء قصيرة لكل المشاركين مع لقطات حقيقية من أرقام المسابقة.</p>
                     </div>
 
                     <div id="seasonHighlights" class="season-highlights-grid">
@@ -197,7 +197,7 @@
                     <div class="menu-page-header">
                         <p class="eyebrow">الإحصائيات والشارات</p>
                         <h3>أرقام لها طعم</h3>
-                        <p class="menu-page-subtitle">الأرقام المهمة والشارات الممتعة في مكان واحد، بدون تكرار وبدون تقارير طويلة.</p>
+                        <p class="menu-page-subtitle">تفتح بعد نهاية البطولة: أرقام مختصرة وشارات واضحة بدون تقارير طويلة.</p>
                     </div>
 
                     <div id="statisticsCards" class="stats-grid">
@@ -207,7 +207,7 @@
                     <div class="menu-page-header menu-page-subsection-header">
                         <p class="eyebrow">الشارات</p>
                         <h3>ألقاب المسابقة</h3>
-                        <p class="menu-page-subtitle">كل شارة مبنية على رقم واضح، مع وصف بسيط يشرح سببها.</p>
+                        <p class="menu-page-subtitle">كل شارة لها سبب محسوب ووصف قصير. وصف قصير وواضح، بدون كلام طويل.</p>
                     </div>
 
                     <div id="statisticsBadges" class="awards-grid recap-awards-grid">
@@ -250,22 +250,6 @@
                     <h3>الإدارة</h3>
 
                     <div class="admin-management-grid">
-                        <div class="admin-box ai-admin-box participant-predictions-card">
-                            <div class="participant-predictions-header">
-                                <div>
-                                    <p class="eyebrow">الأضواء الذكية</p>
-                                    <h3>توليد منشورات AI</h3>
-                                </div>
-                            </div>
-
-                            <p class="admin-empty-state">
-                                سيتم ربط هذا القسم لاحقاً بتوليد تلقائي بعد كل مباراتين، مع استخدام البيانات المتاحة فقط في وقت التوليد.
-                            </p>
-
-                            <button id="generateAiContentBtn" class="secondary-btn" type="button" disabled>التوليد التلقائي قريباً</button>
-                            <p id="aiAdminMessage" class="message"></p>
-                        </div>
-
                         <div class="admin-box admin-manual-prediction-box participant-predictions-card">
                             <div class="participant-predictions-header">
                                 <div>
@@ -342,24 +326,27 @@
     <script id="aiContentPlan" type="application/json">
         {
           "plannedVersion": "39.0",
-          "postCadenceCompletedMatches": 2,
+          "aiMode": "manual_final_only",
+          "dataSource": "supabase_database",
+          "rule": "Code calculates all facts first. AI may only rewrite short fun phrases from locked calculated facts after the tournament ends.",
+          "liveSchedule": "disabled",
+          "sections": [
+            "highlights",
+            "statistics_and_badges",
+            "profile",
+            "season_closing"
+          ],
           "tone": {
             "language": "ar",
             "style": "fun_light_short_data_based",
             "rules": [
               "اكتب بالعربية فقط.",
-              "استخدم البيانات المتاحة فقط وقت التوليد.",
               "لا تخترع نتائج أو مراكز أو شارات.",
-              "اجعل النص ممتعاً وخفيفاً، وليس تقريراً طويلاً.",
-              "لا تجعل النص كوميدياً بشكل مبالغ أو محرج لأي مشارك.",
-              "اجعل كل بطاقة قصيرة وواضحة."
+              "لا تعتمد على AI لتحليل الفائز أو الأرقام.",
+              "استخدم الحقائق المحسوبة من قاعدة البيانات فقط.",
+              "اجعل العبارات ممتعة وخفيفة ومناسبة للعائلة والأصدقاء."
             ]
-          },
-          "sections": [
-            "highlights",
-            "statistics",
-            "profile"
-          ]
+          }
         }
     </script>
 

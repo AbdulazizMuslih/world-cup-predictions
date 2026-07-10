@@ -8073,3 +8073,120 @@ body.site-stage-theme #availableMatches .available-stage-card.match-card-predict
     min-height: auto;
   }
 }
+
+/* ===============================
+   V39 final recap end-only refinement
+   =============================== */
+
+.final-recap-locked-card {
+  display: grid;
+  gap: 10px;
+  text-align: center;
+  padding: 28px;
+  border-radius: 26px;
+}
+
+.final-recap-locked-card strong {
+  color: var(--wc-gold-light, #f1d89a);
+  font-size: clamp(20px, 4vw, 30px);
+}
+
+.final-recap-locked-card span,
+.final-recap-locked-card small {
+  color: rgba(247, 241, 227, 0.72);
+  line-height: 1.7;
+}
+
+.final-recap-locked-card code {
+  direction: ltr;
+  unicode-bidi: isolate;
+  display: inline-block;
+  padding: 2px 7px;
+  border-radius: 999px;
+  color: #11101a;
+  background: var(--wc-gold-light, #f1d89a);
+  font-weight: 900;
+}
+
+.season-highlight-card-grid-compact {
+  grid-template-columns: repeat(auto-fit, minmax(245px, 1fr));
+}
+
+.season-highlight-card-compact {
+  min-height: 138px;
+  align-content: start;
+}
+
+.season-highlight-card-compact h4 {
+  margin-bottom: 7px;
+  font-size: 17px;
+}
+
+.season-highlight-card-compact p {
+  font-size: 13.5px;
+  line-height: 1.65;
+}
+
+.profile-closing-note {
+  padding: 18px;
+  border-radius: 22px;
+  background:
+    radial-gradient(circle at 92% 18%, rgba(241, 216, 154, 0.13), transparent 30%),
+    linear-gradient(145deg, rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0.045)),
+    rgba(5, 8, 23, 0.46);
+  border: 1px solid rgba(241, 216, 154, 0.16);
+}
+
+.profile-closing-note strong {
+  display: block;
+  margin-bottom: 8px;
+  color: var(--wc-gold-light, #f1d89a);
+  font-size: 18px;
+}
+
+.profile-closing-note p {
+  margin: 0;
+  color: rgba(247, 241, 227, 0.76);
+  line-height: 1.75;
+  font-weight: 800;
+}
+
+@media (max-width: 700px) {
+  .season-highlight-card-grid-compact {
+    grid-template-columns: 1fr;
+  }
+
+  .season-highlight-card-compact {
+    min-height: 0;
+  }
+}
+
+/* ===============================
+   V39 final recap fairness polish
+   =============================== */
+.season-highlight-card-participant {
+  border-color: rgba(52, 214, 189, 0.22);
+  background:
+    radial-gradient(circle at 96% 10%, rgba(52, 214, 189, 0.12), transparent 32%),
+    linear-gradient(145deg, rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0.045)),
+    rgba(5, 8, 23, 0.46);
+}
+
+.season-highlight-card-season {
+  border-color: rgba(241, 216, 154, 0.22);
+}
+
+.season-highlight-card-award {
+  border-color: rgba(232, 121, 249, 0.22);
+}
+
+
+/* ===============================
+   V39 recap cards: display-only, no accidental page jumps
+   =============================== */
+.season-highlight-card,
+.stat-story-card,
+.badge-story-card,
+.season-thanks-mini-card {
+  cursor: default;
+}

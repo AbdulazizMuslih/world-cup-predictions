@@ -1,37 +1,16 @@
-name: Generate World Cup AI Posts
+name: Generate Final Recap AI Phrases
 
 on:
   workflow_dispatch:
-  schedule:
-    - cron: "12,42 * * * *"
-
-concurrency:
-  group: wc-ai-post-generation
-  cancel-in-progress: false
 
 jobs:
-  generate-ai-posts:
+  disabled-until-final:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Show trigger details
+      - name: AI generation is intentionally disabled
         run: |
-          echo "workflow=generate-ai-posts"
-          echo "event=${{ github.event_name }}"
-          echo "utc_now=$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
-
-      - name: Generate AI posts
-        run: node scripts/generate-ai-posts.mjs
-        env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-          AI_API_KEY: ${{ secrets.AI_API_KEY }}
-          AI_BASE_URL: ${{ vars.AI_BASE_URL }}
-          AI_MODEL: ${{ vars.AI_MODEL }}
-          AI_PROVIDER_NAME: ${{ vars.AI_PROVIDER_NAME }}
-          AI_SECTIONS: highlights,statistics,awards
-          AI_GENERATE_EVERY_COMPLETED_MATCHES: "2"
-          AI_MAX_BACKFILL_CHECKPOINTS: "8"
+          echo "AI generation is disabled for v39 final recap testing."
+          echo "Use Audit Final Recap Data first."
+          echo "Final AI phrase generation will be enabled only after tournament data is locked."
+          exit 1
