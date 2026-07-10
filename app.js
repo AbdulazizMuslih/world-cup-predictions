@@ -95,7 +95,7 @@ document.addEventListener("DOMContentLoaded", init);
 
 const MUSIC_TRACKS = [
     {
-        title: "❤️ قديمك نديمك",
+        title: "❤️",
         src: "./assets/song 2.mp3?v=39.0"
     },
     {
