@@ -7,8 +7,16 @@ const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const AI_API_KEY = process.env.AI_API_KEY || process.env.OPENAI_API_KEY;
 const AI_BASE_URL = (process.env.AI_BASE_URL || "https://api.openai.com/v1").replace(/\/$/, "");
 const AI_MODEL = process.env.AI_MODEL || process.env.OPENAI_MODEL;
-const AI_TEMPERATURE = Number(process.env.AI_TEMPERATURE || 0.72);
+const AI_TEMPERATURE = Number(process.env.AI_TEMPERATURE || 0.35);
 const AI_MAX_TOKENS = Number(process.env.AI_MAX_TOKENS || 9000);
+const AI_REQUEST_RETRIES = Math.max(1, Number(process.env.AI_REQUEST_RETRIES || 4));
+const AI_RETRY_BASE_DELAY_MS = Math.max(500, Number(process.env.AI_RETRY_BASE_DELAY_MS || 3500));
+const AI_FALLBACK_ON_FAILURE = String(process.env.AI_FALLBACK_ON_FAILURE || "false").toLowerCase() === "true";
+const AI_BATCH_GENERATION = String(process.env.AI_BATCH_GENERATION || "true").toLowerCase() !== "false";
+const AI_BATCH_HIGHLIGHT_TARGET = Math.max(4, Math.min(12, Number(process.env.AI_BATCH_HIGHLIGHT_TARGET || 8)));
+const AI_EVENT_NOTE_BATCH_SIZE = Math.max(8, Math.min(30, Number(process.env.AI_EVENT_NOTE_BATCH_SIZE || 18)));
+const AI_FACT_BATCH_SIZE = Math.max(10, Math.min(40, Number(process.env.AI_FACT_BATCH_SIZE || 24)));
+const AI_PROFILE_BATCH_SIZE = Math.max(3, Math.min(8, Number(process.env.AI_PROFILE_BATCH_SIZE || 6)));
 
 const EXPECTED_WORLD_CUP_MATCH_COUNT = Number(process.env.EXPECTED_WORLD_CUP_MATCH_COUNT || 104);
 const ALLOW_FINAL_PREVIEW = String(process.env.ALLOW_FINAL_PREVIEW || "false").toLowerCase() === "true";
@@ -70,7 +78,11 @@ async function main() {
         draftEventNotes: factsPack.audit.draftEventNotes,
         eventNotesRequiredForPublish: REQUIRE_EVENT_NOTES_FOR_PUBLISH,
         useTrustedEventNotes: USE_TRUSTED_EVENT_NOTES,
-        maxEventNotesForAi: MAX_EVENT_NOTES_FOR_AI
+        maxEventNotesForAi: MAX_EVENT_NOTES_FOR_AI,
+        aiFallbackOnFailure: AI_FALLBACK_ON_FAILURE,
+        aiBatchGeneration: AI_BATCH_GENERATION,
+        aiBatchHighlightTarget: AI_BATCH_HIGHLIGHT_TARGET,
+        aiRequestRetries: AI_REQUEST_RETRIES
     }, null, 2));
 
     if (!factsPack.audit.finalDataReady && !ALLOW_FINAL_PREVIEW) {
@@ -665,6 +677,10 @@ function stageOrder(stage) {
 }
 
 async function generateFinalContent(factsPack) {
+    if (AI_BATCH_GENERATION) {
+        return generateFinalContentInBatches(factsPack);
+    }
+
     const prompt = buildPrompt(factsPack);
     const messages = [
         {
@@ -674,30 +690,304 @@ async function generateFinalContent(factsPack) {
         { role: "user", content: prompt }
     ];
 
-    const content = await requestAiContent(messages, {
-        temperature: AI_TEMPERATURE,
-        maxTokens: AI_MAX_TOKENS,
-        responseFormat: true
-    });
-
+    let content = "";
     try {
+        content = await requestAiContent(messages, {
+            temperature: AI_TEMPERATURE,
+            maxTokens: AI_MAX_TOKENS,
+            responseFormat: true
+        });
+
         return parseJsonContent(content);
     } catch (firstError) {
-        writeAiDebugFile("ai-posts-invalid-output.json", content);
-        console.warn("AI returned malformed JSON. Saved raw response to ai-posts-invalid-output.json and trying one repair call...");
+        if (content) {
+            writeAiDebugFile("ai-posts-invalid-output.json", content);
+            console.warn("AI returned malformed JSON. Saved raw response to ai-posts-invalid-output.json and trying one repair call...");
+        } else {
+            console.warn(`AI generation failed before content could be parsed: ${firstError.message}`);
+        }
 
-        const repairedContent = await repairJsonWithAi(content);
-        try {
-            return parseJsonContent(repairedContent);
-        } catch (repairError) {
-            writeAiDebugFile("ai-posts-repair-output.json", repairedContent);
-            throw new Error(
-                `AI returned malformed JSON and the repair attempt also failed. ` +
-                `Raw response saved to ai-posts-invalid-output.json. Repair response saved to ai-posts-repair-output.json. ` +
-                `Original error: ${firstError.message}. Repair error: ${repairError.message}`
-            );
+        if (content) {
+            try {
+                const repairedContent = await repairJsonWithAi(content);
+                try {
+                    return parseJsonContent(repairedContent);
+                } catch (repairParseError) {
+                    writeAiDebugFile("ai-posts-repair-output.json", repairedContent);
+                    console.warn(`AI repair returned invalid JSON: ${repairParseError.message}`);
+                }
+            } catch (repairRequestError) {
+                console.warn(`AI repair call failed: ${repairRequestError.message}`);
+            }
+        }
+
+        if (!AI_FALLBACK_ON_FAILURE) {
+            throw firstError;
+        }
+
+        console.warn("Using local fallback content because AI_FALLBACK_ON_FAILURE=true. Rerun later with AI_FALLBACK_ON_FAILURE=false for Gemini-only output.");
+        return buildLocalFallbackAiOutput(factsPack, firstError);
+    }
+}
+
+async function generateFinalContentInBatches(factsPack) {
+    const output = { highlights: [], profile_messages: [] };
+    const usedHighlightKeys = new Set();
+    const usedProfileNames = new Set();
+    const targetHighlights = MAX_HIGHLIGHTS;
+
+    const addOutput = (batchName, batchOutput) => {
+        const batchHighlights = Array.isArray(batchOutput?.highlights) ? batchOutput.highlights : [];
+        const batchProfiles = Array.isArray(batchOutput?.profile_messages) ? batchOutput.profile_messages : [];
+
+        for (const post of batchHighlights) {
+            if (output.highlights.length >= targetHighlights) break;
+            const title = cleanText(post?.title_ar || "", 90);
+            const body = cleanText(post?.body_ar || "", 220);
+            if (!title || !body) continue;
+            const key = `${title}|${body}`.toLowerCase();
+            if (usedHighlightKeys.has(key)) continue;
+            usedHighlightKeys.add(key);
+            output.highlights.push({
+                ...post,
+                title_ar: title,
+                body_ar: body
+            });
+        }
+
+        for (const message of batchProfiles) {
+            const participantName = cleanText(message?.participant_name || "", 80);
+            if (!participantName || usedProfileNames.has(participantName)) continue;
+            usedProfileNames.add(participantName);
+            output.profile_messages.push({
+                ...message,
+                participant_name: participantName,
+                title_ar: cleanText(message?.title_ar || "رسالة ختام", 90),
+                body_ar: cleanText(message?.body_ar || "", 220),
+                icon: cleanText(message?.icon || "✨", 8)
+            });
+        }
+
+        console.log(`Batch ${batchName}: total highlights=${output.highlights.length}, profiles=${output.profile_messages.length}`);
+    };
+
+    const activeNames = (factsPack.contest.activeParticipants || []).map((participant) => participant.name);
+    const contextBase = {
+        generator: factsPack.generator,
+        audit: factsPack.audit,
+        language: factsPack.language,
+        strictRules: factsPack.strictRules,
+        active_participant_names: activeNames,
+        stages: factsPack.contest.stages,
+        leaderboard_top: (factsPack.contest.leaderboard || []).slice(0, 8)
+    };
+
+    const eventNotes = factsPack.contest.eventNotes || [];
+    const eventBatches = chunkArray(eventNotes, AI_EVENT_NOTE_BATCH_SIZE);
+    const maxEventBatches = Math.min(eventBatches.length, Math.ceil(Math.max(18, targetHighlights * 0.5) / AI_BATCH_HIGHLIGHT_TARGET));
+
+    for (let index = 0; index < maxEventBatches && output.highlights.length < targetHighlights; index += 1) {
+        const notes = eventBatches[index];
+        const batchPrompt = buildBatchPrompt({
+            batchName: `event-notes-${index + 1}`,
+            instruction: "اكتب منشورات أضواء من أحداث كأس العالم الموثقة في event_notes. اجعلها كأنها timeline، وليست شارات ولا نتائج خام.",
+            highlightTarget: Math.min(AI_BATCH_HIGHLIGHT_TARGET, targetHighlights - output.highlights.length),
+            profileTarget: 0,
+            facts: {
+                ...contextBase,
+                event_notes: notes,
+                related_matches: relatedMatchesForEventNotes(notes, factsPack.contest.matches || [])
+            }
+        });
+        addOutput(`event-notes-${index + 1}`, await runAiJsonBatch(batchPrompt, `event-notes-${index + 1}`));
+    }
+
+    const candidateHighlights = factsPack.contest.candidateHighlights || [];
+    const contestFacts = candidateHighlights.filter((fact) => !String(fact.type || "").includes("participant") && !String(fact.type || "").includes("verified_worldcup"));
+    const contestBatches = chunkArray(contestFacts, AI_FACT_BATCH_SIZE);
+    const maxContestBatches = Math.min(contestBatches.length, Math.ceil(Math.max(10, targetHighlights * 0.25) / AI_BATCH_HIGHLIGHT_TARGET));
+
+    for (let index = 0; index < maxContestBatches && output.highlights.length < Math.max(0, targetHighlights - activeNames.length); index += 1) {
+        const batchPrompt = buildBatchPrompt({
+            batchName: `contest-moments-${index + 1}`,
+            instruction: "اكتب منشورات من لحظات مسابقة التوقعات: صعوبة مباراة، نقاط كثيرة، نتيجة بالملّي، تغير في الجو. لا تجعلها إحصائية جامدة.",
+            highlightTarget: Math.min(AI_BATCH_HIGHLIGHT_TARGET, targetHighlights - output.highlights.length),
+            profileTarget: 0,
+            facts: {
+                ...contextBase,
+                contest_moment_facts: contestBatches[index]
+            }
+        });
+        addOutput(`contest-moments-${index + 1}`, await runAiJsonBatch(batchPrompt, `contest-moments-${index + 1}`));
+    }
+
+    const participantRows = factsPack.contest.leaderboard || [];
+    const participantBatches = chunkArray(participantRows, AI_PROFILE_BATCH_SIZE);
+    for (let index = 0; index < participantBatches.length; index += 1) {
+        const participants = participantBatches[index];
+        const remainingHighlights = Math.max(0, targetHighlights - output.highlights.length);
+        const batchPrompt = buildBatchPrompt({
+            batchName: `participants-${index + 1}`,
+            instruction: "اكتب لقطة highlight واحدة لكل مشارك في هذه الدفعة، واكتب رسالة profile قصيرة لكل مشارك. لا تذكر قلة المشاركة ولا الغياب. استخدم الضمائر الصحيحة.",
+            highlightTarget: Math.min(participants.length, remainingHighlights),
+            profileTarget: participants.length,
+            facts: {
+                ...contextBase,
+                participants
+            }
+        });
+        addOutput(`participants-${index + 1}`, await runAiJsonBatch(batchPrompt, `participants-${index + 1}`));
+    }
+
+    if (output.highlights.length < Math.min(35, targetHighlights)) {
+        const remainingFacts = (factsPack.contest.matches || []).slice(0, 80);
+        const fillBatches = chunkArray(remainingFacts, AI_FACT_BATCH_SIZE);
+        for (let index = 0; index < fillBatches.length && output.highlights.length < Math.min(35, targetHighlights); index += 1) {
+            const batchPrompt = buildBatchPrompt({
+                batchName: `fill-matches-${index + 1}`,
+                instruction: "أكمل الأضواء بمنشورات قصيرة من المباريات المتاحة، مع تجنب التكرار واللغة الإحصائية الباردة.",
+                highlightTarget: Math.min(AI_BATCH_HIGHLIGHT_TARGET, targetHighlights - output.highlights.length),
+                profileTarget: 0,
+                facts: {
+                    ...contextBase,
+                    matches: fillBatches[index]
+                }
+            });
+            addOutput(`fill-matches-${index + 1}`, await runAiJsonBatch(batchPrompt, `fill-matches-${index + 1}`));
         }
     }
+
+    const missingProfileNames = activeNames.filter((name) => !usedProfileNames.has(name));
+    if (missingProfileNames.length) {
+        const missingParticipants = participantRows.filter((participant) => missingProfileNames.includes(participant.name));
+        for (const participants of chunkArray(missingParticipants, AI_PROFILE_BATCH_SIZE)) {
+            const batchPrompt = buildBatchPrompt({
+                batchName: "missing-profiles",
+                instruction: "اكتب رسائل profile فقط للمشاركين الناقصين. لا تكتب highlights.",
+                highlightTarget: 0,
+                profileTarget: participants.length,
+                facts: {
+                    ...contextBase,
+                    participants
+                }
+            });
+            addOutput("missing-profiles", await runAiJsonBatch(batchPrompt, "missing-profiles"));
+        }
+    }
+
+    if (!output.highlights.length) {
+        throw new Error("Gemini batch generation returned no highlights.");
+    }
+
+    writeAiDebugFile("ai-posts-batch-output.json", JSON.stringify(output, null, 2));
+    return output;
+}
+
+function buildBatchPrompt({ batchName, instruction, highlightTarget, profileTarget, facts }) {
+    return `
+اكتب دفعة واحدة من محتوى أضواء مسابقة توقعات كأس العالم 2026.
+
+اسم الدفعة: ${batchName}
+المهمة: ${instruction}
+
+أعد JSON صحيح فقط بهذا الشكل:
+{
+  "highlights": [
+    {
+      "title_ar": "عنوان 3 إلى 7 كلمات",
+      "body_ar": "جملة عربية قصيرة واحدة فقط",
+      "icon": "✨",
+      "category": "timeline|match|participant|emotional|fun|stage",
+      "stage_ar": "اسم المرحلة أو أضواء مباشرة",
+      "participant_names": ["اسم مشارك إن وجد"],
+      "source_fact": "الحقيقة المستخدمة باختصار",
+      "source_note_ids": ["id من final_event_notes إذا استخدمت حدثاً كروياً"]
+    }
+  ],
+  "profile_messages": [
+    {
+      "participant_name": "اسم مشارك نشط",
+      "title_ar": "رسالة ختام",
+      "body_ar": "جملة قصيرة جداً لهذا المشارك",
+      "icon": "✨"
+    }
+  ]
+}
+
+عدد highlights المطلوب في هذه الدفعة: ${highlightTarget}
+عدد profile_messages المطلوب في هذه الدفعة: ${profileTarget}
+
+قواعد صارمة:
+- JSON فقط، بدون markdown.
+- لا تضف أي نص خارج JSON.
+- لا تستخدم trailing commas.
+- لا تخترع حدثاً كروياً غير موجود في facts.event_notes أو facts.matches أو facts.contest_moment_facts.
+- إذا كتبت عن event_note، ضع id الخاص به في source_note_ids.
+- لا تستخدم عبارة "مو كثير كلام، بس ضربات نظيفة".
+- لا تكرر نفس العنوان داخل الدفعة.
+- لا تجعلها شارات أو جوائز؛ اجعلها منشورات timeline قصيرة وممتعة.
+- لا تسخر من أي مشارك ولا تذكر الغياب أو قلة المشاركة.
+- استخدم ضمائر صحيحة للبنات حسب participantLanguage.
+- لا تكتب كلام كثير: العنوان قصير، والوصف جملة واحدة فقط.
+
+FACTS:
+${JSON.stringify(facts, null, 2)}
+`.trim();
+}
+
+async function runAiJsonBatch(prompt, batchName) {
+    const messages = [
+        {
+            role: "system",
+            content: "أنت كاتب عربي خفيف الظل. تكتب JSON صحيح فقط. لا تخترع معلومات. لا تستخدم markdown."
+        },
+        { role: "user", content: prompt }
+    ];
+
+    let content = "";
+    try {
+        content = await requestAiContent(messages, {
+            temperature: AI_TEMPERATURE,
+            maxTokens: Math.min(AI_MAX_TOKENS, 5000),
+            responseFormat: true
+        });
+        return parseJsonContent(content);
+    } catch (firstError) {
+        if (content) {
+            writeAiDebugFile(`ai-posts-invalid-${safeFilePart(batchName)}.json`, content);
+            console.warn(`Batch ${batchName} returned malformed JSON. Trying repair call...`);
+            try {
+                const repairedContent = await repairJsonWithAi(content);
+                try {
+                    return parseJsonContent(repairedContent);
+                } catch (repairParseError) {
+                    writeAiDebugFile(`ai-posts-repair-${safeFilePart(batchName)}.json`, repairedContent);
+                    throw repairParseError;
+                }
+            } catch (repairError) {
+                throw new Error(`Batch ${batchName} failed after repair: ${repairError.message}`);
+            }
+        }
+        throw new Error(`Batch ${batchName} failed: ${firstError.message}`);
+    }
+}
+
+function relatedMatchesForEventNotes(notes, matches) {
+    const ids = new Set((notes || []).map((note) => note.match_id).filter(Boolean));
+    return (matches || []).filter((match) => ids.has(match.id)).slice(0, 30);
+}
+
+function chunkArray(items, size) {
+    const chunks = [];
+    const safeSize = Math.max(1, Number(size) || 1);
+    for (let index = 0; index < (items || []).length; index += safeSize) {
+        chunks.push(items.slice(index, index + safeSize));
+    }
+    return chunks;
+}
+
+function safeFilePart(value) {
+    return String(value || "batch").replace(/[^a-z0-9_-]+/gi, "-").slice(0, 60) || "batch";
 }
 
 async function requestAiContent(messages, options = {}) {
@@ -712,22 +1002,45 @@ async function requestAiContent(messages, options = {}) {
         body.response_format = { type: "json_object" };
     }
 
-    const response = await fetch(`${AI_BASE_URL}/chat/completions`, {
-        method: "POST",
-        headers: {
-            Authorization: `Bearer ${AI_API_KEY}`,
-            "Content-Type": "application/json"
-        },
-        body: JSON.stringify(body)
-    });
+    let lastError = null;
+    for (let attempt = 1; attempt <= AI_REQUEST_RETRIES; attempt += 1) {
+        try {
+            const response = await fetch(`${AI_BASE_URL}/chat/completions`, {
+                method: "POST",
+                headers: {
+                    Authorization: `Bearer ${AI_API_KEY}`,
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify(body)
+            });
 
-    if (!response.ok) {
-        const text = await response.text();
-        throw new Error(`AI error ${response.status}: ${text}`);
+            if (!response.ok) {
+                const text = await response.text();
+                const retryable = [408, 409, 425, 429, 500, 502, 503, 504].includes(response.status);
+                const error = new Error(`AI error ${response.status}: ${text}`);
+                error.retryable = retryable;
+                throw error;
+            }
+
+            const json = await response.json();
+            return json.choices?.[0]?.message?.content || "";
+        } catch (error) {
+            lastError = error;
+            const retryable = error.retryable === true || /\b(429|500|502|503|504|UNAVAILABLE|overloaded|high demand|fetch failed)\b/i.test(error.message || "");
+            if (!retryable || attempt >= AI_REQUEST_RETRIES) break;
+
+            const delay = AI_RETRY_BASE_DELAY_MS * attempt;
+            console.warn(`AI request failed on attempt ${attempt}/${AI_REQUEST_RETRIES}: ${error.message}`);
+            console.warn(`Retrying in ${Math.round(delay / 1000)}s...`);
+            await sleep(delay);
+        }
     }
 
-    const json = await response.json();
-    return json.choices?.[0]?.message?.content || "";
+    throw lastError || new Error("AI request failed.");
+}
+
+function sleep(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 async function repairJsonWithAi(badContent) {
@@ -890,6 +1203,257 @@ function lightRepairJsonText(value) {
         .replace(/}\s*\n\s*{/g, "},{")
         .replace(/]\s*\n\s*"profile_messages"/g, '],"profile_messages"')
         .trim();
+}
+
+function buildLocalFallbackAiOutput(factsPack, error) {
+    const highlights = [];
+    const usedTitles = new Set();
+    const add = (post) => {
+        const title = cleanText(post?.title_ar || "", 90);
+        const body = cleanText(post?.body_ar || "", 220);
+        if (!title || !body || usedTitles.has(title)) return;
+        usedTitles.add(title);
+        highlights.push({
+            title_ar: title,
+            body_ar: body,
+            icon: cleanText(post.icon || "✨", 8),
+            category: cleanText(post.category || "timeline", 40),
+            stage_ar: cleanText(post.stage_ar || "أضواء الختام", 80),
+            participant_names: Array.isArray(post.participant_names) ? post.participant_names.slice(0, 6) : [],
+            source_fact: cleanText(post.source_fact || "fallback_from_calculated_facts", 180),
+            source_note_ids: Array.isArray(post.source_note_ids) ? post.source_note_ids.slice(0, 6) : []
+        });
+    };
+
+    add({
+        title_ar: "القصة لسه تتحرك",
+        body_ar: `حتى الآن اكتملت ${factsPack.audit.completedMatches} مباراة، ومعها بدأت أضواء المسابقة تتشكل من النتائج والتوقعات.`,
+        icon: "🏆",
+        category: "timeline",
+        stage_ar: "أضواء مباشرة",
+        source_fact: "completed_matches_snapshot"
+    });
+
+    const eventNotes = factsPack.contest.eventNotes || [];
+    const noteOrder = {
+        penalty_shootout: 1,
+        extra_time: 2,
+        goal_fest: 3,
+        close_match: 4,
+        clean_sheet: 5,
+        official_result: 8,
+        winner_confirmed: 20
+    };
+
+    [...eventNotes]
+        .filter((note) => note.event_type !== "winner_confirmed")
+        .sort((a, b) => (noteOrder[a.event_type] || 10) - (noteOrder[b.event_type] || 10))
+        .slice(0, Math.max(18, Math.floor(MAX_HIGHLIGHTS * 0.45)))
+        .forEach((note) => add(eventNoteToFallbackPost(note)));
+
+    const stages = factsPack.contest.stages || [];
+    stages.forEach((stage) => {
+        add({
+            title_ar: `${stage.label_ar} ترك أثره`,
+            body_ar: `${stage.label_ar} جمع ${stage.matches} مباراة و${stage.exactCount} نتيجة بالملّي، وكان جزءاً واضحاً من حكاية المسابقة.`,
+            icon: "📍",
+            category: "stage",
+            stage_ar: stage.label_ar,
+            source_fact: `stage:${stage.stage}`
+        });
+    });
+
+    const matches = factsPack.contest.matches || [];
+    [...matches]
+        .sort((a, b) => b.awardedPoints - a.awardedPoints)
+        .slice(0, 10)
+        .forEach((match) => add({
+            title_ar: "مباراة فتحت الخزنة",
+            body_ar: `${match.title} انتهت ${match.score} ووزعت ${match.awardedPoints} نقطة بين المشاركين.`,
+            icon: "💰",
+            category: "match",
+            stage_ar: match.stageLabel,
+            participant_names: [...(match.exactNames || []), ...(match.correctNames || [])].slice(0, 5),
+            source_fact: `match_points:${match.id}`
+        }));
+
+    [...matches]
+        .filter((match) => match.exactCount > 0)
+        .sort((a, b) => b.exactCount - a.exactCount)
+        .slice(0, 10)
+        .forEach((match) => add({
+            title_ar: "بالملّي في وقتها",
+            body_ar: `${match.title} كانت ${match.score}، و${match.exactCount} من المشاركين جابوها بالضبط.`,
+            icon: "🎯",
+            category: "match",
+            stage_ar: match.stageLabel,
+            participant_names: match.exactNames || [],
+            source_fact: `exact_score:${match.id}`
+        }));
+
+    [...matches]
+        .sort((a, b) => b.zeroOrMissingPercent - a.zeroOrMissingPercent)
+        .slice(0, 8)
+        .forEach((match) => add({
+            title_ar: "مباراة لخبطت الحسابات",
+            body_ar: `${match.title} انتهت ${match.score} وكانت من أكثر المباريات قسوة على التوقعات.`,
+            icon: "🌀",
+            category: "fun",
+            stage_ar: match.stageLabel,
+            source_fact: `hard_match:${match.id}`
+        }));
+
+    const leaderboard = factsPack.contest.leaderboard || [];
+    leaderboard.forEach((participant) => add(participantToFallbackHighlight(participant)));
+
+    while (highlights.length < Math.min(MAX_HIGHLIGHTS, 45)) {
+        const match = matches[highlights.length % Math.max(1, matches.length)];
+        if (!match) break;
+        add({
+            title_ar: `لقطة من ${match.stageLabel}`,
+            body_ar: `${match.title} بنت جزءاً من جو المسابقة بنتيجتها ${match.score} وتفاعل التوقعات حولها.`,
+            icon: "✨",
+            category: "timeline",
+            stage_ar: match.stageLabel,
+            source_fact: `match_snapshot:${match.id}`
+        });
+        if (usedTitles.size > MAX_HIGHLIGHTS + 10) break;
+    }
+
+    const profile_messages = leaderboard.map((participant) => participantToFallbackProfile(participant));
+
+    writeAiDebugFile("ai-posts-local-fallback-used.json", JSON.stringify({
+        reason: error?.message || "AI failure",
+        generated_at: new Date().toISOString(),
+        highlights: highlights.length,
+        profile_messages: profile_messages.length
+    }, null, 2));
+
+    return { highlights: highlights.slice(0, MAX_HIGHLIGHTS), profile_messages };
+}
+
+function eventNoteToFallbackPost(note) {
+    const stage = note.stage_ar || getStageLabel(note.stage);
+    const title = note.match_title || note.title_ar || "حدث موثق";
+    const score = note.match_score ? ` بعد نتيجة ${note.match_score}` : "";
+    const sourceId = note.id ? [note.id] : [];
+
+    if (note.event_type === "penalty_shootout") {
+        return {
+            title_ar: "ركلات أعصاب حقيقية",
+            body_ar: `${title}${score} وصلت للترجيح، وبهذا صارت من لقطات التوتر الواضحة في البطولة.`,
+            icon: "🥶",
+            category: "emotional",
+            stage_ar: stage,
+            source_fact: note.title_ar,
+            source_note_ids: sourceId
+        };
+    }
+
+    if (note.event_type === "extra_time") {
+        return {
+            title_ar: "أشواط زيادة وتوتر",
+            body_ar: `${title}${score} امتدت لما بعد الوقت الأصلي، وهذا وحده يكفي يدخلها في الأضواء.`,
+            icon: "⏱️",
+            category: "match",
+            stage_ar: stage,
+            source_fact: note.title_ar,
+            source_note_ids: sourceId
+        };
+    }
+
+    if (note.event_type === "goal_fest") {
+        return {
+            title_ar: "مباراة فتحت العدّاد",
+            body_ar: `${title}${score} كانت غنية بالأهداف، ومن النوع اللي يخلي التوقعات تنقلب بسرعة.`,
+            icon: "🔥",
+            category: "match",
+            stage_ar: stage,
+            source_fact: note.title_ar,
+            source_note_ids: sourceId
+        };
+    }
+
+    if (note.event_type === "close_match") {
+        return {
+            title_ar: "تفاصيل صغيرة جداً",
+            body_ar: `${title}${score} كانت قريبة لدرجة أن التفاصيل الصغيرة صارت هي القصة.`,
+            icon: "🧩",
+            category: "emotional",
+            stage_ar: stage,
+            source_fact: note.title_ar,
+            source_note_ids: sourceId
+        };
+    }
+
+    if (note.event_type === "clean_sheet") {
+        return {
+            title_ar: "باب مقفل للنهاية",
+            body_ar: `${title}${score} حملت لقطة دفاعية واضحة بشباك نظيفة تستحق الظهور في الأضواء.`,
+            icon: "🧱",
+            category: "match",
+            stage_ar: stage,
+            source_fact: note.title_ar,
+            source_note_ids: sourceId
+        };
+    }
+
+    return {
+        title_ar: cleanText(note.title_ar || "نتيجة موثقة", 55),
+        body_ar: cleanText(note.details_ar || `${title}${score} دخلت ضمن أحداث البطولة الموثقة.`, 150),
+        icon: "⚽",
+        category: "match",
+        stage_ar: stage,
+        source_fact: note.title_ar || "event_note",
+        source_note_ids: sourceId
+    };
+}
+
+function participantToFallbackHighlight(participant) {
+    const lang = participantLanguageWords(participant.name, participant.gender);
+    const stage = participant.bestStage?.label_ar ? `، وكانت أفضل مراحله${lang.taMarbuta} في ${participant.bestStage.label_ar}` : "";
+    const topText = participant.rank === 1
+        ? `${participant.name} ${lang.finishedTop} الصدارة بـ${participant.points} نقطة${stage}.`
+        : `${participant.name} ${lang.collected} ${participant.points} نقطة و${participant.correctPredictions} توقع صحيح${stage}.`;
+
+    return {
+        title_ar: participant.rank <= 3 ? `${participant.name} على المنصة` : `لقطة ${participant.name}`,
+        body_ar: topText,
+        icon: participant.rank === 1 ? "👑" : "✨",
+        category: "participant",
+        stage_ar: "لقطات المشاركين",
+        participant_names: [participant.name],
+        source_fact: `participant:${participant.name}`
+    };
+}
+
+function participantToFallbackProfile(participant) {
+    const lang = participantLanguageWords(participant.name, participant.gender);
+    return {
+        participant_name: participant.name,
+        title_ar: participant.rank === 1 ? "ختام في القمة" : "رسالة ختام",
+        body_ar: `${participant.name} ${lang.wasPart} من جو المسابقة، ${lang.andCollected} ${participant.points} نقطة و${participant.correctPredictions} توقع صحيح.`,
+        icon: participant.rank === 1 ? "👑" : "✨"
+    };
+}
+
+function participantLanguageWords(name, gender) {
+    const female = gender === "female" || FEMALE_NAMES.has(String(name || "").trim());
+    return female
+        ? {
+            wasPart: "كانت جزءاً",
+            andCollected: "وجمعت",
+            collected: "جمعت",
+            finishedTop: "ختمت",
+            taMarbuta: "ا"
+        }
+        : {
+            wasPart: "كان جزءاً",
+            andCollected: "وجمع",
+            collected: "جمع",
+            finishedTop: "ختم",
+            taMarbuta: ""
+        };
 }
 
 function normalizeAiOutputToRows(output, factsPack) {
