@@ -4,9 +4,31 @@ import fs from "node:fs";
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-const AI_API_KEY = process.env.AI_API_KEY || process.env.OPENAI_API_KEY;
-const AI_BASE_URL = (process.env.AI_BASE_URL || "https://api.openai.com/v1").replace(/\/$/, "");
-const AI_MODEL = process.env.AI_MODEL || process.env.OPENAI_MODEL;
+const AI_PROVIDER = String(process.env.AI_PROVIDER || (process.env.OPENROUTER_API_KEY ? "openrouter" : "openai")).toLowerCase();
+const USING_OPENROUTER = AI_PROVIDER === "openrouter";
+const DEFAULT_AI_BASE_URL = USING_OPENROUTER ? "https://openrouter.ai/api/v1" : "https://api.openai.com/v1";
+
+// Provider-specific precedence is important.
+// If AI_PROVIDER=openrouter, ignore stale Gemini/OpenAI values left in AI_BASE_URL/AI_MODEL.
+// Use OPENROUTER_* first, then fall back to generic AI_* only when the provider-specific value is absent.
+const AI_API_KEY = USING_OPENROUTER
+    ? (process.env.OPENROUTER_API_KEY || process.env.AI_API_KEY || process.env.OPENAI_API_KEY)
+    : (process.env.AI_API_KEY || process.env.OPENAI_API_KEY || process.env.OPENROUTER_API_KEY);
+const AI_BASE_URL = (USING_OPENROUTER
+    ? (process.env.OPENROUTER_BASE_URL || DEFAULT_AI_BASE_URL)
+    : (process.env.AI_BASE_URL || DEFAULT_AI_BASE_URL)
+).replace(/\/$/, "");
+const AI_MODEL = USING_OPENROUTER
+    ? (process.env.OPENROUTER_MODEL || process.env.AI_MODEL || "openrouter/free")
+    : (process.env.AI_MODEL || process.env.OPENAI_MODEL);
+const OPENROUTER_FALLBACK_MODELS = (process.env.OPENROUTER_FALLBACK_MODELS || "")
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+const OPENROUTER_USE_FALLBACK_MODELS = String(process.env.OPENROUTER_USE_FALLBACK_MODELS || "false").toLowerCase() === "true";
+const OPENROUTER_HTTP_REFERER = process.env.OPENROUTER_HTTP_REFERER || process.env.SITE_URL || "";
+const OPENROUTER_APP_TITLE = process.env.OPENROUTER_APP_TITLE || "World Cup 2026 Predictions";
+const AI_RESPONSE_FORMAT = String(process.env.AI_RESPONSE_FORMAT || "true").toLowerCase() !== "false";
 const AI_TEMPERATURE = Number(process.env.AI_TEMPERATURE || 0.35);
 const AI_MAX_TOKENS = Number(process.env.AI_MAX_TOKENS || 9000);
 const AI_REQUEST_RETRIES = Math.max(1, Number(process.env.AI_REQUEST_RETRIES || 4));
@@ -17,6 +39,20 @@ const AI_BATCH_HIGHLIGHT_TARGET = Math.max(4, Math.min(12, Number(process.env.AI
 const AI_EVENT_NOTE_BATCH_SIZE = Math.max(8, Math.min(30, Number(process.env.AI_EVENT_NOTE_BATCH_SIZE || 18)));
 const AI_FACT_BATCH_SIZE = Math.max(10, Math.min(40, Number(process.env.AI_FACT_BATCH_SIZE || 24)));
 const AI_PROFILE_BATCH_SIZE = Math.max(3, Math.min(8, Number(process.env.AI_PROFILE_BATCH_SIZE || 6)));
+const AI_BATCH_CHECKPOINT_FILE = process.env.AI_BATCH_CHECKPOINT_FILE || "ai-posts-batch-checkpoint.json";
+const AI_RESUME_FROM_CHECKPOINT = String(process.env.AI_RESUME_FROM_CHECKPOINT || "true").toLowerCase() !== "false";
+const AI_SAVE_BATCH_CHECKPOINT = String(process.env.AI_SAVE_BATCH_CHECKPOINT || "true").toLowerCase() !== "false";
+const AI_CLEAR_CHECKPOINT_AFTER_INSERT = String(process.env.AI_CLEAR_CHECKPOINT_AFTER_INSERT || "true").toLowerCase() !== "false";
+const AI_BATCH_DELAY_MS = Math.max(0, Number(process.env.AI_BATCH_DELAY_MS || 1200));
+const AI_MAX_RETRY_AFTER_MS = Math.max(0, Number(process.env.AI_MAX_RETRY_AFTER_MS || 90000));
+const AI_MAX_BATCHES_PER_RUN = Math.max(0, Number(process.env.AI_MAX_BATCHES_PER_RUN || 0));
+const AI_INSERT_PARTIAL_ON_QUOTA = String(process.env.AI_INSERT_PARTIAL_ON_QUOTA || "false").toLowerCase() === "true";
+const AI_INSERT_PARTIAL_ON_MAX_BATCHES = String(process.env.AI_INSERT_PARTIAL_ON_MAX_BATCHES || "false").toLowerCase() === "true";
+const AI_INSERT_PARTIAL_ON_BATCH_FAILURE = String(process.env.AI_INSERT_PARTIAL_ON_BATCH_FAILURE || "true").toLowerCase() !== "false";
+const AI_CONTINUE_ON_BATCH_FAILURE = String(process.env.AI_CONTINUE_ON_BATCH_FAILURE || "false").toLowerCase() === "true";
+const AI_MAX_FAILED_BATCHES = Math.max(0, Number(process.env.AI_MAX_FAILED_BATCHES || 2));
+const AI_MIN_HIGHLIGHTS_FOR_PARTIAL_INSERT = Math.max(1, Number(process.env.AI_MIN_HIGHLIGHTS_FOR_PARTIAL_INSERT || 20));
+const AI_DISABLE_REPAIR_CALL = String(process.env.AI_DISABLE_REPAIR_CALL || (USING_OPENROUTER ? "true" : "false")).toLowerCase() === "true";
 
 const EXPECTED_WORLD_CUP_MATCH_COUNT = Number(process.env.EXPECTED_WORLD_CUP_MATCH_COUNT || 104);
 const ALLOW_FINAL_PREVIEW = String(process.env.ALLOW_FINAL_PREVIEW || "false").toLowerCase() === "true";
@@ -54,8 +90,8 @@ const FEMALE_NAMES = new Set([
 
 if (!SUPABASE_URL) throw new Error("Missing SUPABASE_URL");
 if (!SUPABASE_SERVICE_ROLE_KEY) throw new Error("Missing SUPABASE_SERVICE_ROLE_KEY");
-if (!AI_API_KEY) throw new Error("Missing AI_API_KEY or OPENAI_API_KEY");
-if (!AI_MODEL) throw new Error("Missing AI_MODEL or OPENAI_MODEL");
+if (!AI_API_KEY) throw new Error("Missing AI_API_KEY, OPENAI_API_KEY, or OPENROUTER_API_KEY");
+if (!AI_MODEL) throw new Error("Missing AI_MODEL, OPENAI_MODEL, or OPENROUTER_MODEL");
 if (!Number.isInteger(EXPECTED_WORLD_CUP_MATCH_COUNT) || EXPECTED_WORLD_CUP_MATCH_COUNT < 1) {
     throw new Error("EXPECTED_WORLD_CUP_MATCH_COUNT must be a positive integer");
 }
@@ -81,8 +117,25 @@ async function main() {
         maxEventNotesForAi: MAX_EVENT_NOTES_FOR_AI,
         aiFallbackOnFailure: AI_FALLBACK_ON_FAILURE,
         aiBatchGeneration: AI_BATCH_GENERATION,
+        aiProvider: AI_PROVIDER,
+        aiBaseUrl: AI_BASE_URL,
+        aiModel: AI_MODEL,
+        aiOpenRouterFallbackModels: OPENROUTER_FALLBACK_MODELS,
+        openRouterUseFallbackModels: OPENROUTER_USE_FALLBACK_MODELS,
+        aiResponseFormat: AI_RESPONSE_FORMAT,
+        aiDisableRepairCall: AI_DISABLE_REPAIR_CALL,
         aiBatchHighlightTarget: AI_BATCH_HIGHLIGHT_TARGET,
-        aiRequestRetries: AI_REQUEST_RETRIES
+        aiRequestRetries: AI_REQUEST_RETRIES,
+        generateProfiles: GENERATE_PROFILES,
+        aiMaxBatchesPerRun: AI_MAX_BATCHES_PER_RUN,
+        aiInsertPartialOnQuota: AI_INSERT_PARTIAL_ON_QUOTA,
+        aiInsertPartialOnMaxBatches: AI_INSERT_PARTIAL_ON_MAX_BATCHES,
+        aiInsertPartialOnBatchFailure: AI_INSERT_PARTIAL_ON_BATCH_FAILURE,
+        aiContinueOnBatchFailure: AI_CONTINUE_ON_BATCH_FAILURE,
+        aiMaxFailedBatches: AI_MAX_FAILED_BATCHES,
+        aiMinHighlightsForPartialInsert: AI_MIN_HIGHLIGHTS_FOR_PARTIAL_INSERT,
+        aiResumeFromCheckpoint: AI_RESUME_FROM_CHECKPOINT,
+        aiBatchCheckpointFile: AI_BATCH_CHECKPOINT_FILE
     }, null, 2));
 
     if (!factsPack.audit.finalDataReady && !ALLOW_FINAL_PREVIEW) {
@@ -118,6 +171,7 @@ async function main() {
     }
 
     await insertRows(rows);
+    clearBatchCheckpointAfterInsert();
 
     console.log(`Inserted ${rows.length} row(s) into ${POSTS_TABLE}.`);
     console.log(PUBLISH_VISIBLE
@@ -731,10 +785,56 @@ async function generateFinalContent(factsPack) {
 }
 
 async function generateFinalContentInBatches(factsPack) {
-    const output = { highlights: [], profile_messages: [] };
+    const checkpointKey = buildBatchCheckpointKey(factsPack);
+    const checkpoint = loadBatchCheckpoint(checkpointKey);
+    const output = checkpoint?.output || { highlights: [], profile_messages: [] };
+    const completedBatches = new Set(checkpoint?.completedBatches || []);
     const usedHighlightKeys = new Set();
     const usedProfileNames = new Set();
     const targetHighlights = MAX_HIGHLIGHTS;
+
+    for (const post of Array.isArray(output.highlights) ? output.highlights : []) {
+        const title = cleanText(post?.title_ar || "", 90);
+        const body = cleanText(post?.body_ar || "", 220);
+        if (title && body) usedHighlightKeys.add(`${title}|${body}`.toLowerCase());
+    }
+    for (const message of Array.isArray(output.profile_messages) ? output.profile_messages : []) {
+        const participantName = cleanText(message?.participant_name || "", 80);
+        if (participantName) usedProfileNames.add(participantName);
+    }
+
+    if (checkpoint) {
+        console.log(
+            `Resuming from ${AI_BATCH_CHECKPOINT_FILE}: ` +
+            `${output.highlights.length} highlights, ${output.profile_messages.length} profiles, ` +
+            `${completedBatches.size} completed batch(es).`
+        );
+    }
+
+    const saveCheckpoint = () => {
+        if (!AI_SAVE_BATCH_CHECKPOINT) return;
+        const payload = {
+            checkpoint_key: checkpointKey,
+            generated_at: new Date().toISOString(),
+            completedBatches: Array.from(completedBatches),
+            output
+        };
+        writeAiDebugFile(AI_BATCH_CHECKPOINT_FILE, JSON.stringify(payload, null, 2));
+    };
+
+    let stoppedEarly = false;
+    let stoppedEarlyReason = "";
+    let batchesCompletedThisRun = 0;
+    let failedBatchesThisRun = 0;
+
+    const hasEnoughPartialHighlights = () => output.highlights.length >= AI_MIN_HIGHLIGHTS_FOR_PARTIAL_INSERT;
+
+    const markStoppedEarly = (reason) => {
+        stoppedEarly = true;
+        stoppedEarlyReason = reason;
+        saveCheckpoint();
+        console.warn(`${reason}. Saved progress to ${AI_BATCH_CHECKPOINT_FILE}.`);
+    };
 
     const addOutput = (batchName, batchOutput) => {
         const batchHighlights = Array.isArray(batchOutput?.highlights) ? batchOutput.highlights : [];
@@ -768,7 +868,45 @@ async function generateFinalContentInBatches(factsPack) {
             });
         }
 
+        completedBatches.add(batchName);
+        batchesCompletedThisRun += 1;
         console.log(`Batch ${batchName}: total highlights=${output.highlights.length}, profiles=${output.profile_messages.length}`);
+        saveCheckpoint();
+    };
+
+    const runBatch = async (batchName, batchPrompt) => {
+        if (stoppedEarly) return false;
+        if (completedBatches.has(batchName)) {
+            console.log(`Skipping ${batchName}; already completed in checkpoint.`);
+            return true;
+        }
+        if (AI_MAX_BATCHES_PER_RUN > 0 && batchesCompletedThisRun >= AI_MAX_BATCHES_PER_RUN) {
+            markStoppedEarly(`Reached AI_MAX_BATCHES_PER_RUN=${AI_MAX_BATCHES_PER_RUN}`);
+            return false;
+        }
+        if (AI_BATCH_DELAY_MS > 0) await sleep(AI_BATCH_DELAY_MS);
+        try {
+            addOutput(batchName, await runAiJsonBatch(batchPrompt, batchName));
+            return true;
+        } catch (error) {
+            failedBatchesThisRun += 1;
+            const providerLabel = USING_OPENROUTER ? "OpenRouter" : "AI";
+            if (isAiQuotaError(error) && AI_INSERT_PARTIAL_ON_QUOTA && hasEnoughPartialHighlights()) {
+                markStoppedEarly(`${providerLabel} quota stopped generation during ${batchName}; partial insert is enabled`);
+                return false;
+            }
+            if (AI_INSERT_PARTIAL_ON_BATCH_FAILURE && hasEnoughPartialHighlights()) {
+                markStoppedEarly(`${providerLabel} batch failure during ${batchName}; partial insert is enabled (${error.message})`);
+                return false;
+            }
+            if (AI_CONTINUE_ON_BATCH_FAILURE && failedBatchesThisRun <= AI_MAX_FAILED_BATCHES) {
+                console.warn(`${providerLabel} batch ${batchName} failed, skipping it and continuing because AI_CONTINUE_ON_BATCH_FAILURE=true: ${error.message}`);
+                saveCheckpoint();
+                return false;
+            }
+            saveCheckpoint();
+            throw error;
+        }
     };
 
     const activeNames = (factsPack.contest.activeParticipants || []).map((participant) => participant.name);
@@ -786,10 +924,11 @@ async function generateFinalContentInBatches(factsPack) {
     const eventBatches = chunkArray(eventNotes, AI_EVENT_NOTE_BATCH_SIZE);
     const maxEventBatches = Math.min(eventBatches.length, Math.ceil(Math.max(18, targetHighlights * 0.5) / AI_BATCH_HIGHLIGHT_TARGET));
 
-    for (let index = 0; index < maxEventBatches && output.highlights.length < targetHighlights; index += 1) {
+    for (let index = 0; index < maxEventBatches && !stoppedEarly && output.highlights.length < targetHighlights; index += 1) {
         const notes = eventBatches[index];
+        const batchName = `event-notes-${index + 1}`;
         const batchPrompt = buildBatchPrompt({
-            batchName: `event-notes-${index + 1}`,
+            batchName,
             instruction: "اكتب منشورات أضواء من أحداث كأس العالم الموثقة في event_notes. اجعلها كأنها timeline، وليست شارات ولا نتائج خام.",
             highlightTarget: Math.min(AI_BATCH_HIGHLIGHT_TARGET, targetHighlights - output.highlights.length),
             profileTarget: 0,
@@ -799,7 +938,7 @@ async function generateFinalContentInBatches(factsPack) {
                 related_matches: relatedMatchesForEventNotes(notes, factsPack.contest.matches || [])
             }
         });
-        addOutput(`event-notes-${index + 1}`, await runAiJsonBatch(batchPrompt, `event-notes-${index + 1}`));
+        await runBatch(batchName, batchPrompt);
     }
 
     const candidateHighlights = factsPack.contest.candidateHighlights || [];
@@ -807,9 +946,10 @@ async function generateFinalContentInBatches(factsPack) {
     const contestBatches = chunkArray(contestFacts, AI_FACT_BATCH_SIZE);
     const maxContestBatches = Math.min(contestBatches.length, Math.ceil(Math.max(10, targetHighlights * 0.25) / AI_BATCH_HIGHLIGHT_TARGET));
 
-    for (let index = 0; index < maxContestBatches && output.highlights.length < Math.max(0, targetHighlights - activeNames.length); index += 1) {
+    for (let index = 0; index < maxContestBatches && !stoppedEarly && output.highlights.length < Math.max(0, targetHighlights - activeNames.length); index += 1) {
+        const batchName = `contest-moments-${index + 1}`;
         const batchPrompt = buildBatchPrompt({
-            batchName: `contest-moments-${index + 1}`,
+            batchName,
             instruction: "اكتب منشورات من لحظات مسابقة التوقعات: صعوبة مباراة، نقاط كثيرة، نتيجة بالملّي، تغير في الجو. لا تجعلها إحصائية جامدة.",
             highlightTarget: Math.min(AI_BATCH_HIGHLIGHT_TARGET, targetHighlights - output.highlights.length),
             profileTarget: 0,
@@ -818,33 +958,40 @@ async function generateFinalContentInBatches(factsPack) {
                 contest_moment_facts: contestBatches[index]
             }
         });
-        addOutput(`contest-moments-${index + 1}`, await runAiJsonBatch(batchPrompt, `contest-moments-${index + 1}`));
+        await runBatch(batchName, batchPrompt);
     }
 
     const participantRows = factsPack.contest.leaderboard || [];
     const participantBatches = chunkArray(participantRows, AI_PROFILE_BATCH_SIZE);
-    for (let index = 0; index < participantBatches.length; index += 1) {
+    for (let index = 0; index < participantBatches.length && !stoppedEarly; index += 1) {
         const participants = participantBatches[index];
         const remainingHighlights = Math.max(0, targetHighlights - output.highlights.length);
+        const batchName = `participants-${index + 1}`;
+        const highlightTarget = Math.min(participants.length, remainingHighlights);
+        const profileTarget = GENERATE_PROFILES ? participants.length : 0;
+        if (highlightTarget <= 0 && profileTarget <= 0) continue;
         const batchPrompt = buildBatchPrompt({
-            batchName: `participants-${index + 1}`,
-            instruction: "اكتب لقطة highlight واحدة لكل مشارك في هذه الدفعة، واكتب رسالة profile قصيرة لكل مشارك. لا تذكر قلة المشاركة ولا الغياب. استخدم الضمائر الصحيحة.",
-            highlightTarget: Math.min(participants.length, remainingHighlights),
-            profileTarget: participants.length,
+            batchName,
+            instruction: GENERATE_PROFILES
+                ? "اكتب لقطة highlight واحدة لكل مشارك في هذه الدفعة، واكتب رسالة profile قصيرة لكل مشارك. لا تذكر قلة المشاركة ولا الغياب. استخدم الضمائر الصحيحة."
+                : "اكتب لقطة highlight واحدة لكل مشارك في هذه الدفعة. لا تكتب profile_messages. لا تذكر قلة المشاركة ولا الغياب. استخدم الضمائر الصحيحة.",
+            highlightTarget,
+            profileTarget,
             facts: {
                 ...contextBase,
                 participants
             }
         });
-        addOutput(`participants-${index + 1}`, await runAiJsonBatch(batchPrompt, `participants-${index + 1}`));
+        await runBatch(batchName, batchPrompt);
     }
 
     if (output.highlights.length < Math.min(35, targetHighlights)) {
         const remainingFacts = (factsPack.contest.matches || []).slice(0, 80);
         const fillBatches = chunkArray(remainingFacts, AI_FACT_BATCH_SIZE);
-        for (let index = 0; index < fillBatches.length && output.highlights.length < Math.min(35, targetHighlights); index += 1) {
+        for (let index = 0; index < fillBatches.length && !stoppedEarly && output.highlights.length < Math.min(35, targetHighlights); index += 1) {
+            const batchName = `fill-matches-${index + 1}`;
             const batchPrompt = buildBatchPrompt({
-                batchName: `fill-matches-${index + 1}`,
+                batchName,
                 instruction: "أكمل الأضواء بمنشورات قصيرة من المباريات المتاحة، مع تجنب التكرار واللغة الإحصائية الباردة.",
                 highlightTarget: Math.min(AI_BATCH_HIGHLIGHT_TARGET, targetHighlights - output.highlights.length),
                 profileTarget: 0,
@@ -853,16 +1000,21 @@ async function generateFinalContentInBatches(factsPack) {
                     matches: fillBatches[index]
                 }
             });
-            addOutput(`fill-matches-${index + 1}`, await runAiJsonBatch(batchPrompt, `fill-matches-${index + 1}`));
+            await runBatch(batchName, batchPrompt);
         }
     }
 
-    const missingProfileNames = activeNames.filter((name) => !usedProfileNames.has(name));
-    if (missingProfileNames.length) {
+    const missingProfileNames = GENERATE_PROFILES
+        ? activeNames.filter((name) => !usedProfileNames.has(name))
+        : [];
+    if (missingProfileNames.length && !stoppedEarly) {
         const missingParticipants = participantRows.filter((participant) => missingProfileNames.includes(participant.name));
-        for (const participants of chunkArray(missingParticipants, AI_PROFILE_BATCH_SIZE)) {
+        const missingBatches = chunkArray(missingParticipants, AI_PROFILE_BATCH_SIZE);
+        for (let index = 0; index < missingBatches.length && !stoppedEarly; index += 1) {
+            const participants = missingBatches[index];
+            const batchName = `missing-profiles-${index + 1}`;
             const batchPrompt = buildBatchPrompt({
-                batchName: "missing-profiles",
+                batchName,
                 instruction: "اكتب رسائل profile فقط للمشاركين الناقصين. لا تكتب highlights.",
                 highlightTarget: 0,
                 profileTarget: participants.length,
@@ -871,12 +1023,22 @@ async function generateFinalContentInBatches(factsPack) {
                     participants
                 }
             });
-            addOutput("missing-profiles", await runAiJsonBatch(batchPrompt, "missing-profiles"));
+            await runBatch(batchName, batchPrompt);
         }
     }
 
     if (!output.highlights.length) {
         throw new Error("Gemini batch generation returned no highlights.");
+    }
+
+    if (stoppedEarly) {
+        const partialAllowed = (stoppedEarlyReason.includes("quota") && AI_INSERT_PARTIAL_ON_QUOTA)
+            || (stoppedEarlyReason.includes("AI_MAX_BATCHES_PER_RUN") && AI_INSERT_PARTIAL_ON_MAX_BATCHES)
+            || (stoppedEarlyReason.includes("batch failure") && AI_INSERT_PARTIAL_ON_BATCH_FAILURE);
+        if (!partialAllowed || !hasEnoughPartialHighlights()) {
+            throw new Error(`${stoppedEarlyReason}. Not inserting partial output. Rerun later to resume from ${AI_BATCH_CHECKPOINT_FILE}.`);
+        }
+        console.warn(`Inserting partial Gemini output: ${output.highlights.length} highlights and ${output.profile_messages.length} profiles.`);
     }
 
     writeAiDebugFile("ai-posts-batch-output.json", JSON.stringify(output, null, 2));
@@ -955,6 +1117,11 @@ async function runAiJsonBatch(prompt, batchName) {
     } catch (firstError) {
         if (content) {
             writeAiDebugFile(`ai-posts-invalid-${safeFilePart(batchName)}.json`, content);
+            if (AI_DISABLE_REPAIR_CALL) {
+                const error = new Error(`Batch ${batchName} returned malformed JSON and AI_DISABLE_REPAIR_CALL=true. Saved raw output for review.`);
+                error.retryable = false;
+                throw error;
+            }
             console.warn(`Batch ${batchName} returned malformed JSON. Trying repair call...`);
             try {
                 const repairedContent = await repairJsonWithAi(content);
@@ -968,7 +1135,9 @@ async function runAiJsonBatch(prompt, batchName) {
                 throw new Error(`Batch ${batchName} failed after repair: ${repairError.message}`);
             }
         }
-        throw new Error(`Batch ${batchName} failed: ${firstError.message}`);
+        const error = new Error(`Batch ${batchName} failed: ${firstError.message}`);
+        error.quotaExhausted = firstError.quotaExhausted || isAiQuotaError(firstError);
+        throw error;
     }
 }
 
@@ -991,34 +1160,50 @@ function safeFilePart(value) {
 }
 
 async function requestAiContent(messages, options = {}) {
+    const requestedModels = AI_PROVIDER === "openrouter" && OPENROUTER_USE_FALLBACK_MODELS && OPENROUTER_FALLBACK_MODELS.length > 0
+        ? [AI_MODEL, ...OPENROUTER_FALLBACK_MODELS].filter(Boolean)
+        : [];
+
     const body = {
-        model: AI_MODEL,
         temperature: options.temperature ?? AI_TEMPERATURE,
         max_tokens: options.maxTokens ?? AI_MAX_TOKENS,
         messages
     };
 
-    if (options.responseFormat !== false) {
+    if (requestedModels.length > 0) {
+        body.models = [...new Set(requestedModels)];
+    } else {
+        body.model = AI_MODEL;
+    }
+
+    if (options.responseFormat !== false && AI_RESPONSE_FORMAT) {
         body.response_format = { type: "json_object" };
     }
 
     let lastError = null;
     for (let attempt = 1; attempt <= AI_REQUEST_RETRIES; attempt += 1) {
         try {
+            const headers = {
+                Authorization: `Bearer ${AI_API_KEY}`,
+                "Content-Type": "application/json"
+            };
+
+            if (AI_PROVIDER === "openrouter") {
+                if (OPENROUTER_HTTP_REFERER) headers["HTTP-Referer"] = OPENROUTER_HTTP_REFERER;
+                if (OPENROUTER_APP_TITLE) headers["X-Title"] = OPENROUTER_APP_TITLE;
+            }
+
             const response = await fetch(`${AI_BASE_URL}/chat/completions`, {
                 method: "POST",
-                headers: {
-                    Authorization: `Bearer ${AI_API_KEY}`,
-                    "Content-Type": "application/json"
-                },
+                headers,
                 body: JSON.stringify(body)
             });
 
             if (!response.ok) {
                 const text = await response.text();
-                const retryable = [408, 409, 425, 429, 500, 502, 503, 504].includes(response.status);
                 const error = new Error(`AI error ${response.status}: ${text}`);
-                error.retryable = retryable;
+                error.quotaExhausted = response.status === 429 && isAiQuotaError(error);
+                error.retryable = !error.quotaExhausted && [408, 409, 425, 429, 500, 502, 503, 504].includes(response.status);
                 throw error;
             }
 
@@ -1026,10 +1211,16 @@ async function requestAiContent(messages, options = {}) {
             return json.choices?.[0]?.message?.content || "";
         } catch (error) {
             lastError = error;
-            const retryable = error.retryable === true || /\b(429|500|502|503|504|UNAVAILABLE|overloaded|high demand|fetch failed)\b/i.test(error.message || "");
+            if (error.quotaExhausted || isAiQuotaError(error)) {
+                break;
+            }
+            const retryable = error.retryable === true || /\b(429|500|502|503|504|UNAVAILABLE|overloaded|high demand|fetch failed|terminated|ECONNRESET|ETIMEDOUT|AbortError)\b/i.test(error.message || "");
             if (!retryable || attempt >= AI_REQUEST_RETRIES) break;
 
-            const delay = AI_RETRY_BASE_DELAY_MS * attempt;
+            const retryAfterMs = extractRetryDelayMs(error.message);
+            const delay = retryAfterMs && retryAfterMs <= AI_MAX_RETRY_AFTER_MS
+                ? retryAfterMs
+                : AI_RETRY_BASE_DELAY_MS * attempt;
             console.warn(`AI request failed on attempt ${attempt}/${AI_REQUEST_RETRIES}: ${error.message}`);
             console.warn(`Retrying in ${Math.round(delay / 1000)}s...`);
             await sleep(delay);
@@ -1039,8 +1230,64 @@ async function requestAiContent(messages, options = {}) {
     throw lastError || new Error("AI request failed.");
 }
 
+function isAiQuotaError(error) {
+    const message = String(error?.message || error || "");
+    return /RESOURCE_EXHAUSTED|quota exceeded|QuotaFailure|GenerateRequestsPerDay|free_tier_requests|requests per day|daily limit|limit of \d+ requests/i.test(message);
+}
+
 function sleep(ms) {
     return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function extractRetryDelayMs(message) {
+    const text = String(message || "");
+    const retryInfoMatch = text.match(/"retryDelay"\s*:\s*"(\d+(?:\.\d+)?)s"/i);
+    if (retryInfoMatch) return Math.ceil(Number(retryInfoMatch[1]) * 1000);
+
+    const plainMatch = text.match(/retry in\s+(\d+(?:\.\d+)?)s/i);
+    if (plainMatch) return Math.ceil(Number(plainMatch[1]) * 1000);
+
+    return 0;
+}
+
+function buildBatchCheckpointKey(factsPack) {
+    return hashObject({
+        generatorVersion: GENERATOR_VERSION,
+        expectedMatches: EXPECTED_WORLD_CUP_MATCH_COUNT,
+        completedMatches: factsPack?.audit?.completedMatches,
+        remainingExpectedMatches: factsPack?.audit?.remainingExpectedMatches,
+        maxHighlights: MAX_HIGHLIGHTS,
+        maxEventNotesForAi: MAX_EVENT_NOTES_FOR_AI,
+        participantIds: (factsPack?.contest?.activeParticipants || []).map((participant) => participant.id),
+        eventNoteIds: (factsPack?.contest?.eventNotes || []).map((note) => note.id).slice(0, MAX_EVENT_NOTES_FOR_AI)
+    });
+}
+
+function loadBatchCheckpoint(expectedKey) {
+    if (!AI_RESUME_FROM_CHECKPOINT || !fs.existsSync(AI_BATCH_CHECKPOINT_FILE)) return null;
+
+    try {
+        const checkpoint = JSON.parse(fs.readFileSync(AI_BATCH_CHECKPOINT_FILE, "utf8"));
+        if (checkpoint?.checkpoint_key !== expectedKey) {
+            console.warn(`${AI_BATCH_CHECKPOINT_FILE} exists but belongs to a different data snapshot. It will be ignored.`);
+            return null;
+        }
+        if (!checkpoint?.output || !Array.isArray(checkpoint.completedBatches)) return null;
+        return checkpoint;
+    } catch (error) {
+        console.warn(`Could not read ${AI_BATCH_CHECKPOINT_FILE}: ${error.message}`);
+        return null;
+    }
+}
+
+function clearBatchCheckpointAfterInsert() {
+    if (!AI_CLEAR_CHECKPOINT_AFTER_INSERT || !fs.existsSync(AI_BATCH_CHECKPOINT_FILE)) return;
+    try {
+        fs.unlinkSync(AI_BATCH_CHECKPOINT_FILE);
+        console.log(`Removed ${AI_BATCH_CHECKPOINT_FILE} after successful insert.`);
+    } catch (error) {
+        console.warn(`Could not remove ${AI_BATCH_CHECKPOINT_FILE}: ${error.message}`);
+    }
 }
 
 async function repairJsonWithAi(badContent) {
