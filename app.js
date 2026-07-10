@@ -520,7 +520,7 @@ window.addEventListener("popstate", () => {
 function isAvailable(kickoffAt) {
     const now = new Date();
     const kickoff = new Date(kickoffAt);
-    const openTime = new Date(kickoff.getTime() - 24 * 60 * 60 * 1000);
+    const openTime = new Date(kickoff.getTime() - 72 * 60 * 60 * 1000);
 
     return now >= openTime && now < kickoff;
 }
@@ -2460,7 +2460,7 @@ function getOutcome(team1, team2) {
 function isAvailable(kickoffAt) {
     const now = new Date();
     const kickoff = new Date(kickoffAt);
-    const openTime = new Date(kickoff.getTime() - 24 * 60 * 60 * 1000);
+    const openTime = new Date(kickoff.getTime() - 72 * 60 * 60 * 1000);
 
     return now >= openTime && now < kickoff;
 }
