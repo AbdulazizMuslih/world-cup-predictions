@@ -4,6 +4,8 @@ const SUPABASE_ANON_KEY = "sb_publishable_TQx_OZ-LeNYcQA7-DNdUQA_IqmC7HES";
 const db = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 const musicBtn = document.getElementById("musicBtn");
+const prevMusicBtn = document.getElementById("prevMusicBtn");
+const nextMusicBtn = document.getElementById("nextMusicBtn");
 const daiDaiAudio = document.getElementById("daiDaiAudio");
 
 let currentParticipant = null;
@@ -33,18 +35,16 @@ const MENU_PAGE_IDS = {
     profile: "profileTab",
     highlights: "highlightsTab",
     statistics: "statisticsTab",
-    awards: "awardsTab",
-    about: "aboutTab",
-    contact: "contactTab"
+    seasonRecap: "seasonRecapTab",
+    about: "aboutTab"
 };
 
 const MENU_PAGE_LABELS = {
     profile: "الملف الشخصي",
     highlights: "الأضواء",
-    statistics: "الإحصائيات",
-    awards: "الجوائز",
-    about: "عن المسابقة",
-    contact: "تواصل معنا"
+    statistics: "الإحصائيات والشارات",
+    seasonRecap: "ختام المسابقة",
+    about: "عن المسابقة والتواصل"
 };
 
 const AI_POSTS_TABLE = "ai_posts";
@@ -52,15 +52,15 @@ const aiPostsCache = new Map();
 const aiPostsLoadState = new Map();
 
 const AI_SECTION_EMPTY_MESSAGES = {
-    highlights: "لم يتم نشر أضواء ذكية بعد. ستظهر هنا بعد اكتمال كل مباراتين وتوليد المنشور تلقائياً.",
-    statistics: "لم يتم نشر إحصائيات ذكية بعد. ستظهر هنا عندما يبدأ توليد محتوى الإحصائيات.",
-    awards: "الشارات والجوائز ستظهر هنا بعد توليدها من بيانات المسابقة.",
-    profile: "تعليق الملف الشخصي سيظهر هنا بعد توليد محتوى AI الخاص بالمشارك."
+    highlights: "ستظهر لقطات الختام هنا بعد اكتمال بيانات البطولة.",
+    statistics: "ستظهر الإحصائيات والشارات هنا بعد اكتمال بيانات البطولة.",
+    profile: "ملخص الملف الشخصي يظهر من بياناتك الحالية."
 };
 
 const availableMatches = document.getElementById("availableMatches");
 const myPredictions = document.getElementById("myPredictions");
 const leaderboard = document.getElementById("leaderboard");
+const seasonRecap = document.getElementById("seasonRecap");
 
 const logoutBtn = document.getElementById("logoutBtn");
 
@@ -93,18 +93,87 @@ window.addEventListener("resize", () => {
 
 document.addEventListener("DOMContentLoaded", init);
 
-musicBtn.addEventListener("click", async () => {
+const MUSIC_TRACKS = [
+    {
+        title: "❤️ قديمك نديمك",
+        src: "./assets/song 2.mp3?v=39.0"
+    },
+    {
+        title: "Dai Dai",
+        src: "./assets/song.mp3?v=39.0"
+    }
+];
+
+let currentMusicTrackIndex = 0;
+
+function getCurrentMusicTrack() {
+    return MUSIC_TRACKS[currentMusicTrackIndex] || MUSIC_TRACKS[0];
+}
+
+function updateMusicButtonLabel(isPlaying = false) {
+    if (!musicBtn) return;
+
+    const track = getCurrentMusicTrack();
+    musicBtn.textContent = `${isPlaying ? "⏸ إيقاف" : "▶ شغّل"} ${track.title}`;
+    musicBtn.title = track.title;
+}
+
+function loadCurrentMusicTrack() {
+    if (!daiDaiAudio) return;
+
+    const track = getCurrentMusicTrack();
+
+    if (daiDaiAudio.getAttribute("src") !== track.src) {
+        daiDaiAudio.setAttribute("src", track.src);
+        daiDaiAudio.load();
+    }
+
+    updateMusicButtonLabel(!daiDaiAudio.paused);
+}
+
+async function playCurrentMusicTrack() {
+    if (!daiDaiAudio) return;
+
+    loadCurrentMusicTrack();
+    await daiDaiAudio.play();
+    updateMusicButtonLabel(true);
+}
+
+async function switchMusicTrack(direction) {
+    if (!daiDaiAudio) return;
+
+    const wasPlaying = !daiDaiAudio.paused;
+
+    daiDaiAudio.pause();
+    currentMusicTrackIndex = (currentMusicTrackIndex + direction + MUSIC_TRACKS.length) % MUSIC_TRACKS.length;
+    loadCurrentMusicTrack();
+
+    if (wasPlaying) {
+        await playCurrentMusicTrack();
+    }
+}
+
+loadCurrentMusicTrack();
+
+musicBtn?.addEventListener("click", async () => {
     if (daiDaiAudio.paused) {
-        await daiDaiAudio.play();
-        musicBtn.textContent = "⏸ إيقاف Dai Dai";
+        await playCurrentMusicTrack();
     } else {
         daiDaiAudio.pause();
-        musicBtn.textContent = "▶ شغّل Dai Dai";
+        updateMusicButtonLabel(false);
     }
 });
 
-daiDaiAudio.addEventListener("ended", () => {
-    musicBtn.textContent = "▶ شغّل Dai Dai";
+prevMusicBtn?.addEventListener("click", () => {
+    switchMusicTrack(-1);
+});
+
+nextMusicBtn?.addEventListener("click", () => {
+    switchMusicTrack(1);
+});
+
+daiDaiAudio?.addEventListener("ended", () => {
+    updateMusicButtonLabel(false);
 });
 
 async function init() {
@@ -570,7 +639,7 @@ function updateMenuProfileCard() {
         menuProfileAvatar.textContent = visual.icon;
         menuProfileAvatar.style.setProperty("--participant-accent", visual.color);
         menuProfileName.textContent = currentParticipant.name;
-        menuProfileMeta.textContent = "ملفك، شاراتك، ولحظاتك في البطولة";
+        menuProfileMeta.textContent = "ملفك ونقاطك وملخصك الشخصي";
         profileQuickBtn?.classList.add("site-profile-ready");
         return;
     }
@@ -607,7 +676,7 @@ async function renderProfilePageShell() {
     if (isAdminMode) {
         profileSummary.innerHTML = `
             <div class="placeholder-card">
-                ملف الإدارة جاهز لعرض ملخصات تشغيلية لاحقاً عن الأضواء، التوليد التلقائي، والمباريات المكتملة.
+                ملف الإدارة جاهز لعرض ملخصات تشغيلية عن المسابقة والمباريات المكتملة.
             </div>
         `;
         if (profileBadges) profileBadges.innerHTML = "";
@@ -659,17 +728,17 @@ async function renderMenuPageContent(tabName) {
     }
 
     if (tabName === "highlights") {
-        await renderHighlightsPage();
+        await renderSeasonHighlightsPage();
         return;
     }
 
     if (tabName === "statistics") {
-        await renderAiCardSection("statistics", "statisticsCards");
+        await renderStatisticsAndBadgesPage();
         return;
     }
 
-    if (tabName === "awards") {
-        await renderAwardsPage();
+    if (tabName === "seasonRecap") {
+        await renderSeasonRecapPage();
         return;
     }
 
@@ -755,6 +824,10 @@ function renderAboutPage() {
         <div class="info-card rules-card">
             <strong>إغلاق التوقع</strong>
             <span>يمكن تعديل التوقع حتى بداية المباراة فقط.</span>
+        </div>
+        <div class="info-card rules-card">
+            <strong>ملاحظة الترجيح</strong>
+            <span>ركلات الترجيح لا تدخل في النتيجة المعتمدة للتوقع.</span>
         </div>
     `;
 }
@@ -1046,7 +1119,7 @@ function renderProfileSummary(participant, visual, stats) {
             <div>
                 <p class="eyebrow">الملف الشخصي</p>
                 <h4>${escapeHtml(participant.name)}</h4>
-                <p>ملخص سريع من بياناتك الحالية. التعليق الذكي سيظهر عندما يتم توليد محتوى AI للملف.</p>
+                <p>ملخص سريع من بياناتك الحالية في المسابقة.</p>
             </div>
         </div>
 
@@ -1110,9 +1183,8 @@ function activateTab(tabName) {
         profile: document.getElementById(MENU_PAGE_IDS.profile),
         highlights: document.getElementById(MENU_PAGE_IDS.highlights),
         statistics: document.getElementById(MENU_PAGE_IDS.statistics),
-        awards: document.getElementById(MENU_PAGE_IDS.awards),
-        about: document.getElementById(MENU_PAGE_IDS.about),
-        contact: document.getElementById(MENU_PAGE_IDS.contact),
+        seasonRecap: document.getElementById(MENU_PAGE_IDS.seasonRecap),
+        about: document.getElementById(MENU_PAGE_IDS.about)
     };
 
     if (!panels[tabName]) return;
@@ -1125,7 +1197,7 @@ function activateTab(tabName) {
         }
     });
 
-    Object.values(panels).forEach((panel) => {
+    Object.values(panels).filter(Boolean).forEach((panel) => {
         panel.classList.add("hidden");
     });
 
@@ -3177,3 +3249,845 @@ function isAvailable(kickoffAt) {
     return now >= openTime && now < kickoff;
 }
 
+
+
+
+async function renderSeasonHighlightsPage() {
+    const container = document.getElementById("seasonHighlights");
+
+    if (!container) return;
+
+    container.innerHTML = `<div class="placeholder-card">جاري تجهيز لقطات الختام...</div>`;
+
+    try {
+        const recap = await loadFinalRecapModel();
+
+        if (!recap || recap.completedMatches.length === 0) {
+            container.innerHTML = `<div class="placeholder-card">ستظهر لقطات الختام بعد اكتمال بعض النتائج.</div>`;
+            return;
+        }
+
+        container.innerHTML = renderSeasonHighlights(recap);
+    } catch (error) {
+        console.error("Season highlights load failed:", error);
+        container.innerHTML = `<div class="placeholder-card">تعذر تحميل لقطات الختام حالياً.</div>`;
+    }
+}
+
+async function renderStatisticsAndBadgesPage() {
+    const statsContainer = document.getElementById("statisticsCards");
+    const badgesContainer = document.getElementById("statisticsBadges");
+
+    if (!statsContainer || !badgesContainer) return;
+
+    statsContainer.innerHTML = `<div class="placeholder-card">جاري تجهيز الإحصائيات...</div>`;
+    badgesContainer.innerHTML = `<div class="placeholder-card">جاري تجهيز الشارات...</div>`;
+
+    try {
+        const recap = await loadFinalRecapModel();
+
+        if (!recap || recap.completedMatches.length === 0) {
+            statsContainer.innerHTML = `<div class="placeholder-card">ستظهر الإحصائيات بعد اكتمال بعض النتائج.</div>`;
+            badgesContainer.innerHTML = `<div class="placeholder-card">ستظهر الشارات بعد توفر بيانات كافية.</div>`;
+            return;
+        }
+
+        statsContainer.innerHTML = renderStatisticsSnapshot(recap.seasonStats);
+        badgesContainer.innerHTML = renderBadgeCards(recap.awards);
+    } catch (error) {
+        console.error("Statistics and badges load failed:", error);
+        statsContainer.innerHTML = `<div class="placeholder-card">تعذر تحميل الإحصائيات حالياً.</div>`;
+        badgesContainer.innerHTML = `<div class="placeholder-card">تعذر تحميل الشارات حالياً.</div>`;
+    }
+}
+
+function renderSeasonHighlights(recap) {
+    const { seasonStats, awards } = recap;
+    const champion = seasonStats.champion;
+    const runnerUp = seasonStats.runnerUp;
+    const comeback = awards.find((award) => award.title.includes("صعود"));
+    const exactKing = awards.find((award) => award.title.includes("بالملّي"));
+    const loneWolf = awards.find((award) => award.title.includes("الوحيد"));
+    const cruelMatch = seasonStats.cruelMatch;
+
+    const cards = [
+        champion ? {
+            icon: "🏆",
+            title: "اللقب راح لمين؟",
+            value: champion.name,
+            body: runnerUp
+                ? `${champion.points} نقطة، والوصيف ${runnerUp.name}. الفارق: ${seasonStats.winMargin} نقطة.`
+                : `${champion.points} نقطة في الصدارة.`
+        } : null,
+        comeback ? {
+            icon: "📈",
+            title: "رجعة تستاهل التصفيق",
+            value: comeback.winner,
+            body: comeback.value
+        } : null,
+        exactKing ? {
+            icon: "🎯",
+            title: "صاحب البالملّي",
+            value: exactKing.winner,
+            body: exactKing.value
+        } : null,
+        loneWolf ? {
+            icon: "🐺",
+            title: "شافها لحاله",
+            value: loneWolf.winner,
+            body: loneWolf.value
+        } : null,
+        cruelMatch ? {
+            icon: "😅",
+            title: "المباراة اللي لخبطت الدفتر",
+            value: `${cruelMatch.title} ${cruelMatch.score}`,
+            body: "هذه من أكثر المباريات التي كسرت التوقعات وخلّت القروب يعيد حساباته."
+        } : null
+    ].filter(Boolean).slice(0, 5);
+
+    return `
+        <section class="season-highlight-hero">
+            <p class="eyebrow">لقطات الختام</p>
+            <h4>${champion ? `هذي كانت حكاية ${escapeHtml(champion.name)} والبقية` : "حكاية المسابقة"}</h4>
+            <p>${escapeHtml(buildHighlightsIntro(seasonStats))}</p>
+        </section>
+
+        <div class="season-highlight-card-grid">
+            ${cards.map((card) => `
+                <article class="season-highlight-card">
+                    <span class="season-highlight-icon" aria-hidden="true">${escapeHtml(card.icon)}</span>
+                    <div>
+                        <h4>${escapeHtml(card.title)}</h4>
+                        <strong>${escapeHtml(card.value)}</strong>
+                        <p>${escapeHtml(card.body)}</p>
+                    </div>
+                </article>
+            `).join("")}
+        </div>
+    `;
+}
+
+function buildHighlightsIntro(seasonStats) {
+    if (!seasonStats.champion) {
+        return "هنا بنجمع أهم لقطات المسابقة بعد اكتمال النتائج.";
+    }
+
+    const closeRace = seasonStats.winMargin <= 20;
+    const marginText = closeRace
+        ? "والفارق كان قريب لدرجة أن كل بالملّي كان ممكن يغيّر الكلام."
+        : `والفارق النهائي كان ${seasonStats.winMargin} نقطة.`;
+
+    return `${seasonStats.completedMatches} مباراة، ${seasonStats.totalPredictions} توقع، و${seasonStats.totalExact} بالملّي. ${marginText}`;
+}
+
+function renderStatisticsSnapshot(seasonStats) {
+    const stats = [
+        { icon: "🧾", label: "إجمالي التوقعات", value: seasonStats.totalPredictions, note: "كل اختيارات المشاركين خلال البطولة." },
+        { icon: "✅", label: "توقعات جابت نقاط", value: seasonStats.totalCorrect, note: "تشمل 10 و50 نقطة." },
+        { icon: "🎯", label: "بالملّي", value: seasonStats.totalExact, note: "أغلى لحظة في اللعبة." },
+        { icon: "📊", label: "نسبة الدقة", value: `${seasonStats.accuracyPercent}%`, note: "كم توقع قدر يجيب نقاط." },
+        { icon: "⚽", label: "النتيجة المحبوبة", value: seasonStats.favoriteScore?.score || "-", note: "أكثر نتيجة تكررت في التوقعات." },
+        { icon: "🎁", label: "أكرم مرحلة", value: seasonStats.bestStage?.label || "-", note: "محسوبة بالتناسب، مو بعدد المباريات فقط." }
+    ];
+
+    return stats.map((stat) => `
+        <article class="stat-story-card">
+            <span class="stat-story-icon" aria-hidden="true">${escapeHtml(stat.icon)}</span>
+            <strong>${escapeHtml(stat.value)}</strong>
+            <h4>${escapeHtml(stat.label)}</h4>
+            <p>${escapeHtml(stat.note)}</p>
+        </article>
+    `).join("");
+}
+
+function renderBadgeCards(awards) {
+    if (!awards || awards.length === 0) {
+        return `<div class="placeholder-card">لا توجد شارات كافية حتى الآن.</div>`;
+    }
+
+    return awards.map((award) => `
+        <article class="recap-award-card badge-story-card">
+            <div class="recap-award-icon" aria-hidden="true">${escapeHtml(award.icon)}</div>
+            <div>
+                <h4>${escapeHtml(award.title)}</h4>
+                <strong>${escapeHtml(award.winner)}</strong>
+                <p>${escapeHtml(award.value)}</p>
+                <small>${escapeHtml(award.note)}</small>
+            </div>
+        </article>
+    `).join("");
+}
+
+function renderSeasonThankYouPage() {
+    return `
+        <section class="season-thanks-card">
+            <div class="season-thanks-icon" aria-hidden="true">🏆</div>
+            <p class="eyebrow">ختام المسابقة</p>
+            <h2>شكراً لكل واحد خلّى البطولة أحلى</h2>
+            <p>
+                هذه المسابقة ما كانت بس نقاط وترتيب. كانت توقعات، ضحك، ترقب، ورسائل بعد كل مباراة.
+                شكراً لكل المشاركين على الحماس الجميل اللي خلّى كأس العالم أمتع.
+            </p>
+            <p>
+                وبإذن الله، كل المشاركين لهم تقدير وجوائز لأنكم أنتم اللي خليتوا التجربة ممتعة وتستاهل الذكرى.
+            </p>
+        </section>
+
+        <div class="season-thanks-mini-grid">
+            <div class="season-thanks-mini-card"><strong>❤️</strong><span>شكراً على الحماس</span></div>
+            <div class="season-thanks-mini-card"><strong>🎁</strong><span>جوائز لكل المشاركين</span></div>
+            <div class="season-thanks-mini-card"><strong>⚽</strong><span>ذكرى حلوة من كأس العالم</span></div>
+        </div>
+    `;
+}
+
+// ===== V39 Final Recap Engine: calculated facts first, AI wording later =====
+async function renderSeasonRecapPage() {
+    if (!seasonRecap) return;
+
+    seasonRecap.innerHTML = renderSeasonThankYouPage();
+}
+
+async function loadFinalRecapModel() {
+    const [{ data: participants, error: participantsError }, { data: matches, error: matchesError }] = await Promise.all([
+        db.from("participants").select("id, name, active, sort_order").eq("active", true).order("sort_order", { ascending: true }),
+        db.from("matches")
+            .select("id, team1, team2, kickoff_at, stage, winner_side, actual_team1_goals, actual_team2_goals")
+            .not("actual_team1_goals", "is", null)
+            .not("actual_team2_goals", "is", null)
+            .order("kickoff_at", { ascending: true })
+    ]);
+
+    if (participantsError) throw participantsError;
+    if (matchesError) throw matchesError;
+
+    const completedMatches = (matches || []).filter(hasActualScore).sort((a, b) => new Date(a.kickoff_at) - new Date(b.kickoff_at));
+    const predictions = await loadFinalRecapPredictions(completedMatches.map((match) => match.id));
+    const predictionsByMatch = groupFinalRecapBy(predictions, "match_id");
+    const models = buildFinalRecapParticipantModels(participants || [], completedMatches, predictionsByMatch);
+    const snapshots = buildFinalRecapSnapshots(participants || [], completedMatches, predictionsByMatch);
+    applyFinalRecapRankHistory(models, snapshots);
+
+    const finalRows = rankFinalRecapModels(models);
+    finalRows.forEach((row, index) => row.finalRank = index + 1);
+
+    const matchFacts = buildFinalRecapMatchFacts(completedMatches, predictionsByMatch, participants || []);
+    const stageFacts = buildFinalRecapStageFacts(completedMatches, predictionsByMatch, participants || []);
+    const seasonStats = buildFinalRecapSeasonStats(participants || [], completedMatches, predictions, finalRows, matchFacts, stageFacts);
+    const awards = buildFinalRecapAwards(finalRows, seasonStats, matchFacts, snapshots);
+    const timeline = buildFinalRecapTimeline(finalRows, seasonStats, matchFacts, snapshots);
+
+    return {
+        participants: participants || [],
+        completedMatches,
+        predictions,
+        finalRows,
+        matchFacts,
+        stageFacts,
+        seasonStats,
+        awards,
+        timeline
+    };
+}
+
+async function loadFinalRecapPredictions(matchIds) {
+    if (!matchIds.length) return [];
+
+    const chunkSize = 80;
+    const allPredictions = [];
+
+    for (let i = 0; i < matchIds.length; i += chunkSize) {
+        const chunk = matchIds.slice(i, i + chunkSize);
+        const { data, error } = await db
+            .from("predictions")
+            .select("participant_id, match_id, predicted_team1_goals, predicted_team2_goals, points, updated_at")
+            .in("match_id", chunk);
+
+        if (error) throw error;
+        allPredictions.push(...(data || []));
+    }
+
+    return allPredictions;
+}
+
+function buildFinalRecapParticipantModels(participants, completedMatches, predictionsByMatch) {
+    const models = new Map(participants.map((participant) => [participant.id, {
+        id: participant.id,
+        name: participant.name,
+        points: 0,
+        predictions: 0,
+        missing: 0,
+        exactScores: 0,
+        correctOutcomes: 0,
+        correctPredictions: 0,
+        zeroPredictions: 0,
+        individualTeamScoresExact: 0,
+        cleanSheetsExact: 0,
+        drawHits: 0,
+        drawPredictions: 0,
+        totalPredictedGoals: 0,
+        oneGoalAway: 0,
+        closeButWrong: 0,
+        uniqueCorrect: 0,
+        uniquePredictions: 0,
+        crowdMatches: 0,
+        crowdPredictionMatches: 0,
+        againstCrowdPoints: 0,
+        favoriteTeamCounts: {},
+        trustedWinCounts: {},
+        teamBetrayals: {},
+        matchPoints: [],
+        ranks: [],
+        rankChanges: [],
+        firstRank: null,
+        finalRank: null,
+        appearancesInFirst: 0,
+        appearancesInTop3: 0,
+        appearancesInLast: 0,
+        bestCorrectStreak: 0,
+        worstWrongStreak: 0,
+        bestFiveMatchSpan: 0,
+        worstFiveMatchSpan: 0,
+        yoyoScore: 0
+    }]));
+
+    for (const match of completedMatches) {
+        const matchPredictions = predictionsByMatch.get(match.id) || [];
+        const predictionByParticipant = new Map(matchPredictions.map((prediction) => [prediction.participant_id, prediction]));
+        const majorityScore = getFinalRecapMajorityScore(matchPredictions);
+        const majorityOutcome = getFinalRecapMajorityOutcome(matchPredictions);
+        const scoreCounts = countFinalRecapPredictionScores(matchPredictions);
+
+        for (const participant of participants) {
+            const model = models.get(participant.id);
+            const prediction = predictionByParticipant.get(participant.id);
+
+            if (!prediction) {
+                model.missing += 1;
+                model.matchPoints.push({ matchId: match.id, points: 0, correct: false, submitted: false });
+                continue;
+            }
+
+            const predicted1 = Number(prediction.predicted_team1_goals);
+            const predicted2 = Number(prediction.predicted_team2_goals);
+            const points = calculatePoints(predicted1, predicted2, match.actual_team1_goals, match.actual_team2_goals);
+            const correct = points > 0;
+            const scoreKey = `${predicted1}-${predicted2}`;
+            const predictionOutcome = getOutcome(predicted1, predicted2);
+            const actualOutcome = getOutcome(match.actual_team1_goals, match.actual_team2_goals);
+            const goalError = Math.abs(predicted1 - match.actual_team1_goals) + Math.abs(predicted2 - match.actual_team2_goals);
+
+            model.points += points;
+            model.predictions += 1;
+            model.totalPredictedGoals += predicted1 + predicted2;
+            model.matchPoints.push({ matchId: match.id, points, correct, submitted: true });
+
+            if (points === 50) model.exactScores += 1;
+            if (points === 10) model.correctOutcomes += 1;
+            if (points > 0) model.correctPredictions += 1;
+            if (points === 0) model.zeroPredictions += 1;
+            if (predictionOutcome === "draw") model.drawPredictions += 1;
+            if (predictionOutcome === "draw" && actualOutcome === "draw") model.drawHits += 1;
+            if (predicted1 === match.actual_team1_goals) model.individualTeamScoresExact += 1;
+            if (predicted2 === match.actual_team2_goals) model.individualTeamScoresExact += 1;
+            if (match.actual_team1_goals === 0 && predicted1 === 0) model.cleanSheetsExact += 1;
+            if (match.actual_team2_goals === 0 && predicted2 === 0) model.cleanSheetsExact += 1;
+            if (points === 0 && goalError === 1) model.oneGoalAway += 1;
+            if (points === 0 && goalError <= 2) model.closeButWrong += 1;
+            if ((scoreCounts.get(scoreKey) || 0) === 1) model.uniquePredictions += 1;
+            if ((scoreCounts.get(scoreKey) || 0) === 1 && points > 0) model.uniqueCorrect += 1;
+            if (majorityScore && scoreKey === majorityScore.score) model.crowdPredictionMatches += 1;
+            if (majorityOutcome && predictionOutcome !== majorityOutcome.outcome && points > 0) model.againstCrowdPoints += points;
+
+            addFinalRecapTeamCount(model.favoriteTeamCounts, match.team1);
+            addFinalRecapTeamCount(model.favoriteTeamCounts, match.team2);
+            if (predictionOutcome === "team1") addFinalRecapTeamCount(model.trustedWinCounts, match.team1);
+            if (predictionOutcome === "team2") addFinalRecapTeamCount(model.trustedWinCounts, match.team2);
+            if (points === 0) {
+                addFinalRecapTeamCount(model.teamBetrayals, match.team1);
+                addFinalRecapTeamCount(model.teamBetrayals, match.team2);
+            }
+        }
+    }
+
+    return Array.from(models.values()).map((model) => {
+        model.accuracyPercent = model.predictions > 0 ? Number(((model.correctPredictions / model.predictions) * 100).toFixed(1)) : 0;
+        model.exactRatePercent = model.predictions > 0 ? Number(((model.exactScores / model.predictions) * 100).toFixed(1)) : 0;
+        model.averagePredictedGoals = model.predictions > 0 ? Number((model.totalPredictedGoals / model.predictions).toFixed(2)) : 0;
+        model.bestCorrectStreak = getFinalRecapBestStreak(model.matchPoints, (row) => row.correct);
+        model.worstWrongStreak = getFinalRecapBestStreak(model.matchPoints, (row) => row.submitted && !row.correct);
+        model.bestFiveMatchSpan = getFinalRecapBestSpan(model.matchPoints, 5, "max");
+        model.worstFiveMatchSpan = getFinalRecapBestSpan(model.matchPoints, 5, "min");
+        model.favoriteTeam = getFinalRecapTopEntry(model.favoriteTeamCounts);
+        model.mostTrustedTeam = getFinalRecapTopEntry(model.trustedWinCounts);
+        model.teamBetrayed = getFinalRecapTopEntry(model.teamBetrayals);
+        return model;
+    });
+}
+
+function buildFinalRecapSnapshots(participants, completedMatches, predictionsByMatch) {
+    const snapshots = [];
+
+    for (let index = 0; index < completedMatches.length; index += 1) {
+        const matchesSoFar = completedMatches.slice(0, index + 1);
+        const models = buildFinalRecapParticipantModels(participants, matchesSoFar, predictionsByMatch);
+        const rows = rankFinalRecapModels(models);
+        rows.forEach((row, rankIndex) => row.rank = rankIndex + 1);
+        snapshots.push({
+            match: completedMatches[index],
+            completedCount: index + 1,
+            rows: rows.map((row) => ({ id: row.id, name: row.name, points: row.points, rank: row.rank }))
+        });
+    }
+
+    return snapshots;
+}
+
+function applyFinalRecapRankHistory(models, snapshots) {
+    const modelById = new Map(models.map((model) => [model.id, model]));
+    const previousRanks = new Map();
+
+    for (const snapshot of snapshots) {
+        for (const row of snapshot.rows) {
+            const model = modelById.get(row.id);
+            if (!model) continue;
+
+            if (model.firstRank === null) model.firstRank = row.rank;
+            model.ranks.push(row.rank);
+            if (row.rank === 1) model.appearancesInFirst += 1;
+            if (row.rank <= 3) model.appearancesInTop3 += 1;
+            if (row.rank === snapshot.rows.length) model.appearancesInLast += 1;
+
+            if (previousRanks.has(row.id)) {
+                const previousRank = previousRanks.get(row.id);
+                const change = previousRank - row.rank;
+                if (change !== 0) {
+                    model.rankChanges.push(change);
+                    model.yoyoScore += Math.abs(change);
+                }
+            }
+
+            previousRanks.set(row.id, row.rank);
+        }
+    }
+}
+
+function rankFinalRecapModels(models) {
+    return [...models].sort((a, b) => (
+        b.points - a.points ||
+        b.correctPredictions - a.correctPredictions ||
+        a.name.localeCompare(b.name, "ar")
+    ));
+}
+
+function buildFinalRecapMatchFacts(completedMatches, predictionsByMatch, participants) {
+    return completedMatches.map((match) => {
+        const predictions = predictionsByMatch.get(match.id) || [];
+        const pointsRows = predictions.map((prediction) => {
+            const points = calculatePoints(
+                Number(prediction.predicted_team1_goals),
+                Number(prediction.predicted_team2_goals),
+                match.actual_team1_goals,
+                match.actual_team2_goals
+            );
+            return { prediction, points };
+        });
+        const awardedPoints = pointsRows.reduce((sum, row) => sum + row.points, 0);
+        const exactCount = pointsRows.filter((row) => row.points === 50).length;
+        const correctCount = pointsRows.filter((row) => row.points > 0).length;
+        const zeroOrMissing = participants.length - correctCount;
+        const majorityOutcome = getFinalRecapMajorityOutcome(predictions);
+        const actualOutcome = getOutcome(match.actual_team1_goals, match.actual_team2_goals);
+
+        return {
+            match,
+            title: `${match.team1} ضد ${match.team2}`,
+            score: `${match.actual_team1_goals}-${match.actual_team2_goals}`,
+            awardedPoints,
+            exactCount,
+            correctCount,
+            zeroOrMissing,
+            zeroOrMissingRate: participants.length > 0 ? Math.round((zeroOrMissing / participants.length) * 100) : 0,
+            majorityOutcome,
+            crowdWasWrong: Boolean(majorityOutcome && majorityOutcome.outcome !== actualOutcome),
+            stageLabel: getFinalRecapStageLabel(match.stage)
+        };
+    });
+}
+
+function buildFinalRecapStageFacts(completedMatches, predictionsByMatch, participants) {
+    const stages = new Map();
+
+    for (const match of completedMatches) {
+        const stage = match.stage || "GROUP_STAGE";
+        if (!stages.has(stage)) {
+            stages.set(stage, {
+                stage,
+                label: getFinalRecapStageLabel(stage),
+                matches: 0,
+                possiblePredictions: 0,
+                points: 0,
+                exactScores: 0,
+                correctPredictions: 0
+            });
+        }
+
+        const row = stages.get(stage);
+        const predictions = predictionsByMatch.get(match.id) || [];
+        row.matches += 1;
+        row.possiblePredictions += participants.length;
+
+        for (const prediction of predictions) {
+            const points = calculatePoints(Number(prediction.predicted_team1_goals), Number(prediction.predicted_team2_goals), match.actual_team1_goals, match.actual_team2_goals);
+            row.points += points;
+            if (points === 50) row.exactScores += 1;
+            if (points > 0) row.correctPredictions += 1;
+        }
+    }
+
+    return Array.from(stages.values()).map((row) => ({
+        ...row,
+        averagePoints: row.possiblePredictions > 0 ? Number((row.points / row.possiblePredictions).toFixed(2)) : 0,
+        accuracyPercent: row.possiblePredictions > 0 ? Number(((row.correctPredictions / row.possiblePredictions) * 100).toFixed(1)) : 0,
+        exactRatePercent: row.possiblePredictions > 0 ? Number(((row.exactScores / row.possiblePredictions) * 100).toFixed(1)) : 0
+    })).sort((a, b) => b.averagePoints - a.averagePoints || b.points - a.points);
+}
+
+function buildFinalRecapSeasonStats(participants, completedMatches, predictions, finalRows, matchFacts, stageFacts) {
+    const totalPredictions = finalRows.reduce((sum, row) => sum + row.predictions, 0);
+    const totalCorrect = finalRows.reduce((sum, row) => sum + row.correctPredictions, 0);
+    const totalExact = finalRows.reduce((sum, row) => sum + row.exactScores, 0);
+    const totalPoints = finalRows.reduce((sum, row) => sum + row.points, 0);
+    const favoriteScore = getFinalRecapMostCommonScore(predictions);
+    const generousMatch = [...matchFacts].sort((a, b) => b.awardedPoints - a.awardedPoints)[0] || null;
+    const cruelMatch = [...matchFacts].sort((a, b) => b.zeroOrMissingRate - a.zeroOrMissingRate)[0] || null;
+    const bestStage = stageFacts[0] || null;
+    const champion = finalRows[0] || null;
+    const runnerUp = finalRows[1] || null;
+
+    return {
+        participantCount: participants.length,
+        completedMatches: completedMatches.length,
+        totalPredictions,
+        totalCorrect,
+        totalExact,
+        totalPoints,
+        accuracyPercent: totalPredictions > 0 ? Number(((totalCorrect / totalPredictions) * 100).toFixed(1)) : 0,
+        averagePointsPerMatch: completedMatches.length > 0 ? Number((totalPoints / completedMatches.length).toFixed(1)) : 0,
+        medianPoints: getFinalRecapMedian(finalRows.map((row) => row.points)),
+        favoriteScore,
+        generousMatch,
+        cruelMatch,
+        bestStage,
+        champion,
+        runnerUp,
+        winMargin: champion && runnerUp ? champion.points - runnerUp.points : 0
+    };
+}
+
+function buildFinalRecapAwards(finalRows, seasonStats, matchFacts, snapshots) {
+    const champion = finalRows[0];
+    const runnerUp = finalRows[1];
+    const woodenSpoon = finalRows[finalRows.length - 1];
+    const byExact = pickFinalRecapTop(finalRows, "exactScores");
+    const byAccuracy = [...finalRows].filter((row) => row.predictions >= Math.max(5, Math.floor(seasonStats.completedMatches * 0.35))).sort((a, b) => b.accuracyPercent - a.accuracyPercent || b.points - a.points)[0];
+    const byOutcomes = pickFinalRecapTop(finalRows, "correctOutcomes");
+    const byTeamScores = pickFinalRecapTop(finalRows, "individualTeamScoresExact");
+    const byCleanSheets = pickFinalRecapTop(finalRows, "cleanSheetsExact");
+    const byDraws = pickFinalRecapTop(finalRows, "drawHits");
+    const byCorrectStreak = pickFinalRecapTop(finalRows, "bestCorrectStreak");
+    const byWrongStreak = pickFinalRecapTop(finalRows, "worstWrongStreak");
+    const byHotSpan = pickFinalRecapTop(finalRows, "bestFiveMatchSpan");
+    const byColdSpan = pickFinalRecapBottom(finalRows, "worstFiveMatchSpan");
+    const byClimb = [...finalRows].sort((a, b) => (b.firstRank - b.finalRank) - (a.firstRank - a.finalRank))[0];
+    const byCollapse = [...finalRows].sort((a, b) => (b.finalRank - b.firstRank) - (a.finalRank - a.firstRank))[0];
+    const byTopTime = pickFinalRecapTop(finalRows, "appearancesInFirst");
+    const byYoyo = pickFinalRecapTop(finalRows, "yoyoScore");
+    const byLoneWolf = pickFinalRecapTop(finalRows, "uniqueCorrect");
+    const byCrowdFollower = [...finalRows].filter((row) => row.predictions > 0).sort((a, b) => (b.crowdPredictionMatches / b.predictions) - (a.crowdPredictionMatches / a.predictions))[0];
+    const byAgainstCrowd = pickFinalRecapTop(finalRows, "againstCrowdPoints");
+    const byGoalFest = pickFinalRecapTop(finalRows, "averagePredictedGoals");
+    const byDefensive = pickFinalRecapBottom(finalRows.filter((row) => row.predictions > 0), "averagePredictedGoals");
+
+    return [
+        buildFinalRecapAward("🏆", "بطل المسابقة", champion, champion ? `${champion.points} نقطة، والفارق ${seasonStats.winMargin} عن الثاني.` : "بانتظار الحسم", "الأكثر جمعاً للنقاط في نهاية البطولة."),
+        buildFinalRecapAward("🥈", "الوصيف", runnerUp, runnerUp ? `${runnerUp.points} نقطة. أقرب مطارد للبطل.` : "بانتظار الحسم", "صاحب أقرب محاولة للوصول للقب."),
+        buildFinalRecapAward("🥄", "خيرها بغيرها", woodenSpoon, woodenSpoon ? `${woodenSpoon.points} نقطة. البطولة كانت عنيدة معه.` : "بانتظار الحسم", "شارة خفيفة لصاحب أكثر بطولة احتاجت صبر."),
+        buildFinalRecapAward("👑", "كرسي الصدارة", byTopTime, byTopTime ? `${byTopTime.appearancesInFirst} مرة بعد المباريات.` : "بانتظار البيانات", "أكثر شخص ظهر في المركز الأول بعد المباريات المكتملة."),
+        buildFinalRecapAward("🧙", "العراف", byAccuracy, byAccuracy ? `${byAccuracy.accuracyPercent}% من توقعاته جابت نقاط.` : "بانتظار البيانات", "أعلى نسبة توقعات صحيحة من توقعاته."),
+        buildFinalRecapAward("🎯", "ملك بالملّي", byExact, byExact ? `${byExact.exactScores} نتيجة كاملة.` : "بانتظار البيانات", "أكثر شخص جاب النتيجة كاملة."),
+        buildFinalRecapAward("🗣️", "قارئ الفائز", byOutcomes, byOutcomes ? `${byOutcomes.correctOutcomes} توقع فائز/تعادل صحيح.` : "بانتظار البيانات", "أكثر شخص عرف اتجاه المباراة حتى لو النتيجة ما ضبطت."),
+        buildFinalRecapAward("🥅", "عرّاف الأهداف", byTeamScores, byTeamScores ? `${byTeamScores.individualTeamScoresExact} نتيجة فريق صحيحة.` : "بانتظار البيانات", "أكثر شخص ضبط عدد أهداف فريق واحد بشكل صحيح."),
+        buildFinalRecapAward("🧤", "حارس الشباك النظيفة", byCleanSheets, byCleanSheets ? `${byCleanSheets.cleanSheetsExact} شباك نظيفة متوقعة صح.` : "بانتظار البيانات", "أكثر شخص توقع أن فريقاً سيخرج بشباك نظيفة وطلع صحيح."),
+        buildFinalRecapAward("🔥", "أطول سلسلة صحيحة", byCorrectStreak, byCorrectStreak ? `${byCorrectStreak.bestCorrectStreak} توقعات صحيحة متتالية.` : "بانتظار البيانات", "لما يدخل المود ما يوقف."),
+        buildFinalRecapAward("🚀", "فورة الموسم", byHotSpan, byHotSpan ? `${byHotSpan.bestFiveMatchSpan} نقطة في أفضل 5 مباريات متتالية.` : "بانتظار البيانات", "أقوى فترة قصيرة من خمس مباريات متتالية."),
+        buildFinalRecapAward("📈", "أقوى صعود", byClimb, byClimb ? `من المركز ${byClimb.firstRank} إلى ${byClimb.finalRank}.` : "بانتظار البيانات", "أكبر تحسن في الترتيب من البداية للنهاية."),
+        buildFinalRecapAward("📉", "قطار الملاهي", byCollapse, byCollapse ? `من المركز ${byCollapse.firstRank} إلى ${byCollapse.finalRank}.` : "بانتظار البيانات", "أكبر تغير سلبي في الترتيب من البداية للنهاية، بروح خفيفة وبدون زعل."),
+        buildFinalRecapAward("🐺", "الذئب الوحيد", byLoneWolf, byLoneWolf ? `${byLoneWolf.uniqueCorrect} توقعات صحيحة ما شاركه فيها أحد.` : "بانتظار البيانات", "توقعات صحيحة كان هو الوحيد اللي شافها."),
+        buildFinalRecapAward("⚡", "ضد الموجة", byAgainstCrowd, byAgainstCrowd ? `${byAgainstCrowd.againstCrowdPoints} نقطة عكس اتجاه الأغلبية.` : "بانتظار البيانات", "أكثر نقاط جت من توقعات خالفت رأي الأغلبية.")
+    ].filter((award) => award && award.winner);
+}
+
+function buildFinalRecapAward(icon, title, winner, value, note) {
+    if (!winner) return null;
+    return { icon, title, winner: winner.name, value, note };
+}
+
+function buildFinalRecapTimeline(finalRows, seasonStats, matchFacts, snapshots) {
+    const timeline = [];
+    const firstSnapshot = snapshots[0];
+    const groupEndSnapshot = getFinalRecapLastSnapshotForStage(snapshots, "GROUP_STAGE");
+    const biggestClimb = [...finalRows].sort((a, b) => (b.firstRank - b.finalRank) - (a.firstRank - a.finalRank))[0];
+    const loneWolf = pickFinalRecapTop(finalRows, "uniqueCorrect");
+    const finalSnapshot = snapshots[snapshots.length - 1];
+
+    if (firstSnapshot?.rows?.[0]) {
+        timeline.push({
+            title: "البداية",
+            body: `${firstSnapshot.rows[0].name} أخذ أول لقطة صدارة بعد المباراة رقم ${firstSnapshot.completedCount}.`
+        });
+    }
+
+    if (groupEndSnapshot?.rows?.[0]) {
+        timeline.push({
+            title: "نهاية المجموعات",
+            body: `${groupEndSnapshot.rows[0].name} خرج من دور المجموعات في الصدارة بـ${groupEndSnapshot.rows[0].points} نقطة.`
+        });
+    }
+
+    if (seasonStats.cruelMatch) {
+        timeline.push({
+            title: "أقسى مطب",
+            body: `${seasonStats.cruelMatch.title} (${seasonStats.cruelMatch.score}) كانت من أثقل المباريات على التوقعات.`
+        });
+    }
+
+    if (biggestClimb && biggestClimb.firstRank > biggestClimb.finalRank) {
+        timeline.push({
+            title: "العودة من بعيد",
+            body: `${biggestClimb.name} تحرك من المركز ${biggestClimb.firstRank} إلى ${biggestClimb.finalRank}.`
+        });
+    }
+
+    if (loneWolf && loneWolf.uniqueCorrect > 0) {
+        timeline.push({
+            title: "شافها لحاله",
+            body: `${loneWolf.name} عنده ${loneWolf.uniqueCorrect} توقعات صحيحة ما شاركه فيها أحد.`
+        });
+    }
+
+    if (finalSnapshot?.rows?.[0]) {
+        timeline.push({
+            title: "النهاية",
+            body: `${finalSnapshot.rows[0].name} أنهى الحكاية في المركز الأول بـ${finalSnapshot.rows[0].points} نقطة.`
+        });
+    }
+
+    return timeline.slice(0, 6);
+}
+
+function renderFinalRecap(recap) {
+    const { seasonStats, awards, timeline } = recap;
+    const champion = seasonStats.champion;
+    const runnerUp = seasonStats.runnerUp;
+
+    return `
+        <div class="season-recap-v39">
+            <section class="recap-hero-card">
+                <div>
+                    <p class="eyebrow">Final Recap</p>
+                    <h2>${champion ? `قصة ${escapeHtml(champion.name)} واللقب` : "ملخص الختام"}</h2>
+                    <p>${escapeHtml(buildFinalRecapHeroPhrase(seasonStats))}</p>
+                </div>
+                <div class="recap-hero-stats">
+                    <span><strong>${escapeHtml(champion?.name || "-")}</strong><small>البطل</small></span>
+                    <span><strong>${seasonStats.winMargin}</strong><small>فارق اللقب</small></span>
+                    <span><strong>${runnerUp ? escapeHtml(runnerUp.name) : "-"}</strong><small>الوصيف</small></span>
+                </div>
+            </section>
+
+            ${renderFinalRecapFunStats(seasonStats)}
+            ${renderFinalRecapAwards(awards)}
+            ${renderFinalRecapTimeline(timeline)}
+        </div>
+    `;
+}
+
+function buildFinalRecapHeroPhrase(seasonStats) {
+    if (!seasonStats.champion) return "هنا سنجمع قصة المسابقة بعد اكتمال النتائج.";
+
+    const marginPhrase = seasonStats.winMargin <= 20
+        ? "والفارق كان قريباً بما يكفي ليخلي آخر المباريات على الأعصاب."
+        : `والفارق وصل إلى ${seasonStats.winMargin} نقطة.`;
+
+    return `${seasonStats.completedMatches} مباراة، ${seasonStats.totalPredictions} توقع، و${seasonStats.totalExact} نتيجة بالملّي. ${seasonStats.champion.name} أنهى المسابقة في الصدارة، ${marginPhrase}`;
+}
+
+function renderFinalRecapFunStats(seasonStats) {
+    const stats = [
+        { label: "التوقعات", value: seasonStats.totalPredictions },
+        { label: "التوقعات الصحيحة", value: seasonStats.totalCorrect },
+        { label: "بالملّي", value: seasonStats.totalExact },
+        { label: "الدقة", value: `${seasonStats.accuracyPercent}%` },
+        { label: "متوسط النقاط/مباراة", value: seasonStats.averagePointsPerMatch },
+        { label: "النتيجة المحبوبة", value: seasonStats.favoriteScore?.score || "-" },
+        { label: "أكرم مرحلة", value: seasonStats.bestStage?.label || "-" },
+        { label: "Median", value: seasonStats.medianPoints }
+    ];
+
+    return `
+        <section class="recap-section-card recap-fun-stats-card">
+            <div class="recap-section-title"><span>📊</span><h3>أرقام لها سالفة</h3></div>
+            <div class="recap-stat-grid">
+                ${stats.map((stat) => `<div class="recap-stat-tile"><strong>${escapeHtml(stat.value)}</strong><span>${escapeHtml(stat.label)}</span></div>`).join("")}
+            </div>
+            ${seasonStats.cruelMatch ? `<p class="recap-footnote">أقسى مباراة على التوقعات: ${escapeHtml(seasonStats.cruelMatch.title)} (${escapeHtml(seasonStats.cruelMatch.score)}).</p>` : ""}
+        </section>
+    `;
+}
+
+function renderFinalRecapAwards(awards) {
+    return `
+        <section class="recap-section-card">
+            <div class="recap-section-title"><span>🏆</span><h3>جوائز الموسم</h3></div>
+            <div class="recap-awards-grid">
+                ${awards.map((award) => `
+                    <article class="recap-award-card">
+                        <div class="recap-award-icon" aria-hidden="true">${escapeHtml(award.icon)}</div>
+                        <div>
+                            <h4>${escapeHtml(award.title)}</h4>
+                            <strong>${escapeHtml(award.winner)}</strong>
+                            <p>${escapeHtml(award.value)}</p>
+                            <small>${escapeHtml(award.note)}</small>
+                        </div>
+                    </article>
+                `).join("")}
+            </div>
+        </section>
+    `;
+}
+
+function renderFinalRecapTimeline(timeline) {
+    if (!timeline.length) return "";
+
+    return `
+        <section class="recap-section-card recap-timeline-card">
+            <div class="recap-section-title"><span>📽️</span><h3>شريط الموسم</h3></div>
+            <div class="recap-timeline-list">
+                ${timeline.map((item) => `
+                    <article class="recap-timeline-item">
+                        <span class="recap-timeline-dot" aria-hidden="true"></span>
+                        <div><strong>${escapeHtml(item.title)}</strong><p>${escapeHtml(item.body)}</p></div>
+                    </article>
+                `).join("")}
+            </div>
+        </section>
+    `;
+}
+
+function groupFinalRecapBy(rows, key) {
+    const map = new Map();
+    for (const row of rows || []) {
+        const value = row[key];
+        if (!map.has(value)) map.set(value, []);
+        map.get(value).push(row);
+    }
+    return map;
+}
+
+function addFinalRecapTeamCount(object, team) {
+    object[team] = (object[team] || 0) + 1;
+}
+
+function getFinalRecapTopEntry(object) {
+    const [name, count] = Object.entries(object || {}).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], "ar"))[0] || [];
+    return name ? { name, count } : null;
+}
+
+function getFinalRecapBestStreak(rows, predicate) {
+    let best = 0;
+    let current = 0;
+    for (const row of rows) {
+        if (predicate(row)) current += 1;
+        else current = 0;
+        best = Math.max(best, current);
+    }
+    return best;
+}
+
+function getFinalRecapBestSpan(rows, size, mode = "max") {
+    if (!rows.length) return 0;
+    let best = mode === "min" ? Infinity : -Infinity;
+    for (let i = 0; i < rows.length; i += 1) {
+        const slice = rows.slice(i, i + size);
+        if (slice.length < size) continue;
+        const points = slice.reduce((sum, row) => sum + row.points, 0);
+        best = mode === "min" ? Math.min(best, points) : Math.max(best, points);
+    }
+    if (best === Infinity || best === -Infinity) return 0;
+    return best;
+}
+
+function getFinalRecapMajorityScore(predictions) {
+    const counts = countFinalRecapPredictionScores(predictions);
+    const [score, count] = Array.from(counts.entries()).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))[0] || [];
+    return score ? { score, count } : null;
+}
+
+function countFinalRecapPredictionScores(predictions) {
+    const counts = new Map();
+    for (const prediction of predictions || []) {
+        const key = `${prediction.predicted_team1_goals}-${prediction.predicted_team2_goals}`;
+        counts.set(key, (counts.get(key) || 0) + 1);
+    }
+    return counts;
+}
+
+function getFinalRecapMajorityOutcome(predictions) {
+    const counts = { team1: 0, team2: 0, draw: 0 };
+    for (const prediction of predictions || []) {
+        const outcome = getOutcome(Number(prediction.predicted_team1_goals), Number(prediction.predicted_team2_goals));
+        counts[outcome] += 1;
+    }
+    const [outcome, count] = Object.entries(counts).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))[0] || [];
+    return count > 0 ? { outcome, count } : null;
+}
+
+function getFinalRecapMostCommonScore(predictions) {
+    const counts = countFinalRecapPredictionScores(predictions);
+    const [score, count] = Array.from(counts.entries()).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))[0] || [];
+    return score ? { score, count } : null;
+}
+
+function getFinalRecapMedian(values) {
+    const sorted = [...values].sort((a, b) => a - b);
+    if (!sorted.length) return 0;
+    const mid = Math.floor(sorted.length / 2);
+    return sorted.length % 2 ? sorted[mid] : Number(((sorted[mid - 1] + sorted[mid]) / 2).toFixed(1));
+}
+
+function pickFinalRecapTop(rows, field) {
+    return [...rows].sort((a, b) => Number(b[field] || 0) - Number(a[field] || 0) || b.points - a.points || a.name.localeCompare(b.name, "ar"))[0] || null;
+}
+
+function pickFinalRecapBottom(rows, field) {
+    return [...rows].sort((a, b) => Number(a[field] || 0) - Number(b[field] || 0) || b.points - a.points || a.name.localeCompare(b.name, "ar"))[0] || null;
+}
+
+function getFinalRecapLastSnapshotForStage(snapshots, stage) {
+    const matching = snapshots.filter((snapshot) => (snapshot.match.stage || "GROUP_STAGE") === stage);
+    return matching[matching.length - 1] || null;
+}
+
+function getFinalRecapStageLabel(stage) {
+    const labels = {
+        GROUP_STAGE: "دور المجموعات",
+        LAST_32: "دور الـ32",
+        LAST_16: "دور الـ16",
+        QUARTER_FINALS: "ربع النهائي",
+        SEMI_FINALS: "نصف النهائي",
+        THIRD_PLACE: "تحديد الثالث",
+        FINAL: "النهائي"
+    };
+    return labels[stage] || stage || "مرحلة غير محددة";
+}

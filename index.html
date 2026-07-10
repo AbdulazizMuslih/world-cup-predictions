@@ -55,15 +55,10 @@
             </button>
 
             <nav class="site-menu-nav" aria-label="روابط الموقع">
-                <button class="site-menu-link" type="button" data-menu-page="home">الرئيسية</button>
-                <button class="site-menu-link" type="button" data-menu-tab="available">المباريات المتاحة</button>
-                <button class="site-menu-link" type="button" data-menu-tab="mine">توقعاتي</button>
-                <button class="site-menu-link" type="button" data-menu-tab="leaderboard">الترتيب</button>
                 <button class="site-menu-link" type="button" data-menu-page="highlights">الأضواء</button>
-                <button class="site-menu-link" type="button" data-menu-page="statistics">الإحصائيات</button>
-                <button class="site-menu-link" type="button" data-menu-page="awards">الجوائز</button>
-                <button class="site-menu-link" type="button" data-menu-page="about">عن المسابقة</button>
-                <button class="site-menu-link" type="button" data-menu-page="contact">تواصل معنا</button>
+                <button class="site-menu-link" type="button" data-menu-page="statistics">الإحصائيات والشارات</button>
+                <button class="site-menu-link site-menu-link-final" type="button" data-menu-page="seasonRecap">ختام المسابقة</button>
+                <button class="site-menu-link" type="button" data-menu-page="about">عن المسابقة والتواصل</button>
             </nav>
         </aside>
 
@@ -82,19 +77,17 @@
                 </div>
 
                 <div class="hero-actions hero-actions-v39">
-                    <div id="musicCarousel" class="music-carousel" aria-label="مشغل الأغاني">
-                        <button id="musicPrevBtn" class="music-nav-btn" type="button" aria-label="الأغنية السابقة">‹</button>
+                    <div class="music-switcher" aria-label="اختيار الأغنية">
+                        <button id="prevMusicBtn" class="music-arrow-btn" type="button" aria-label="الأغنية السابقة">‹</button>
 
-                        <div id="musicTrackList" class="music-track-list" role="list">
-                            <button id="musicBtn" class="music-btn music-track active" type="button" data-track-src="./assets/song.mp3?v=2" role="listitem">
-                                ▶ شغّل Dai Dai
-                            </button>
-                        </div>
+                        <button id="musicBtn" class="music-btn" type="button">
+                            ▶ شغّل ❤️ قديمك نديمك
+                        </button>
 
-                        <button id="musicNextBtn" class="music-nav-btn" type="button" aria-label="الأغنية التالية">›</button>
+                        <button id="nextMusicBtn" class="music-arrow-btn" type="button" aria-label="الأغنية التالية">›</button>
                     </div>
 
-                    <audio id="daiDaiAudio" src="./assets/song.mp3?v=2" preload="auto"></audio>
+                    <audio id="daiDaiAudio" src="./assets/song 2.mp3?v=39.0" preload="auto"></audio>
                 </div>
             </div>
         </header>
@@ -147,7 +140,7 @@
                         <h2 id="welcomeName">المشارك</h2>
                     </div>
 
-                    <button id="logoutBtn" class="secondary-btn">تغيير المستخدم</button>
+                    <button id="logoutBtn" class="secondary-btn">خروج</button>
                 </div>
 
                 <nav class="tabs">
@@ -177,7 +170,7 @@
                     <div class="menu-page-header">
                         <p class="eyebrow">الملف الشخصي</p>
                         <h3 id="profilePageTitle">ملف المشارك</h3>
-                        <p class="menu-page-subtitle">ملخص النقاط، الشارات، أفضل اللحظات، ولمحة ذكية عن أسلوب التوقع.</p>
+                        <p class="menu-page-subtitle">ملخص سريع لنقاطك، توقعاتك، وأفضل لحظاتك في البطولة.</p>
                     </div>
 
                     <div id="profileSummary" class="profile-summary-grid">
@@ -191,61 +184,65 @@
                 <section id="highlightsTab" class="tab-panel menu-page-panel hidden" data-menu-page="highlights">
                     <div class="menu-page-header">
                         <p class="eyebrow">الأضواء</p>
-                        <h3>لقطات البطولة</h3>
-                        <p class="menu-page-subtitle">منشورات ذكية وخفيفة تُولد بعد كل مباراتين بناءً على البيانات المتاحة وقتها فقط.</p>
+                        <h3>لقطات الختام</h3>
+                        <p class="menu-page-subtitle">أبرز سوالف المسابقة بعد النهاية: اللقب، الرجعة، المفاجآت، واللحظات التي تستاهل تنحفظ.</p>
                     </div>
 
-                    <div id="highlightsFeaturedPost" class="ai-featured-post"></div>
-                    <div id="aiHighlightsFeed" class="ai-post-feed" aria-live="polite">
-                        <div class="placeholder-card">منشورات الأضواء ستظهر هنا بعد ربط التوليد التلقائي.</div>
+                    <div id="seasonHighlights" class="season-highlights-grid">
+                        <div class="placeholder-card">ستظهر لقطات الختام هنا عند اكتمال النتائج.</div>
                     </div>
                 </section>
 
                 <section id="statisticsTab" class="tab-panel menu-page-panel hidden" data-menu-page="statistics">
                     <div class="menu-page-header">
-                        <p class="eyebrow">الإحصائيات</p>
-                        <h3>أرقام لها قصة</h3>
-                        <p class="menu-page-subtitle">إحصائيات مختصرة مع تعليق ذكي يشرح اللقطة بدون تحويلها إلى تقرير طويل.</p>
+                        <p class="eyebrow">الإحصائيات والشارات</p>
+                        <h3>أرقام لها طعم</h3>
+                        <p class="menu-page-subtitle">الأرقام المهمة والشارات الممتعة في مكان واحد، بدون تكرار وبدون تقارير طويلة.</p>
                     </div>
 
                     <div id="statisticsCards" class="stats-grid">
                         <div class="placeholder-card">إحصائيات البطولة ستظهر هنا.</div>
                     </div>
-                </section>
 
-                <section id="awardsTab" class="tab-panel menu-page-panel hidden" data-menu-page="awards">
-                    <div class="menu-page-header">
-                        <p class="eyebrow">الجوائز</p>
-                        <h3>شارات وإنجازات المسابقة</h3>
-                        <p class="menu-page-subtitle">جوائز خفيفة للمشاركين حسب الأداء، السلاسل، التوقعات الدقيقة، وأبرز لحظات البطولة.</p>
+                    <div class="menu-page-header menu-page-subsection-header">
+                        <p class="eyebrow">الشارات</p>
+                        <h3>ألقاب المسابقة</h3>
+                        <p class="menu-page-subtitle">كل شارة مبنية على رقم واضح، مع وصف بسيط يشرح سببها.</p>
                     </div>
 
-                    <div id="awardsGrid" class="awards-grid">
-                        <div class="placeholder-card">الشارات والجوائز ستظهر هنا بعد ربط الحسابات.</div>
+                    <div id="statisticsBadges" class="awards-grid recap-awards-grid">
+                        <div class="placeholder-card">الشارات ستظهر هنا عند اكتمال البيانات.</div>
+                    </div>
+                </section>
+
+                <section id="seasonRecapTab" class="tab-panel menu-page-panel hidden" data-menu-page="seasonRecap">
+                    <div class="menu-page-header">
+                        <p class="eyebrow">ختام المسابقة</p>
+                        <h3>شكراً يا أبطال</h3>
+                        <p class="menu-page-subtitle">صفحة خفيفة للختام، تقدير، وذكرى جميلة بعد نهاية البطولة.</p>
+                    </div>
+
+                    <div id="seasonRecap" class="season-thanks-wrap">
+                        <div class="placeholder-card">سيظهر شكر الختام هنا.</div>
                     </div>
                 </section>
 
                 <section id="aboutTab" class="tab-panel menu-page-panel hidden" data-menu-page="about">
                     <div class="menu-page-header">
-                        <p class="eyebrow">عن المسابقة</p>
+                        <p class="eyebrow">عن المسابقة والتواصل</p>
                         <h3>فكرة الموقع وطريقة اللعب</h3>
+                        <p class="menu-page-subtitle">القواعد الأساسية، الملاحظات المهمة، وطريقة التواصل في صفحة واحدة.</p>
                     </div>
 
                     <div class="info-card">
-                        <p>مسابقة خاصة لتوقع نتائج كأس العالم 2026، تجمع بين التوقعات، الترتيب المباشر، الأضواء، الإحصائيات، والجوائز.</p>
+                        <p>مسابقة خاصة لتوقع نتائج كأس العالم 2026، تجمع بين التوقعات، الترتيب المباشر، الأضواء، والإحصائيات بعد نهاية البطولة.</p>
                     </div>
 
                     <div id="rulesSummary" class="rules-summary-grid"></div>
-                </section>
 
-                <section id="contactTab" class="tab-panel menu-page-panel hidden" data-menu-page="contact">
-                    <div class="menu-page-header">
-                        <p class="eyebrow">تواصل معنا</p>
-                        <h3>للاستفسار أو التعديل</h3>
-                    </div>
-
-                    <div class="info-card">
-                        <p>لأي استفسار أو ملاحظة على التوقعات، تواصل مع منظم المسابقة.</p>
+                    <div class="info-card contact-info-card">
+                        <h4>تواصل معنا</h4>
+                        <p>لأي استفسار، ملاحظة على نتيجة، أو مشكلة في التوقعات، تواصل مع منظم المسابقة.</p>
                     </div>
                 </section>
 
@@ -361,7 +358,6 @@
           "sections": [
             "highlights",
             "statistics",
-            "awards",
             "profile"
           ]
         }
