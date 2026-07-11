@@ -1,0 +1,100 @@
+name: Generate Final Highlights AI
+
+on:
+  workflow_dispatch:
+    inputs:
+      allow_preview_generation:
+        description: "Allow generation before all 104 matches are completed?"
+        required: true
+        default: "true"
+        type: choice
+        options: ["true", "false"]
+      publish_visible:
+        description: "Insert posts as visible=true? Use true if you want participants to see them."
+        required: true
+        default: "true"
+        type: choice
+        options: ["true", "false"]
+      max_highlights:
+        description: "Maximum highlight posts to ask for"
+        required: true
+        default: "50"
+      reset_existing:
+        description: "Delete old final_highlights/final_profile rows before inserting new rows?"
+        required: true
+        default: "true"
+        type: choice
+        options: ["true", "false"]
+
+  schedule:
+    # End-stage auto refresh after result syncs. Keeps highlights/profiles updated.
+    - cron: "47 */2 * * *"
+
+jobs:
+  generate-final-highlights:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Generate final highlights and profile messages
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          AI_PROVIDER: ${{ secrets.AI_PROVIDER || 'openrouter' }}
+          AI_API_KEY: ${{ secrets.AI_API_KEY }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          # For AI_PROVIDER=openrouter, the script uses OPENROUTER_* and ignores stale AI_BASE_URL/AI_MODEL.
+          AI_BASE_URL: ${{ secrets.AI_BASE_URL }}
+          AI_MODEL: ${{ secrets.AI_MODEL }}
+          OPENROUTER_BASE_URL: ${{ secrets.OPENROUTER_BASE_URL }}
+          OPENROUTER_MODEL: ${{ secrets.OPENROUTER_MODEL }}
+          OPENROUTER_FALLBACK_MODELS: ${{ secrets.OPENROUTER_FALLBACK_MODELS }}
+          OPENROUTER_USE_FALLBACK_MODELS: ${{ secrets.OPENROUTER_USE_FALLBACK_MODELS || 'false' }}
+          OPENROUTER_HTTP_REFERER: ${{ secrets.OPENROUTER_HTTP_REFERER }}
+          OPENROUTER_APP_TITLE: "World Cup 2026 Predictions"
+          AI_RESPONSE_FORMAT: ${{ secrets.AI_RESPONSE_FORMAT || 'false' }}
+          AI_DISABLE_REPAIR_CALL: ${{ secrets.AI_DISABLE_REPAIR_CALL || 'true' }}
+          AI_TEMPERATURE: "0.62"
+          AI_MAX_TOKENS: "7000"
+          AI_BATCH_GENERATION: "true"
+          AI_BATCH_HIGHLIGHT_TARGET: "3"
+          AI_EVENT_NOTE_BATCH_SIZE: "30"
+          AI_FACT_BATCH_SIZE: "40"
+          AI_USE_EVENT_ONLY_BATCHES: "false"
+          AI_ENABLE_FILL_MATCHES: "false"
+          AI_REQUIRE_CONTEST_SIGNAL: "true"
+          AI_STORY_SEED_BATCH_SIZE: "6"
+          AI_POST_BODY_MAX_CHARS: "1350"
+          AI_ENFORCE_UNIQUE_TITLES: "true"
+          AI_TITLE_MATCH_HINT: "true"
+          AI_MAX_BATCHES_PER_RUN: "12"
+          AI_INSERT_PARTIAL_ON_QUOTA: "true"
+          AI_INSERT_PARTIAL_ON_BATCH_FAILURE: "true"
+          AI_INSERT_PARTIAL_ON_MAX_BATCHES: "true"
+          AI_MIN_HIGHLIGHTS_FOR_PARTIAL_INSERT: "12"
+          AI_MIN_VALID_HIGHLIGHT_ROWS: "25"
+          AI_TOP_UP_WITH_CALCULATED_HIGHLIGHTS: "true"
+          AI_CALCULATED_HIGHLIGHT_TOP_UP_TO: "45"
+          AI_CONTINUE_ON_BATCH_FAILURE: "true"
+          AI_MAX_FAILED_BATCHES: "10"
+          AI_ENABLE_CONTEST_MOMENT_BATCHES: "false"
+          AI_INSERT_PARTIAL_ANY_STORY_COUNT: "false"
+          EXPECTED_WORLD_CUP_MATCH_COUNT: "104"
+          ALLOW_FINAL_PREVIEW: ${{ github.event_name == 'schedule' && 'true' || inputs.allow_preview_generation }}
+          PUBLISH_VISIBLE: ${{ github.event_name == 'schedule' && 'true' || inputs.publish_visible }}
+          MAX_HIGHLIGHTS: ${{ github.event_name == 'schedule' && '60' || inputs.max_highlights }}
+          RESET_EXISTING_FINAL_AI: ${{ github.event_name == 'schedule' && 'true' || inputs.reset_existing }}
+          GENERATE_PROFILES: "true"
+          MIN_APPROVED_EVENT_NOTES: "0"
+          REQUIRE_EVENT_NOTES_FOR_PUBLISH: "false"
+          USE_TRUSTED_EVENT_NOTES: "true"
+          MAX_EVENT_NOTES_FOR_AI: "120"
+          TRUSTED_EVENT_SOURCE_PATTERNS: "Football-Data.org,API-Football,GDELT"
+        run: node scripts/generate-ai-posts.mjs
