@@ -78,7 +78,7 @@ let allowLeavingPage = false;
 let dashboardRefreshTimer = null;
 let championPredictionCutoffTimer = null;
 
-const APP_VERSION = "39.0.1";
+const APP_VERSION = "39.0.3";
 const PREDICTION_OPEN_HOURS = 72;
 const FINAL_RECAP_PREVIEW_PARAM = "previewFinal";
 const EXPECTED_WORLD_CUP_MATCH_COUNT = 104;
@@ -4017,19 +4017,27 @@ function renderFinalAiHighlights(posts, recap) {
         return !matchId || completedMatchIds.has(matchId);
     });
     const visiblePosts = sortFinalAiHighlightPosts(safePosts).slice(0, FINAL_RECAP_MAX_HIGHLIGHTS);
+    const completedCount = Number(recap?.seasonStats?.completedMatches || recap?.completedMatches?.length || 0);
     const heroText = recap?.seasonStats?.isTournamentComplete
         ? "منشورات مختارة من أجمل لحظات الطريق: مفاجآت، قراءات مختلفة، وأسماء تركت بصمتها حتى آخر صافرة."
         : "لقطات مختارة من أجمل ما حدث حتى الآن؛ لحظات صنعت ضحكة، رفعت اسم، أو قلبت توقعاً كان يبدو مضموناً.";
 
     return `
         <section class="season-highlight-hero season-highlight-hero-ai">
-            <p class="eyebrow">أضواء الختام</p>
-            <h4>قصة البطولة في لقطات</h4>
-            <p>${heroText}</p>
+            <div class="season-highlight-hero-copy">
+                <p class="eyebrow">أضواء الختام</p>
+                <h4>قصة البطولة في لقطات</h4>
+                <p>${heroText}</p>
+            </div>
+            <div class="season-highlight-hero-count" aria-label="ملخص الأضواء">
+                <strong>${visiblePosts.length}</strong>
+                <span>لقطة مختارة</span>
+                <small>${completedCount} مباراة مكتملة</small>
+            </div>
         </section>
 
         <div class="season-highlight-card-grid season-highlight-card-grid-ai">
-            ${visiblePosts.map(renderFinalAiHighlightPost).join("")}
+            ${visiblePosts.map((post, index) => renderFinalAiHighlightPost(post, index)).join("")}
         </div>
     `;
 }
@@ -4079,15 +4087,33 @@ function finalAiStageSortScore(value = "") {
     return 100;
 }
 
-function renderFinalAiHighlightPost(post) {
+function finalAiHighlightStageClass(value = "") {
+    const text = String(value || "").toLowerCase();
+    if (/participant|مشارك/.test(text)) return "participant";
+    if (/quarter|ربع/.test(text)) return "quarter";
+    if (/semi|نصف/.test(text)) return "semi";
+    if (/third|المركز الثالث/.test(text)) return "third";
+    if (/last_16|round of 16|دور الـ?16|دور 16/.test(text)) return "last16";
+    if (/last_32|round of 32|دور الـ?32|دور 32/.test(text)) return "last32";
+    if (/group|المجموعات/.test(text)) return "group";
+    if (/final|النهائي/.test(text)) return "final";
+    return "story";
+}
+
+function renderFinalAiHighlightPost(post, index = 0) {
     const category = String(post.cards?.[0]?.category || post.cards?.[0]?.type || "story").replace(/[^a-zA-Z0-9_-]/g, "");
     const stageLabel = post.subtitle_ar || post.cards?.[0]?.stage_ar || post.cards?.[0]?.stage || "لقطة ختامية";
+    const stageClass = finalAiHighlightStageClass(stageLabel);
+    const storyNumber = String(index + 1).padStart(2, "0");
 
     return `
-        <article class="season-highlight-card season-highlight-card-ai season-highlight-card-${category}">
-            <span class="season-highlight-icon" aria-hidden="true">${escapeHtml(post.icon || "✨")}</span>
-            <div>
+        <article class="season-highlight-card season-highlight-card-ai season-highlight-card-${category} season-highlight-stage-${stageClass}">
+            <div class="season-highlight-card-head">
+                <span class="season-highlight-icon" aria-hidden="true">${escapeHtml(post.icon || "✨")}</span>
                 <small class="season-highlight-meta">${escapeHtml(stageLabel)}</small>
+                <span class="season-highlight-index" aria-hidden="true">${storyNumber}</span>
+            </div>
+            <div class="season-highlight-card-copy">
                 <h4>${escapeHtml(post.title_ar || "لقطة من البطولة")}</h4>
                 <p>${escapeHtml(post.body_ar || "")}</p>
             </div>
