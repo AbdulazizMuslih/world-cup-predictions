@@ -91,6 +91,10 @@ function hasActualScore(match) {
     return Number.isInteger(match.actual_team1_goals) && Number.isInteger(match.actual_team2_goals);
 }
 
+function isCompletedMatch(match) {
+    return String(match?.status || "").toLowerCase() === "completed" && hasActualScore(match);
+}
+
 function getOutcome(a, b) {
     if (a > b) return "team1";
     if (b > a) return "team2";
@@ -168,8 +172,8 @@ async function main() {
     const draftEventNotes = allEventNotes.filter((note) => note.approved !== true);
     const approvedEventNotesMissingSource = approvedEventNotes.filter((note) => !note.source_url && !note.source_name);
     const eventNotesWithMissingMatch = allEventNotes.filter((note) => note.match_id && !matchById.has(String(note.match_id)));
-    const completedMatches = allMatches.filter(hasActualScore);
-    const storedRemainingMatches = allMatches.filter((match) => !hasActualScore(match));
+    const completedMatches = allMatches.filter(isCompletedMatch);
+    const storedRemainingMatches = allMatches.filter((match) => !isCompletedMatch(match));
     const scheduledMatches = allMatches.filter((match) => match.status === "scheduled");
     const liveMatches = allMatches.filter((match) => match.status === "live");
     const completedWithoutScore = allMatches.filter((match) => match.status === "completed" && !hasActualScore(match));

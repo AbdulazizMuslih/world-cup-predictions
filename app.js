@@ -78,7 +78,7 @@ let allowLeavingPage = false;
 let dashboardRefreshTimer = null;
 let championPredictionCutoffTimer = null;
 
-const APP_VERSION = "39.0";
+const APP_VERSION = "39.0.1";
 const PREDICTION_OPEN_HOURS = 72;
 const FINAL_RECAP_PREVIEW_PARAM = "previewFinal";
 const EXPECTED_WORLD_CUP_MATCH_COUNT = 104;
@@ -1141,7 +1141,7 @@ async function loadParticipantProfileStats(participantId) {
     }
 
     const matches = data || [];
-    const finishedMatches = matches.filter(hasActualScore);
+    const finishedMatches = matches.filter(isConfirmedCompletedMatch);
 
     const stats = finishedMatches.reduce((acc, match) => {
         const prediction = match.predictions?.[0];
@@ -2040,6 +2040,10 @@ function hasActualScore(match) {
         match.actual_team2_goals !== null &&
         match.actual_team2_goals !== undefined
     );
+}
+
+function isConfirmedCompletedMatch(match) {
+    return String(match?.status || "").toLowerCase() === "completed" && hasActualScore(match);
 }
 
 function formatScore(team1Goals, team2Goals) {
@@ -4006,7 +4010,13 @@ function renderFinalHighlightsNotGeneratedMessage(recap) {
 }
 
 function renderFinalAiHighlights(posts, recap) {
-    const visiblePosts = sortFinalAiHighlightPosts(posts).slice(0, FINAL_RECAP_MAX_HIGHLIGHTS);
+    const completedMatchIds = new Set((recap?.completedMatches || []).map((match) => String(match.id)));
+    const safePosts = (posts || []).filter((post) => {
+        const card = Array.isArray(post.cards) ? post.cards[0] || {} : {};
+        const matchId = String(card.source_match_id || "").trim();
+        return !matchId || completedMatchIds.has(matchId);
+    });
+    const visiblePosts = sortFinalAiHighlightPosts(safePosts).slice(0, FINAL_RECAP_MAX_HIGHLIGHTS);
     const heroText = recap?.seasonStats?.isTournamentComplete
         ? "منشورات مختارة من أجمل لحظات الطريق: مفاجآت، قراءات مختلفة، وأسماء تركت بصمتها حتى آخر صافرة."
         : "لقطات مختارة من أجمل ما حدث حتى الآن؛ لحظات صنعت ضحكة، رفعت اسم، أو قلبت توقعاً كان يبدو مضموناً.";
@@ -4597,7 +4607,7 @@ async function loadFinalRecapModel() {
     const activeParticipants = participants || [];
     const activeParticipantIds = new Set(activeParticipants.map((participant) => String(participant.id)));
     const allMatches = (matches || []).sort((a, b) => new Date(a.kickoff_at) - new Date(b.kickoff_at));
-    const completedMatches = allMatches.filter(hasActualScore).sort((a, b) => new Date(a.kickoff_at) - new Date(b.kickoff_at));
+    const completedMatches = allMatches.filter(isConfirmedCompletedMatch).sort((a, b) => new Date(a.kickoff_at) - new Date(b.kickoff_at));
     const rawPredictions = await loadFinalRecapPredictions(completedMatches.map((match) => match.id));
     const predictions = rawPredictions.filter((prediction) => activeParticipantIds.has(String(prediction.participant_id)));
     const predictionsByMatch = groupFinalRecapBy(predictions, "match_id");
@@ -4952,7 +4962,7 @@ function isFinalRecapTournamentComplete(allMatches = [], completedMatches = []) 
     return (
         allMatches.length >= EXPECTED_WORLD_CUP_MATCH_COUNT &&
         completedMatches.length >= EXPECTED_WORLD_CUP_MATCH_COUNT &&
-        allMatches.every((match) => hasActualScore(match))
+        allMatches.every((match) => isConfirmedCompletedMatch(match))
     );
 }
 

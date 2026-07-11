@@ -237,7 +237,7 @@ async function loadExistingNotes() {
 function filterTargetMatches(matches = []) {
     const now = new Date();
     return (matches || [])
-        .filter(hasActualScore)
+        .filter(isCompletedMatch)
         .filter((match) => !TARGET_STAGE || match.stage === TARGET_STAGE)
         .filter((match) => {
             if (!TARGET_RECENT_COMPLETED_DAYS) return true;
@@ -249,6 +249,10 @@ function filterTargetMatches(matches = []) {
 
 function hasActualScore(match) {
     return Number.isInteger(match.actual_team1_goals) && Number.isInteger(match.actual_team2_goals);
+}
+
+function isCompletedMatch(match) {
+    return String(match?.status || "").toLowerCase() === "completed" && hasActualScore(match);
 }
 
 async function buildFootballDataMatchMap(matches) {

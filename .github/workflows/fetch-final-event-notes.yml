@@ -57,20 +57,46 @@ on:
     # The script deduplicates by match/event/source before inserting.
     - cron: "17 * * * *"
 
+env:
+  AUTOMATION_ACTIVE_UNTIL: "2026-07-21T03:00:00Z"
+
 jobs:
   fetch-final-event-notes:
     runs-on: ubuntu-latest
 
     steps:
+      - name: Check automatic-call window
+        id: automation_window
+        shell: bash
+        run: |
+          if [[ "${{ github.event_name }}" != "schedule" ]]; then
+            echo "allowed=true" >> "$GITHUB_OUTPUT"
+            echo "Manual run: automatic cutoff does not apply."
+            exit 0
+          fi
+
+          now_epoch=$(date -u +%s)
+          cutoff_epoch=$(date -u -d "$AUTOMATION_ACTIVE_UNTIL" +%s)
+
+          if (( now_epoch <= cutoff_epoch )); then
+            echo "allowed=true" >> "$GITHUB_OUTPUT"
+            echo "Scheduled external calls allowed until $AUTOMATION_ACTIVE_UNTIL."
+          else
+            echo "allowed=false" >> "$GITHUB_OUTPUT"
+            echo "Scheduled external calls stopped after $AUTOMATION_ACTIVE_UNTIL. Manual workflow_dispatch runs remain available."
+          fi
       - name: Checkout repository
+        if: steps.automation_window.outputs.allowed == 'true'
         uses: actions/checkout@v4
 
       - name: Setup Node.js
+        if: steps.automation_window.outputs.allowed == 'true'
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "24"
 
       - name: Fetch final event notes drafts
+        if: steps.automation_window.outputs.allowed == 'true'
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
@@ -84,5 +110,5 @@ jobs:
           DEFAULT_APPROVED: ${{ github.event_name == 'schedule' && 'false' || inputs.default_approved }}
           DRY_RUN: ${{ github.event_name == 'schedule' && 'false' || inputs.dry_run }}
           SCHEDULE_ACTIVE_FROM: "2026-07-10T00:00:00Z"
-          SCHEDULE_ACTIVE_UNTIL: "2026-07-21T23:59:59Z"
+          SCHEDULE_ACTIVE_UNTIL: "2026-07-21T03:00:00Z"
         run: node scripts/fetch-final-event-notes.mjs

@@ -273,7 +273,9 @@ async function main() {
         styleFamilyMax: AI_STYLE_FAMILY_MAX,
         maxCalculatedTopUp: AI_MAX_CALCULATED_TOP_UP,
         autoMinMatchAgeHours: AI_AUTO_MIN_MATCH_AGE_HOURS,
-        latestCompletedMatchKickoff: factsPack.audit.latestCompletedMatchKickoff
+        latestCompletedMatchKickoff: factsPack.audit.latestCompletedMatchKickoff,
+        liveMatchesWithScoreIgnored: factsPack.audit.liveMatchesWithScoreIgnored,
+        ignoredTrustedNotesForNonCompletedMatches: factsPack.audit.ignoredTrustedNotesForNonCompletedMatches
     }, null, 2));
 
     if (!factsPack.audit.finalDataReady && !ALLOW_FINAL_PREVIEW) {
@@ -351,6 +353,7 @@ async function main() {
         );
     }
 
+    assertHighlightsUseCompletedMatches(rows, factsPack);
     assertNoDuplicateFinalHighlights(rows, factsPack);
     console.log(`Validated final AI rows: ${highlightRows.length} unique final_highlights, ${profileRows.length} final_profile.`);
 
@@ -499,7 +502,7 @@ function publicEventNote(note, matches = []) {
         id: note.id,
         match_id: note.match_id || null,
         match_title: linkedMatch ? `${linkedMatch.team1} ضد ${linkedMatch.team2}` : null,
-        match_score: linkedMatch && hasActualScore(linkedMatch)
+        match_score: linkedMatch && isCompletedMatch(linkedMatch)
             ? `${linkedMatch.actual_team1_goals}-${linkedMatch.actual_team2_goals}`
             : null,
         stage: note.stage || linkedMatch?.stage || null,
@@ -516,6 +519,10 @@ function publicEventNote(note, matches = []) {
 
 function hasActualScore(match) {
     return Number.isInteger(match.actual_team1_goals) && Number.isInteger(match.actual_team2_goals);
+}
+
+function isCompletedMatch(match) {
+    return String(match?.status || "").toLowerCase() === "completed" && hasActualScore(match);
 }
 
 function getOutcome(a, b) {
@@ -549,7 +556,7 @@ function normalizeTeamName(value) {
 }
 
 function getWinnerTeamFromMatch(match) {
-    if (!match || !hasActualScore(match)) return null;
+    if (!match || !isCompletedMatch(match)) return null;
     const winnerSide = String(match.winner_side || "").toUpperCase();
     if (winnerSide === "HOME_TEAM") return match.team1;
     if (winnerSide === "AWAY_TEAM") return match.team2;
@@ -567,7 +574,7 @@ function getLoserTeamFromMatch(match) {
 }
 
 function getChampionResult(matches = []) {
-    const finalMatch = [...matches].filter((match) => match.stage === "FINAL" && hasActualScore(match)).sort((a, b) => new Date(b.kickoff_at || 0) - new Date(a.kickoff_at || 0))[0];
+    const finalMatch = [...matches].filter((match) => match.stage === "FINAL" && isCompletedMatch(match)).sort((a, b) => new Date(b.kickoff_at || 0) - new Date(a.kickoff_at || 0))[0];
     if (!finalMatch) return null;
     const champion = getWinnerTeamFromMatch(finalMatch);
     return champion ? { champion, runnerUp: getLoserTeamFromMatch(finalMatch), finalMatch } : null;
@@ -597,7 +604,7 @@ function percent(value, total) {
 
 function isStageComplete(matches = [], stage) {
     const stageMatches = matches.filter((match) => match.stage === stage);
-    return stageMatches.length > 0 && stageMatches.every(hasActualScore);
+    return stageMatches.length > 0 && stageMatches.every(isCompletedMatch);
 }
 
 async function loadPredictionsForMatches(matchIds) {
@@ -633,11 +640,15 @@ async function buildFactsPack() {
     const participantMap = new Map(activeParticipants.map((participant) => [String(participant.id), participant]));
     const allMatches = matches || [];
     const allEventNoteRows = allEventNotes || [];
-    const trustedEventNotes = selectTrustedEventNotes(allEventNoteRows, allMatches);
-    const approvedEventNotes = trustedEventNotes;
-    const draftEventNotes = allEventNoteRows.filter((note) => note.approved !== true);
-    const completedMatches = allMatches.filter(hasActualScore);
+    const completedMatches = allMatches.filter(isCompletedMatch);
     const completedIds = completedMatches.map((match) => match.id);
+    const completedIdSet = new Set(completedIds.map(String));
+    const trustedEventNotes = selectTrustedEventNotes(allEventNoteRows, allMatches);
+    const approvedEventNotes = trustedEventNotes.filter((note) => {
+        return !note.match_id || completedIdSet.has(String(note.match_id));
+    });
+    const ignoredTrustedNotesForNonCompletedMatches = trustedEventNotes.length - approvedEventNotes.length;
+    const draftEventNotes = allEventNoteRows.filter((note) => note.approved !== true);
     const rawPredictions = await loadPredictionsForMatches(completedIds);
     const predictions = rawPredictions.filter((prediction) => activeParticipantIds.has(String(prediction.participant_id)));
     const predictionsByMatch = groupBy(predictions, "match_id");
@@ -679,10 +690,12 @@ async function buildFactsPack() {
             rawEventNotes: allEventNoteRows.length,
             draftEventNotes: draftEventNotes.length,
             trustedEventNotesUsed: approvedEventNotes.length,
+            ignoredTrustedNotesForNonCompletedMatches,
+            liveMatchesWithScoreIgnored: allMatches.filter((match) => String(match?.status || "").toLowerCase() !== "completed" && hasActualScore(match)).length,
             approvedEventNotesWithSource: approvedEventNotes.filter((note) => Boolean(note.source_url || note.source_name)).length,
             approvedEventNotesByStage: countBy(approvedEventNotes.map((note) => note.stage || getStageForEventNote(note, allMatches) || "unspecified")),
             approvedEventNotesByMood: countBy(approvedEventNotes.map((note) => note.mood || "unspecified")),
-            finalDataReady: allMatches.length >= EXPECTED_WORLD_CUP_MATCH_COUNT && completedMatches.length >= EXPECTED_WORLD_CUP_MATCH_COUNT && allMatches.every(hasActualScore),
+            finalDataReady: allMatches.length >= EXPECTED_WORLD_CUP_MATCH_COUNT && completedMatches.length >= EXPECTED_WORLD_CUP_MATCH_COUNT && allMatches.every(isCompletedMatch),
             quarterFinalsComplete: isStageComplete(allMatches, "QUARTER_FINALS"),
             semiFinalsComplete: isStageComplete(allMatches, "SEMI_FINALS"),
             thirdPlaceComplete: isStageComplete(allMatches, "THIRD_PLACE")
@@ -727,7 +740,10 @@ async function buildFactsPack() {
             "كل منشور مرتبط بمباراة يجب أن يذكر الفريقين في العنوان أو أول جملة.",
             "لا تكرر هذه الصيغ أكثر من مرة أو مرتين في كامل المجموعة: قراءة هادئة، الزحمة، الضجيج، الثبات، التوقع المريح، اللقطة هنا.",
             "لا تستخدم كلمة أهداف بالملّي؛ الصحيح نتائج بالملّي أو توقعات بالملّي.",
-            "إذا لم توجد معلومة كافية عن حدث كروي خارجي، تجاهله ولا تخترعه وركز على قصة المسابقة."
+            "إذا لم توجد معلومة كافية عن حدث كروي خارجي، تجاهله ولا تخترعه وركز على قصة المسابقة.",
+            "ممنوع إنشاء أي منشور لمباراة حالتها live أو scheduled؛ استخدم فقط مباراة status=completed ونتيجتها النهائية محفوظة.",
+            "إذا ذكرت عدداً للمشاركين مثل خمسة مشاركين، يجب أن تسرد داخل النص نفس عدد الأسماء بالضبط؛ وإلا استخدم عبارة مجموعة من المشاركين دون رقم.",
+            "لا تختصر أو تحرّف أسماء المشاركين؛ انسخ الاسم حرفياً من participantLanguage أو source facts."
         ]
     };
 }
@@ -1157,6 +1173,35 @@ function dedupeFinalHighlightRows(rows = [], factsPack = {}, label = "final rows
     }
 
     return [...kept, ...profiles];
+}
+
+function assertHighlightsUseCompletedMatches(rows = [], factsPack = {}) {
+    const completedIds = new Set((factsPack?.contest?.matches || []).map((match) => String(match.id)));
+    const invalid = [];
+
+    for (const row of rows) {
+        if (row.section_key !== FINAL_HIGHLIGHTS_SECTION) continue;
+        const card = Array.isArray(row.cards_json) ? row.cards_json[0] || {} : {};
+        const category = String(card.type || "").toLowerCase();
+        const matchId = String(card.source_match_id || "").trim();
+        const matchBased = [
+            "match", "real_event_plus_contest", "popular_trap", "lone_reader",
+            "exact_circle", "knockout_pressure", "points_swing", "hard_stop",
+            "emotional", "fun"
+        ].includes(category);
+
+        if (matchId && !completedIds.has(matchId)) {
+            invalid.push(`${row.title_ar || "Untitled"} -> ${matchId}`);
+        } else if (matchBased && !matchId) {
+            invalid.push(`${row.title_ar || "Untitled"} -> missing completed source_match_id`);
+        }
+    }
+
+    if (invalid.length) {
+        throw new Error(
+            `Blocked ${invalid.length} highlight(s) linked to a live/scheduled/unknown match: ${invalid.slice(0, 8).join(" | ")}`
+        );
+    }
 }
 
 function assertNoDuplicateFinalHighlights(rows = [], factsPack = {}) {
@@ -3283,6 +3328,11 @@ function polishHighlightArabicText(value = "") {
         .replace(/([3-9]|10)\s+نتيجة بالملّي/g, "$1 نتائج بالملّي")
         .replace(/أهداف بالملّي/g, "نتائج بالملّي")
         .replace(/إصابات بالملّي/g, "نتائج بالملّي")
+        .replace(/\bومار\b/g, "ولمار")
+        .replace(/\bنال إلهام\b/g, "نالت إلهام")
+        .replace(/\bحصد إلهام\b/g, "حصدت إلهام")
+        .replace(/\bاستلمت\b/g, "حصدت")
+        .replace(/\bاستلم\b/g, "حصد")
         .replace(/يا ساتر[،,!]?\s*/g, "")
         .replace(/\s+/g, " ")
         .trim();
@@ -3304,7 +3354,12 @@ function resolveHighlightPresentation(post = {}, factsPack = {}) {
     }
 
     let icon = cleanText(post.icon || "", 8);
-    if (!icon || icon === "✨") {
+    const storyText = `${post.title_ar || ""} ${post.body_ar || ""}`;
+    if (!icon || icon === "✨" || icon === "⚽") {
+        if (/ترجيح|ركلات/.test(storyText)) icon = "🥅";
+        else if (/فخ|التوقع الشائع|الأغلبية|خالف التخمين/.test(storyText)) icon = "🌪️";
+        else if (/بالملّي|النتيجة كاملة|دقة|دقيق/.test(storyText)) icon = "🎯";
+        else {
         const iconByCategory = {
             popular_trap: "🌪️",
             lone_reader: "🎯",
@@ -3322,6 +3377,7 @@ function resolveHighlightPresentation(post = {}, factsPack = {}) {
             fun: "🎉"
         };
         icon = iconByCategory[category] || "✨";
+        }
     }
 
     return { stage, icon, match };
@@ -3374,7 +3430,23 @@ function stageHighlightCap(stageKey) {
     return caps[stageKey] ?? 3;
 }
 
-function hasMalformedHighlightLanguage(row = {}) {
+const PARTICIPANT_COUNT_WORDS = new Map([
+    ["اثنان", 2], ["اثنين", 2], ["ثلاثة", 3], ["ثلاث", 3],
+    ["أربعة", 4], ["أربع", 4], ["خمسة", 5], ["خمس", 5],
+    ["ستة", 6], ["ست", 6]
+]);
+
+function hasParticipantCountMismatch(row = {}, factsPack = {}) {
+    const text = `${row.title_ar || ""} ${row.body_ar || ""}`;
+    const names = (factsPack?.contest?.activeParticipants || []).map((item) => item.name).filter(Boolean);
+    const mentioned = names.filter((name) => text.includes(name));
+    const claim = text.match(/(?:^|\s)(\d+|اثنان|اثنين|ثلاثة|ثلاث|أربعة|أربع|خمسة|خمس|ستة|ست)\s+(?:مشارك(?:ين|ون|ات)?|أسماء)/);
+    if (!claim) return false;
+    const expected = /^\d+$/.test(claim[1]) ? Number(claim[1]) : PARTICIPANT_COUNT_WORDS.get(claim[1]);
+    return Number.isInteger(expected) && expected >= 2 && expected <= 6 && mentioned.length > 0 && mentioned.length < expected;
+}
+
+function hasMalformedHighlightLanguage(row = {}, factsPack = {}) {
     const text = `${row.title_ar || ""} ${row.body_ar || ""}`;
     if (/(?:غادر|خرج|بقي|بينما)\s+\d+(?:\.\d+)?[%٪]?\s*[.!؟]?(?:\s|$)/.test(text)) return true;
     if (/\d+\.\s+\d+\s*%/.test(text)) return true;
@@ -3385,6 +3457,7 @@ function hasMalformedHighlightLanguage(row = {}) {
     if (/(?:حصدت|حصلت|أخذت) كل منهن/.test(text) && hasMale) return true;
     if (/(?:حصد|حصل|أخذ) كل منهم/.test(text) && hasFemale && !hasMale) return true;
     if (/ختم(?:ت|ه)?\s+(?:في|المسابقة)/.test(text) && Number(row.source_completed_match_count || 0) < EXPECTED_WORLD_CUP_MATCH_COUNT) return true;
+    if (hasParticipantCountMismatch(row, factsPack)) return true;
     return false;
 }
 
@@ -3409,9 +3482,18 @@ function curateHighlightRows(rows = [], factsPack = {}, targetCount = AI_PUBLIC_
         .filter((row) => row.section_key === FINAL_HIGHLIGHTS_SECTION)
         .map((row) => {
             const card = getHighlightCard(row);
-            const presentation = resolveHighlightPresentation({ ...row, ...card }, factsPack);
+            const originalCategory = String(card.type || "").toLowerCase();
+            const explicitMatchId = getHighlightExplicitMatchId({ ...row, ...card });
+            const participantNames = getHighlightParticipantNames({ ...row, ...card });
+            const looksMatchCentered = Boolean(
+                explicitMatchId &&
+                ["participant", "participant_arc", "profile"].includes(originalCategory) &&
+                (participantNames.length !== 1 || /×|ضد/.test(`${row.title_ar || ""} ${row.body_ar || ""}`))
+            );
+            const normalizedCard = looksMatchCentered ? { ...card, type: "match" } : card;
+            const presentation = resolveHighlightPresentation({ ...row, ...normalizedCard }, factsPack);
             const title = polishHighlightArabicText(
-                buildDisplayHighlightTitle({ ...row, ...card, stage_ar: presentation.stage }, 0, factsPack)
+                buildDisplayHighlightTitle({ ...row, ...normalizedCard, stage_ar: presentation.stage }, 0, factsPack)
             );
             const body = formatHighlightBody(polishHighlightArabicText(row.body_ar));
             return {
@@ -3421,13 +3503,13 @@ function curateHighlightRows(rows = [], factsPack = {}, targetCount = AI_PUBLIC_
                 body_ar: body,
                 icon: presentation.icon,
                 cards_json: [{
-                    ...card,
+                    ...normalizedCard,
                     stage_ar: presentation.stage
                 }]
             };
         })
         .filter((row) => row.title_ar && row.body_ar)
-        .filter((row) => !hasMalformedHighlightLanguage(row))
+        .filter((row) => !hasMalformedHighlightLanguage(row, factsPack))
         .filter((row) => !isLowQualityHighlightPost({
             ...row,
             category: rowHighlightCategory(row),
@@ -3448,6 +3530,12 @@ function curateHighlightRows(rows = [], factsPack = {}, targetCount = AI_PUBLIC_
 
         const category = rowHighlightCategory(row);
         const matchId = getHighlightExplicitMatchId(row) || inferHighlightMatchId(row, factsPack);
+        const matchBasedCategories = new Set([
+            "match", "real_event_plus_contest", "popular_trap", "lone_reader",
+            "exact_circle", "knockout_pressure", "points_swing", "hard_stop",
+            "emotional", "fun"
+        ]);
+        if (matchBasedCategories.has(category) && !matchId) continue;
         const stageKey = rowHighlightStageKey(row);
         const stageCount = stageCounts.get(stageKey) || 0;
         if (stageCount >= stageHighlightCap(stageKey)) continue;

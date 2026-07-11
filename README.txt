@@ -1,46 +1,39 @@
-World Cup v39.0 — quality-first highlight generation fix
+World Cup v39.0.1 — live-highlight and UI hotfix
 
-This package supersedes the previous 9/10 highlight package.
-
-Replace:
+Replace/add:
+- app.js
+- style.css
+- index.html
+- version.json
 - scripts/generate-ai-posts.mjs
+- scripts/fetch-final-event-notes.mjs
+- scripts/audit-final-recap-data.mjs
 - .github/workflows/generate-ai-posts.yml
+- .github/workflows/fetch-final-event-notes.yml
 
-Why the previous run failed:
-- The paid model produced good candidates.
-- The curation layer kept only 19.
-- The calculated top-up revisited the same matches and was removed again.
-- Nothing was deleted or inserted.
+Run remove-noncompleted-highlights.sql immediately in Supabase SQL Editor.
 
-What this package changes:
-1. The paid Qwen model is asked for one post per already-ranked high-signal story seed.
-2. Story seeds are not random matches. They must have at least one strong contest signal:
-   - trusted event note;
-   - knockout significance;
-   - exact-score hit;
-   - high points awarded;
-   - very difficult match for the group;
-   - popular prediction trap;
-   - unique correct reader.
-3. Calculated fallback is limited to four posts maximum and uses the same high-signal filter.
-4. One post per match remains enforced.
-5. Same event-note/source duplicate protection remains enforced.
-6. Compact Arabic length, stage caps, participant caps, and malformed-language rejection remain.
-7. Target is 32 strong posts; minimum safe publish count is 24.
-8. Profiles still refresh automatically during the final-six window.
-9. Paid model remains qwen/qwen3.6-plus with fallback models disabled.
-10. The twice-hourly automatic schedule and post-tournament cutoff remain unchanged.
+Root cause fixed:
+- A live match can have interim score values.
+- Old code treated any match with two score values as completed.
+- New code requires status=completed AND both score values.
 
-After pushing to main, run the workflow manually with:
+Defense in depth:
+1. Generator facts include only confirmed completed matches.
+2. Event-note fetch ignores live/scheduled matches.
+3. Existing notes linked to non-completed matches are ignored by AI.
+4. Pre-publish assertion blocks any highlight whose source_match_id is not completed.
+5. Frontend hides any stored match highlight whose match is not confirmed completed.
+
+UI:
+- Two highlight cards per row on desktop/tablet.
+- One card per row at 760px and below.
+- More readable title/body sizes and compact stage pill.
+
+After pushing, manually rerun Generate Final Highlights AI with:
 - allow_preview_generation: true
 - publish_visible: true
 - max_highlights: 40
 - reset_existing: true
 
-Expected log:
-- aiBatchHighlightTarget: 6
-- publicHighlightTarget: 32
-- styleFamilyMax: 3
-- maxCalculatedTopUp: 4
-- at least 24 curated final_highlights
-- validation before clearing existing rows
+The corrected run should report 98 completed matches while Norway–England is still live, then 99 only after status becomes completed.
