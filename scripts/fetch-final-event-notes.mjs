@@ -19,9 +19,6 @@ const NEWS_DAYS_AFTER_MATCH = Math.max(1, Math.min(7, Number(process.env.NEWS_DA
 const TARGET_RECENT_COMPLETED_DAYS = Math.max(0, Number(process.env.TARGET_RECENT_COMPLETED_DAYS || 0));
 const TARGET_STAGE = String(process.env.TARGET_STAGE || "").trim();
 const DEFAULT_APPROVED = String(process.env.DEFAULT_APPROVED || "false").toLowerCase() === "true";
-const AUTO_APPROVE_FOOTBALL_DATA_NOTES = String(process.env.AUTO_APPROVE_FOOTBALL_DATA_NOTES || "true").toLowerCase() === "true";
-const AUTO_APPROVE_API_FOOTBALL_EVENTS = String(process.env.AUTO_APPROVE_API_FOOTBALL_EVENTS || "true").toLowerCase() === "true";
-const AUTO_APPROVE_NEWS_EVENTS = String(process.env.AUTO_APPROVE_NEWS_EVENTS || "true").toLowerCase() === "true";
 const DRY_RUN = String(process.env.DRY_RUN || "true").toLowerCase() === "true";
 const DELETE_EXISTING_DRAFTS = String(process.env.DELETE_EXISTING_DRAFTS || "false").toLowerCase() === "true";
 const MIN_NOTE_TITLE_LENGTH = 8;
@@ -122,9 +119,6 @@ async function main() {
     console.log(JSON.stringify({
         dryRun: DRY_RUN,
         defaultApproved: DEFAULT_APPROVED,
-        autoApproveFootballDataNotes: AUTO_APPROVE_FOOTBALL_DATA_NOTES,
-        autoApproveApiFootballEvents: AUTO_APPROVE_API_FOOTBALL_EVENTS,
-        autoApproveNewsEvents: AUTO_APPROVE_NEWS_EVENTS,
         fetchFootballDataNotes: FETCH_FOOTBALL_DATA_NOTES,
         fetchFootballEvents: FETCH_FOOTBALL_EVENTS,
         fetchNewsEvents: FETCH_NEWS_EVENTS,
@@ -196,7 +190,7 @@ async function main() {
     }
 
     await insertRows(normalizedRows);
-    console.log(`Inserted ${normalizedRows.length} final_event_notes row(s). Trusted sources can be auto-approved based on env settings.`);
+    console.log(`Inserted ${normalizedRows.length} final_event_notes draft row(s). Review them, then set approved=true for trusted notes.`);
 }
 
 async function supabaseFetch(apiPath, options = {}) {
@@ -315,14 +309,6 @@ function findFootballDataMatch(match, apiMatches) {
     return candidates[0]?.apiMatch || null;
 }
 
-function approvalForSource(sourceKind) {
-    if (DEFAULT_APPROVED) return true;
-    if (sourceKind === "football_data") return AUTO_APPROVE_FOOTBALL_DATA_NOTES;
-    if (sourceKind === "api_football") return AUTO_APPROVE_API_FOOTBALL_EVENTS;
-    if (sourceKind === "news") return AUTO_APPROVE_NEWS_EVENTS;
-    return false;
-}
-
 function buildFootballDataNoteRows(match, officialMatch) {
     const rows = [];
     const duration = String(officialMatch?.score?.duration || match.score_duration || "REGULAR").toUpperCase();
@@ -342,7 +328,7 @@ function buildFootballDataNoteRows(match, officialMatch) {
         details_ar: cleanText(`${baseDetails} النتيجة مأخوذة من Football-Data ومن قاعدة بيانات المسابقة.`, 700),
         source_url: sourceUrl,
         source_name: "Football-Data.org",
-        approved: approvalForSource("football_data")
+        approved: DEFAULT_APPROVED
     });
 
     if (duration === "PENALTY_SHOOTOUT") {
@@ -355,7 +341,7 @@ function buildFootballDataNoteRows(match, officialMatch) {
             details_ar: cleanText(`${baseDetails} المباراة احتاجت ركلات ترجيح لتحديد المتأهل. لا تُستخدم ركلات الترجيح في نتيجة التوقع، لكنها مهمة كحدث في قصة البطولة.`, 700),
             source_url: `${sourceUrl}/penalties`,
             source_name: "Football-Data.org",
-            approved: approvalForSource("football_data")
+            approved: DEFAULT_APPROVED
         });
     }
 
@@ -369,7 +355,7 @@ function buildFootballDataNoteRows(match, officialMatch) {
             details_ar: cleanText(`${baseDetails} المباراة امتدت لما بعد الوقت الأصلي قبل الحسم.`, 700),
             source_url: `${sourceUrl}/extra-time`,
             source_name: "Football-Data.org",
-            approved: approvalForSource("football_data")
+            approved: DEFAULT_APPROVED
         });
     }
 
@@ -383,7 +369,7 @@ function buildFootballDataNoteRows(match, officialMatch) {
             details_ar: cleanText(`${baseDetails} مجموع الأهداف وصل إلى ${totalGoals}، وهذا يجعلها من المباريات الغنية بالأهداف في بيانات المسابقة.`, 700),
             source_url: `${sourceUrl}/goal-fest`,
             source_name: "Football-Data.org",
-            approved: approvalForSource("football_data")
+            approved: DEFAULT_APPROVED
         });
     }
 
@@ -397,7 +383,7 @@ function buildFootballDataNoteRows(match, officialMatch) {
             details_ar: cleanText(`${baseDetails} الفارق كان ${goalDiff}، لذلك تصلح كلقطة توتر وتقارب في الأضواء.`, 700),
             source_url: `${sourceUrl}/close-match`,
             source_name: "Football-Data.org",
-            approved: approvalForSource("football_data")
+            approved: DEFAULT_APPROVED
         });
     }
 
@@ -411,7 +397,7 @@ function buildFootballDataNoteRows(match, officialMatch) {
             details_ar: cleanText(`${baseDetails} أحد الفريقين خرج بشباك نظيفة، وهذه لقطة دفاعية واضحة من النتيجة الرسمية.`, 700),
             source_url: `${sourceUrl}/clean-sheet`,
             source_name: "Football-Data.org",
-            approved: approvalForSource("football_data")
+            approved: DEFAULT_APPROVED
         });
     }
 
@@ -425,7 +411,7 @@ function buildFootballDataNoteRows(match, officialMatch) {
             details_ar: cleanText(`${baseDetails} جهة الفائز في المصدر: ${winner}.`, 700),
             source_url: `${sourceUrl}/winner`,
             source_name: "Football-Data.org",
-            approved: approvalForSource("football_data")
+            approved: DEFAULT_APPROVED
         });
     }
 
@@ -564,7 +550,7 @@ function apiFootballEventToNote(match, fixtureId, event) {
         details_ar: details,
         source_url: `api-football://fixture/${fixtureId}/event/${encodeURIComponent([minute, team, player, type, detail].join("|"))}`,
         source_name: "API-Football",
-        approved: approvalForSource("api_football")
+        approved: DEFAULT_APPROVED
     };
 }
 
@@ -666,7 +652,7 @@ function gdeltArticleToNote(match, article) {
         details_ar: cleanText(`${stageLabel(match.stage)}: ${match.team1} ضد ${match.team2} (${match.actual_team1_goals}-${match.actual_team2_goals}). مصدر الخبر ${domain}${seenDate ? `، تاريخ الظهور ${seenDate}` : ""}. عنوان الخبر الأصلي: ${title}`, 700),
         source_url: cleanText(article.url, 900),
         source_name: cleanText(`GDELT / ${domain}`, 180),
-        approved: approvalForSource("news")
+        approved: DEFAULT_APPROVED
     };
 }
 

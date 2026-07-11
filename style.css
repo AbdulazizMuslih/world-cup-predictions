@@ -56,32 +56,6 @@ h1 {
   margin: 18px 0 24px;
 }
 
-
-.music-switcher {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
-  flex-wrap: nowrap;
-}
-
-.music-arrow-btn {
-  width: 42px;
-  height: 42px;
-  min-width: 42px;
-  padding: 0;
-  border-radius: 999px;
-  font-size: 28px;
-  line-height: 1;
-  display: inline-grid;
-  place-items: center;
-}
-
-.music-switcher .music-btn {
-  min-width: 210px;
-  text-align: center;
-}
-
 .music-btn,
 button {
   border: 0;
@@ -9356,4 +9330,389 @@ body.site-stage-theme #availableMatches .available-stage-card.match-card-predict
 
 .season-thanks-mini-grid-final .season-thanks-mini-card span {
   line-height: 1.65;
+}
+
+/* v39.0 final release polish: champion prediction, profile, badges, closing */
+.champion-only-grid {
+    display: block;
+}
+
+.champion-prediction-card,
+.champion-history-card {
+    position: relative;
+    overflow: hidden;
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    border-radius: 28px;
+    padding: 24px;
+    background:
+        radial-gradient(circle at top right, rgba(255, 215, 128, 0.22), transparent 34%),
+        linear-gradient(135deg, rgba(64, 14, 40, 0.92), rgba(14, 52, 70, 0.9));
+    box-shadow: 0 22px 60px rgba(0, 0, 0, 0.28);
+    color: #fff;
+    margin-bottom: 20px;
+}
+
+.champion-prediction-card {
+    grid-column: 1 / -1;
+    display: grid;
+    grid-template-columns: minmax(0, 1.4fr) minmax(240px, 0.65fr);
+    gap: 18px;
+    align-items: center;
+}
+
+.champion-prediction-card::before,
+.champion-history-card::before {
+    content: "🏆";
+    position: absolute;
+    left: 18px;
+    top: 12px;
+    font-size: 4.5rem;
+    opacity: 0.13;
+    transform: rotate(-12deg);
+}
+
+.champion-prediction-copy,
+.champion-prediction-action,
+.champion-history-card > * {
+    position: relative;
+    z-index: 1;
+}
+
+.champion-prediction-copy h4,
+.champion-history-card h4 {
+    margin: 4px 0 8px;
+    font-size: clamp(1.35rem, 4vw, 2rem);
+}
+
+.champion-rules-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 14px;
+}
+
+.champion-rules-row span {
+    display: inline-flex;
+    align-items: center;
+    min-height: 34px;
+    padding: 7px 12px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.12);
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    font-size: 0.86rem;
+}
+
+.champion-prediction-action {
+    display: grid;
+    gap: 12px;
+}
+
+.champion-prediction-select {
+    width: 100%;
+    min-height: 48px;
+    border-radius: 16px;
+    border: 1px solid rgba(255, 255, 255, 0.22);
+    background: rgba(255, 255, 255, 0.95);
+    color: #162235;
+    font-weight: 800;
+    padding: 0 14px;
+}
+
+.champion-saved-note {
+    margin-top: 12px;
+    font-size: 0.92rem;
+    opacity: 0.96;
+}
+
+.champion-history-card {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 18px;
+}
+
+.champion-history-points {
+    min-width: 98px;
+    min-height: 98px;
+    border-radius: 24px;
+    display: grid;
+    place-items: center;
+    background: rgba(255, 255, 255, 0.14);
+    border: 1px solid rgba(255, 255, 255, 0.16);
+}
+
+.champion-history-points strong {
+    display: block;
+    font-size: 2rem;
+    line-height: 1;
+}
+
+.champion-history-points span {
+    font-size: 0.82rem;
+    opacity: 0.86;
+}
+
+#profileTab .profile-hero-card-final {
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 18px;
+    align-items: center;
+    padding: 26px;
+    border-radius: 30px;
+    background:
+        radial-gradient(circle at top left, color-mix(in srgb, var(--participant-accent, #f6c85f) 38%, transparent), transparent 34%),
+        linear-gradient(135deg, rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0.06));
+}
+
+#profileTab .profile-hero-avatar {
+    width: 82px;
+    height: 82px;
+    border-radius: 28px;
+    display: grid;
+    place-items: center;
+    font-size: 2.4rem;
+    background: rgba(255, 255, 255, 0.18);
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.16);
+}
+
+#profileTab .profile-stat-grid-final {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 12px;
+}
+
+#profileTab .profile-stat-card {
+    min-height: 96px;
+    border-radius: 22px;
+    padding: 16px;
+    justify-content: center;
+}
+
+#profileTab .profile-stat-card strong {
+    font-size: clamp(1.2rem, 3vw, 1.75rem);
+}
+
+#profileBadges.badge-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+    margin-top: 18px;
+}
+
+#profileTab .profile-badge-card-final {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: center;
+    gap: 12px;
+    padding: 15px;
+    border-radius: 20px;
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+#profileTab .profile-badge-card-final span[aria-hidden="true"] {
+    width: 44px;
+    height: 44px;
+    display: grid;
+    place-items: center;
+    border-radius: 16px;
+    background: rgba(255, 255, 255, 0.13);
+    font-size: 1.35rem;
+}
+
+#profileTab .profile-badge-card-final strong,
+#profileTab .profile-badge-card-final small {
+    grid-column: 2;
+}
+
+#profileTab .profile-closing-note-final {
+    margin-top: 18px;
+    border-radius: 28px;
+    padding: 22px;
+    background:
+        linear-gradient(135deg, rgba(255, 255, 255, 0.14), rgba(255, 255, 255, 0.055)),
+        radial-gradient(circle at bottom right, rgba(255, 205, 112, 0.14), transparent 34%);
+    border: 1px solid rgba(255, 255, 255, 0.14);
+}
+
+#profileTab .profile-closing-note-final p {
+    line-height: 1.9;
+    font-size: 1rem;
+}
+
+#statisticsTab .participant-badge-chip {
+    min-height: 96px;
+    padding: 14px;
+    border-radius: 18px;
+}
+
+#statisticsTab .participant-badge-chip-body strong {
+    font-size: 0.98rem;
+}
+
+#statisticsTab .participant-badge-chip-body em {
+    font-size: 0.9rem;
+    line-height: 1.4;
+}
+
+#statisticsTab .participant-badge-chip-body small {
+    display: block;
+    margin-top: 4px;
+    line-height: 1.45;
+    opacity: 0.88;
+}
+
+.season-thanks-card-locked {
+    text-align: center;
+}
+
+.season-thanks-card-final p {
+    line-height: 2;
+    font-size: clamp(1rem, 2.4vw, 1.12rem);
+}
+
+@media (max-width: 760px) {
+    .champion-prediction-card,
+    .champion-history-card {
+        grid-template-columns: 1fr;
+        display: grid;
+    }
+
+    #profileTab .profile-stat-grid-final,
+    #profileBadges.badge-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .champion-history-points {
+        width: 100%;
+        min-height: 76px;
+        display: flex;
+        gap: 8px;
+    }
+}
+
+/* ===============================
+   V39.0 final pending page + badge readability polish
+   =============================== */
+.season-thanks-card-pending {
+    min-height: min(48vh, 520px) !important;
+    text-align: center !important;
+}
+
+.season-thanks-card-pending .season-thanks-icon {
+    background: rgba(255, 255, 255, 0.08) !important;
+    box-shadow: none !important;
+}
+
+.season-thanks-card-pending h2 {
+    font-size: clamp(2.2rem, 5vw, 4.6rem) !important;
+}
+
+.season-thanks-card-pending p {
+    max-width: 720px !important;
+    margin-inline: auto !important;
+    color: rgba(247, 241, 227, 0.82) !important;
+}
+
+#statisticsTab .participant-badge-chip-grid {
+    grid-template-columns: repeat(auto-fit, minmax(235px, 1fr)) !important;
+    gap: 10px !important;
+}
+
+@media (min-width: 1180px) {
+    #statisticsTab .participant-badge-chip-grid {
+        grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+    }
+}
+
+#statisticsTab .participant-badge-chip {
+    min-height: 108px !important;
+    grid-template-columns: 40px minmax(0, 1fr) !important;
+    gap: 10px !important;
+    padding: 13px 14px !important;
+    border-radius: 20px !important;
+    background: linear-gradient(135deg, rgba(255, 255, 255, 0.105), rgba(255, 255, 255, 0.055)) !important;
+}
+
+#statisticsTab .participant-badge-chip-icon {
+    width: 40px !important;
+    height: 40px !important;
+    border-radius: 15px !important;
+    font-size: 20px !important;
+}
+
+#statisticsTab .participant-badge-chip-body {
+    gap: 3px !important;
+}
+
+#statisticsTab .participant-badge-chip-body strong {
+    font-size: clamp(15px, 1.12vw, 17px) !important;
+    line-height: 1.35 !important;
+    color: #fff2bf !important;
+}
+
+#statisticsTab .participant-badge-chip-body em {
+    font-size: clamp(14px, 1vw, 15.5px) !important;
+    line-height: 1.45 !important;
+    color: #fff9e8 !important;
+}
+
+#statisticsTab .participant-badge-chip-body small {
+    font-size: clamp(12.5px, 0.94vw, 14px) !important;
+    line-height: 1.55 !important;
+    color: rgba(247, 241, 227, 0.78) !important;
+    opacity: 1 !important;
+}
+
+#profileBadges.badge-grid,
+#profileTab .badge-grid {
+    display: flex !important;
+    flex-wrap: wrap !important;
+    gap: 8px !important;
+    margin-top: 14px !important;
+}
+
+#profileTab .profile-badge-card-final {
+    width: auto !important;
+    min-height: 0 !important;
+    display: inline-grid !important;
+    grid-template-columns: 30px minmax(0, auto) !important;
+    align-items: center !important;
+    gap: 8px 10px !important;
+    padding: 9px 12px !important;
+    border-radius: 999px !important;
+    text-align: start !important;
+    background: rgba(255, 255, 255, 0.075) !important;
+    border: 1px solid rgba(241, 216, 154, 0.16) !important;
+}
+
+#profileTab .profile-badge-card-final span[aria-hidden="true"] {
+    grid-row: span 2 !important;
+    width: 30px !important;
+    height: 30px !important;
+    border-radius: 50% !important;
+    font-size: 16px !important;
+    background: rgba(255, 255, 255, 0.12) !important;
+}
+
+#profileTab .profile-badge-card-final strong,
+#profileTab .profile-badge-card-final small {
+    grid-column: 2 !important;
+}
+
+#profileTab .profile-badge-card-final strong {
+    font-size: 13.5px !important;
+    line-height: 1.25 !important;
+    color: #fff2bf !important;
+}
+
+#profileTab .profile-badge-card-final small {
+    font-size: 12.5px !important;
+    line-height: 1.35 !important;
+    color: rgba(247, 241, 227, 0.78) !important;
+}
+
+@media (max-width: 760px) {
+    #profileTab .profile-badge-card-final {
+        width: 100% !important;
+        border-radius: 18px !important;
+    }
 }

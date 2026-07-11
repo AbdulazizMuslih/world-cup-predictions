@@ -86,6 +86,14 @@ const FINAL_AI_PROFILE_SECTION = "final_profile";
 const FINAL_RECAP_MAX_HIGHLIGHTS = 80;
 const SHOW_LIVE_FINAL_STATS = true;
 const SHOW_PUBLISHED_HIGHLIGHTS_BEFORE_FINAL = true;
+const CHAMPION_PREDICTIONS_TABLE = "champion_predictions";
+const CHAMPION_WINNER_POINTS = 50;
+const CHAMPION_RUNNER_UP_POINTS = 10;
+const BONUS_EXACT_POINTS_BY_STAGE = {
+    SEMI_FINALS: 100,
+    THIRD_PLACE: 100,
+    FINAL: 200
+};
 let updateCheckTimer = null;
 const SITE_STAGE_CACHE_KEY = "wcSiteStage";
 
@@ -100,60 +108,6 @@ window.addEventListener("resize", () => {
 });
 
 document.addEventListener("DOMContentLoaded", init);
-
-const MUSIC_TRACKS = [
-    {
-        title: "❤️",
-        src: "./assets/song 2.mp3?v=38.9.2"
-    },
-    {
-        title: "Dai Dai",
-        src: "./assets/song.mp3?v=38.9.2"
-    }
-];
-
-let currentMusicTrackIndex = 0;
-
-function getCurrentMusicTrack() {
-    return MUSIC_TRACKS[currentMusicTrackIndex] || MUSIC_TRACKS[0];
-}
-
-function updateMusicButtonLabel(isPlaying = false) {
-    const track = getCurrentMusicTrack();
-    musicBtn.textContent = `${isPlaying ? "⏸ إيقاف" : "▶ شغّل"} ${track.title}`;
-    musicBtn.title = track.title;
-}
-
-function loadCurrentMusicTrack() {
-    const track = getCurrentMusicTrack();
-
-    if (daiDaiAudio.getAttribute("src") !== track.src) {
-        daiDaiAudio.setAttribute("src", track.src);
-        daiDaiAudio.load();
-    }
-
-    updateMusicButtonLabel(!daiDaiAudio.paused);
-}
-
-async function playCurrentMusicTrack() {
-    loadCurrentMusicTrack();
-    await daiDaiAudio.play();
-    updateMusicButtonLabel(true);
-}
-
-async function switchMusicTrack(direction) {
-    const wasPlaying = !daiDaiAudio.paused;
-
-    daiDaiAudio.pause();
-    currentMusicTrackIndex = (currentMusicTrackIndex + direction + MUSIC_TRACKS.length) % MUSIC_TRACKS.length;
-    loadCurrentMusicTrack();
-
-    if (wasPlaying) {
-        await playCurrentMusicTrack();
-    }
-}
-
-loadCurrentMusicTrack();
 
 const MUSIC_TRACKS = [
     {
@@ -869,8 +823,10 @@ async function renderMenuPageContent(tabName) {
     }
 
     if (tabName === "seasonRecap") {
-        await renderSeasonRecapPage();
-        await playHeartTrackForSeasonRecap();
+        const closingReady = await renderSeasonRecapPage();
+        if (closingReady) {
+            await playHeartTrackForSeasonRecap();
+        }
         return;
     }
 
@@ -954,11 +910,12 @@ function renderAboutPage() {
             </div>
         </section>
         <div class="about-rule-grid about-rule-grid-final">
-            <article class="info-card rules-card"><strong>50 نقطة</strong><span>إذا طابق التوقع النتيجة كاملة.</span></article>
+            <article class="info-card rules-card"><strong>بالملّي</strong><span>50 نقطة، وتصبح 100 في نصف النهائي والمركز الثالث، و200 في النهائي.</span></article>
             <article class="info-card rules-card"><strong>10 نقاط</strong><span>إذا كان الفائز أو التعادل صحيحاً.</span></article>
             <article class="info-card rules-card"><strong>72 ساعة</strong><span>تفتح التوقعات قبل المباراة بثلاثة أيام.</span></article>
             <article class="info-card rules-card"><strong>صافرة البداية</strong><span>بعد بداية المباراة يُغلق التعديل.</span></article>
             <article class="info-card rules-card"><strong>ركلات الترجيح</strong><span>لا تُحسب ضمن نتيجة التوقع؛ نعتمد نتيجة المباراة قبل الترجيح.</span></article>
+            <article class="info-card rules-card"><strong>توقع البطل</strong><span>بعد ربع النهائي: 50 نقطة للبطل الصحيح، و10 نقاط إذا وصل وصيفاً.</span></article>
             <article class="info-card rules-card"><strong>الأضواء</strong><span>مساحة للّقطات الجميلة: مفاجآت، قراءات مختلفة، وشارات تستاهل التصفيق.</span></article>
         </div>
     `;
@@ -1191,7 +1148,7 @@ async function loadParticipantProfileStats(participantId) {
         acc.totalPoints += points;
         acc.finishedPredictions += 1;
 
-        if (points === 50) acc.exactScores += 1;
+        if (isExactScorePrediction(prediction, match)) acc.exactScores += 1;
         if (points === 10) acc.correctOutcomes += 1;
         if (points > 0) acc.scoringPredictions += 1;
 
@@ -1215,7 +1172,7 @@ async function loadParticipantProfileStats(participantId) {
         acc.stageStats[stage].points += points;
         acc.stageStats[stage].pointsPerPrediction = Number((acc.stageStats[stage].points / acc.stageStats[stage].predictions).toFixed(1));
 
-        if (points === 50) acc.stageStats[stage].exactScores += 1;
+        if (isExactScorePrediction(prediction, match)) acc.stageStats[stage].exactScores += 1;
         if (points === 10) acc.stageStats[stage].correctOutcomes += 1;
         if (points > 0) acc.stageStats[stage].scoringPredictions += 1;
 
@@ -1255,7 +1212,7 @@ function renderProfileSummary(participant, visual, stats, finalRow = null) {
             <div>
                 <p class="eyebrow">الملف الشخصي</p>
                 <h4>${escapeHtml(participant.name)} ${rankText ? `<span>${escapeHtml(rankText)}</span>` : ""}</h4>
-                <p>بطاقة ختامية خفيفة: أرقامك، شاراتك، ولمحة عن أسلوبك في التوقع.</p>
+                <p>صفحتك الخاصة في المسابقة: أرقام، شارات، ولمحة خفيفة عن طريقتك في قراءة المباريات.</p>
             </div>
         </div>
 
@@ -1577,6 +1534,200 @@ function isAvailable(kickoffAt) {
     return now >= openTime && now < kickoff;
 }
 
+
+function normalizeTeamName(value) {
+    return String(value || "").trim();
+}
+
+function getWinnerTeamFromMatch(match) {
+    if (!match || !hasActualScore(match)) return null;
+    const winnerSide = String(match.winner_side || "").toUpperCase();
+    if (winnerSide === "HOME_TEAM") return match.team1;
+    if (winnerSide === "AWAY_TEAM") return match.team2;
+    if (Number(match.actual_team1_goals) > Number(match.actual_team2_goals)) return match.team1;
+    if (Number(match.actual_team2_goals) > Number(match.actual_team1_goals)) return match.team2;
+    return null;
+}
+
+function getLoserTeamFromMatch(match) {
+    const winner = getWinnerTeamFromMatch(match);
+    if (!winner) return null;
+    if (normalizeTeamName(winner) === normalizeTeamName(match.team1)) return match.team2;
+    if (normalizeTeamName(winner) === normalizeTeamName(match.team2)) return match.team1;
+    return null;
+}
+
+function calculateChampionPredictionPoints(predictedTeam, championResult) {
+    if (!predictedTeam || !championResult?.champion) return 0;
+    const normalized = normalizeTeamName(predictedTeam);
+    if (normalized === normalizeTeamName(championResult.champion)) return CHAMPION_WINNER_POINTS;
+    if (championResult.runnerUp && normalized === normalizeTeamName(championResult.runnerUp)) return CHAMPION_RUNNER_UP_POINTS;
+    return 0;
+}
+
+function getChampionPredictionResult(matches = []) {
+    const finalMatch = [...matches]
+        .filter((match) => getPredictionStage(match) === "FINAL" && hasActualScore(match))
+        .sort((a, b) => new Date(b.kickoff_at || 0) - new Date(a.kickoff_at || 0))[0];
+
+    if (!finalMatch) return null;
+    const champion = getWinnerTeamFromMatch(finalMatch);
+    const runnerUp = getLoserTeamFromMatch(finalMatch);
+    return champion ? { champion, runnerUp, finalMatch } : null;
+}
+
+function getChampionPredictionWindow(matches = []) {
+    const quarterFinals = matches
+        .filter((match) => getPredictionStage(match) === "QUARTER_FINALS")
+        .sort((a, b) => new Date(a.kickoff_at || 0) - new Date(b.kickoff_at || 0));
+    const semiFinals = matches
+        .filter((match) => getPredictionStage(match) === "SEMI_FINALS")
+        .sort((a, b) => new Date(a.kickoff_at || 0) - new Date(b.kickoff_at || 0));
+
+    const qualifiedTeams = quarterFinals.map(getWinnerTeamFromMatch).filter(Boolean);
+    const uniqueTeams = [...new Set(qualifiedTeams.map(normalizeTeamName))];
+    const firstSemiKickoff = semiFinals[0]?.kickoff_at ? new Date(semiFinals[0].kickoff_at) : null;
+    const now = new Date();
+    const hasFourQuarterWinners = quarterFinals.length >= 4 && uniqueTeams.length >= 4;
+    const isOpen = hasFourQuarterWinners && firstSemiKickoff && now < firstSemiKickoff;
+
+    return {
+        isOpen,
+        hasFourQuarterWinners,
+        teams: uniqueTeams,
+        firstSemiKickoff,
+        quarterFinals,
+        semiFinals
+    };
+}
+
+async function loadChampionPredictionForParticipant(participantId) {
+    if (!participantId) return null;
+    const { data, error } = await db
+        .from(CHAMPION_PREDICTIONS_TABLE)
+        .select("id, participant_id, predicted_team, points, updated_at")
+        .eq("participant_id", participantId)
+        .limit(1);
+
+    if (error) {
+        console.warn("Champion prediction read skipped:", error?.message || error);
+        return null;
+    }
+
+    return data?.[0] || null;
+}
+
+async function saveChampionPrediction() {
+    if (!currentParticipant) return;
+    const select = document.getElementById("championPredictionSelect");
+    if (!select || !select.value) {
+        alert("اختر المنتخب المرشح للفوز بكأس العالم.");
+        return;
+    }
+
+    const { error } = await db
+        .from(CHAMPION_PREDICTIONS_TABLE)
+        .upsert({
+            participant_id: currentParticipant.id,
+            predicted_team: select.value,
+            updated_at: new Date().toISOString()
+        }, { onConflict: "participant_id" });
+
+    if (error) {
+        console.error(error);
+        alert("تعذر حفظ توقع بطل كأس العالم. تأكد من تشغيل ملف SQL الخاص بتوقع البطل.");
+        return;
+    }
+
+    alert("تم حفظ توقع بطل كأس العالم!");
+    await loadAvailableMatches();
+    await loadMyPredictions();
+}
+
+async function recalculateChampionPredictionPoints() {
+    const { data: matches, error: matchesError } = await db
+        .from("matches")
+        .select("id, team1, team2, kickoff_at, stage, winner_side, actual_team1_goals, actual_team2_goals")
+        .order("kickoff_at", { ascending: true });
+
+    if (matchesError) throw matchesError;
+    const championResult = getChampionPredictionResult(matches || []);
+    if (!championResult) return;
+
+    const { data: rows, error } = await db
+        .from(CHAMPION_PREDICTIONS_TABLE)
+        .select("id, predicted_team");
+
+    if (error) throw error;
+
+    for (const row of rows || []) {
+        const points = calculateChampionPredictionPoints(row.predicted_team, championResult);
+        await db.from(CHAMPION_PREDICTIONS_TABLE).update({ points }).eq("id", row.id);
+    }
+}
+
+async function renderChampionPredictionAvailableBlock(matches) {
+    if (!currentParticipant) return "";
+    const windowState = getChampionPredictionWindow(matches);
+    if (!windowState.isOpen) return "";
+    const existing = await loadChampionPredictionForParticipant(currentParticipant.id);
+    const options = windowState.teams.map((team) => `
+        <option value="${escapeHtml(team)}" ${existing?.predicted_team === team ? "selected" : ""}>${escapeHtml(team)}</option>
+    `).join("");
+    const saved = existing?.predicted_team
+        ? `<div class="champion-saved-note">✅ اختيارك الحالي: <strong>${escapeHtml(existing.predicted_team)}</strong></div>`
+        : "";
+
+    return `
+        <section class="champion-prediction-card champion-prediction-card-live">
+            <div class="champion-prediction-copy">
+                <p class="eyebrow">توقع خاص</p>
+                <h4>توقع بطل كأس العالم</h4>
+                <p>بعد نهاية ربع النهائي وقبل أول نصف نهائي، اختر من تتوقع أن يرفع الكأس من بين الأربعة المتأهلين.</p>
+                <div class="champion-rules-row">
+                    <span>🏆 البطل الصحيح: ${CHAMPION_WINNER_POINTS} نقطة</span>
+                    <span>🥈 إذا صار وصيفاً: ${CHAMPION_RUNNER_UP_POINTS} نقاط</span>
+                    <span>⚽ نصف النهائي والمركز الثالث: 100 نقطة بالملّي</span>
+                    <span>🔥 النهائي: 200 نقطة بالملّي</span>
+                </div>
+                ${saved}
+            </div>
+            <div class="champion-prediction-action">
+                <select id="championPredictionSelect" class="champion-prediction-select">
+                    <option value="">اختر البطل</option>
+                    ${options}
+                </select>
+                <button onclick="saveChampionPrediction()">حفظ توقع البطل</button>
+            </div>
+        </section>
+    `;
+}
+
+function renderChampionPredictionHistoryCard(championPrediction, championResult = null, windowState = null) {
+    if (!championPrediction && !windowState?.isOpen) return "";
+    const predictionText = championPrediction?.predicted_team || "لم يتم اختيار البطل بعد";
+    const points = championResult
+        ? calculateChampionPredictionPoints(championPrediction?.predicted_team, championResult)
+        : Number(championPrediction?.points || 0);
+    const statusText = championResult
+        ? (points === CHAMPION_WINNER_POINTS ? "توقع البطل صح" : points === CHAMPION_RUNNER_UP_POINTS ? "اختيارك وصل للنهائي" : "انتهى التوقع بدون نقاط")
+        : (windowState?.isOpen ? "التوقع مفتوح الآن حتى بداية نصف النهائي" : "بانتظار حسم البطل");
+
+    return `
+        <section class="champion-history-card">
+            <div>
+                <p class="eyebrow">توقع بطل كأس العالم</p>
+                <h4>${escapeHtml(predictionText)}</h4>
+                <p>${escapeHtml(statusText)}</p>
+            </div>
+            <div class="champion-history-points">
+                <strong>${points}</strong>
+                <span>نقطة</span>
+            </div>
+        </section>
+    `;
+}
+
 async function loadAvailableMatches() {
     if (!currentParticipant) return;
 
@@ -1597,10 +1748,12 @@ async function loadAvailableMatches() {
         .sort((a, b) => new Date(a.kickoff_at).getTime() - new Date(b.kickoff_at).getTime());
 
     await loadSiteStageThemeFromTournamentProgress();
+    const championPredictionHtml = await renderChampionPredictionAvailableBlock(matches || []);
 
     if (openMatches.length === 0) {
-        availableMatches.className = "match-grid";
-        availableMatches.innerHTML = `<p>لا توجد مباريات متاحة للتوقع حالياً.</p>`;
+        availableMatches.className = championPredictionHtml ? "match-grid champion-only-grid" : "match-grid";
+        availableMatches.innerHTML = championPredictionHtml || `<p>لا توجد مباريات متاحة للتوقع حالياً.</p>`;
+        scheduleAvailableTeamNameFit();
         return;
     }
 
@@ -1625,7 +1778,7 @@ async function loadAvailableMatches() {
     });
 
     availableMatches.className = "match-grid available-stage-grid";
-    availableMatches.innerHTML = visibleSections.map((section) => {
+    availableMatches.innerHTML = championPredictionHtml + visibleSections.map((section) => {
         const stageMatches = groups[section.stage].sort((a, b) => {
             return new Date(a.kickoff_at).getTime() - new Date(b.kickoff_at).getTime();
         });
@@ -2320,15 +2473,20 @@ function calculateLivePredictionPoints(prediction, match) {
         prediction.predicted_team1_goals,
         prediction.predicted_team2_goals,
         match.actual_team1_goals,
-        match.actual_team2_goals
+        match.actual_team2_goals,
+        match
     );
 }
 
 function getPredictionRowClass(points, match) {
     if (!hasActualScore(match)) return "prediction-row-pending";
-    if (points === 50) return "prediction-row-exact";
+    if (isExactScorePoints(points)) return "prediction-row-exact";
     if (points === 10) return "prediction-row-correct";
     return "prediction-row-zero";
+}
+
+function isExactScorePoints(points) {
+    return points === 50 || points === 100 || points === 200;
 }
 
 function formatPointPill(points, match) {
@@ -2336,7 +2494,7 @@ function formatPointPill(points, match) {
         return `<span class="points-pill points-pill-pending">${points}</span>`;
     }
 
-    if (points === 50) {
+    if (isExactScorePoints(points)) {
         return `<span class="points-pill points-pill-exact">${points}<small>بالملّي</small></span>`;
     }
 
@@ -2401,21 +2559,34 @@ async function loadMyPredictions() {
     if (!currentParticipant) return;
 
     let data;
+    let allMatchesForChampion = [];
+    let championPrediction = null;
 
     try {
-        data = await loadParticipantPredictionHistory(currentParticipant.id);
+        const [historyRows, championMatchesResult, championRow] = await Promise.all([
+            loadParticipantPredictionHistory(currentParticipant.id),
+            db.from("matches").select("id, team1, team2, kickoff_at, stage, winner_side, actual_team1_goals, actual_team2_goals").order("kickoff_at", { ascending: true }),
+            loadChampionPredictionForParticipant(currentParticipant.id)
+        ]);
+        data = historyRows;
+        allMatchesForChampion = championMatchesResult.data || [];
+        championPrediction = championRow;
     } catch (error) {
         console.error(error);
         myPredictions.innerHTML = `<p>تعذر تحميل التوقعات.</p>`;
         return;
     }
 
-    if (!data || data.length === 0) {
+    const championResult = getChampionPredictionResult(allMatchesForChampion);
+    const championWindow = getChampionPredictionWindow(allMatchesForChampion);
+    const championHistoryHtml = renderChampionPredictionHistoryCard(championPrediction, championResult, championWindow);
+
+    if ((!data || data.length === 0) && !championHistoryHtml) {
         myPredictions.innerHTML = `<p>لم تقم بإضافة أي توقع حتى الآن.</p>`;
         return;
     }
 
-    const sortedMatches = [...data].sort((a, b) => {
+    const sortedMatches = [...(data || [])].sort((a, b) => {
         return new Date(b.kickoff_at).getTime() - new Date(a.kickoff_at).getTime();
     });
 
@@ -2432,7 +2603,7 @@ async function loadMyPredictions() {
         if (hasActualScore(match)) {
             acc.finished += 1;
 
-            if (livePoints === 50) {
+            if (isExactScorePrediction(prediction, match)) {
                 acc.exact += 1;
             }
 
@@ -2444,7 +2615,13 @@ async function loadMyPredictions() {
         return acc;
     }, { totalPredictions: 0, totalPoints: 0, finished: 0, exact: 0, correct: 0 });
 
+    const championPoints = championResult
+        ? calculateChampionPredictionPoints(championPrediction?.predicted_team, championResult)
+        : Number(championPrediction?.points || 0);
+    summary.totalPoints += championPoints;
+
     myPredictions.innerHTML = `
+    ${championHistoryHtml}
     <div class="prediction-summary-card prediction-summary-card-v36">
       <div class="prediction-summary-title">
         <p class="eyebrow">ملخص توقعاتك</p>
@@ -2461,7 +2638,7 @@ async function loadMyPredictions() {
       </div>
     </div>
 
-    ${renderPredictionStageSections(sortedMatches)}
+    ${sortedMatches.length ? renderPredictionStageSections(sortedMatches) : ""}
   `;
 }
 
@@ -2522,7 +2699,7 @@ const MISSING_PREDICTION_GOAL_DIFFERENCE_ERROR = 3;
 const TIE_BREAKER_RULES = {
     2: {
         title: "قاعدة ٢: عدد التوقعات الصحيحة",
-        description: "عند تساوي النقاط، يتقدم من لديه عدد أكبر من توقعات 10 أو 50."
+        description: "عند تساوي النقاط، يتقدم من لديه عدد أكبر من التوقعات الصحيحة. توقع البطل لا يُحسب بالملّي."
     },
     3: {
         title: "قاعدة ٣: أقل خطأ في مجموع الأهداف",
@@ -2538,7 +2715,7 @@ const TIE_BREAKER_RULES = {
     },
     6: {
         title: "قاعدة ٦: أطول سلسلة صحيحة",
-        description: "تحتسب كل توقعات 50 و10 كسلسلة صحيحة، وأي 0 أو لا توقع يقطع السلسلة."
+        description: "تحتسب توقعات المباريات الصحيحة كسلسلة، وأي 0 أو لا توقع يقطع السلسلة."
     },
     7: {
         title: "قاعدة ٧: الأسبق للوصول للنقاط الحالية",
@@ -2551,7 +2728,7 @@ const TIE_BREAKER_RULES = {
 };
 
 async function loadLeaderboard() {
-    const [participantsResult, matchesResult] = await Promise.all([
+    const [participantsResult, matchesResult, championPredictionsResult] = await Promise.all([
         db
             .from("participants")
             .select(`
@@ -2569,14 +2746,20 @@ async function loadLeaderboard() {
             .from("matches")
             .select(`
                 id,
+                team1,
+                team2,
                 kickoff_at,
                 stage,
+                winner_side,
                 actual_team1_goals,
                 actual_team2_goals
             `)
             .not("actual_team1_goals", "is", null)
             .not("actual_team2_goals", "is", null)
-            .order("kickoff_at", { ascending: true })
+            .order("kickoff_at", { ascending: true }),
+        db
+            .from(CHAMPION_PREDICTIONS_TABLE)
+            .select("participant_id, predicted_team, points")
     ]);
 
     if (participantsResult.error || matchesResult.error) {
@@ -2589,8 +2772,11 @@ async function loadLeaderboard() {
         .filter(hasActualScore)
         .sort((a, b) => new Date(a.kickoff_at).getTime() - new Date(b.kickoff_at).getTime());
 
+    const championResult = getChampionPredictionResult(completedMatches);
+    const championPredictionMap = new Map((championPredictionsResult.data || []).map((row) => [String(row.participant_id), row]));
+
     const rows = (participantsResult.data || [])
-        .map((participant) => buildLeaderboardRow(participant, completedMatches))
+        .map((participant) => buildLeaderboardRow(participant, completedMatches, championPredictionMap.get(String(participant.id)), championResult))
         .sort(compareLeaderboardRows);
 
     applyTieBreakerMarkers(rows);
@@ -2662,7 +2848,7 @@ async function loadLeaderboard() {
   `;
 }
 
-function buildLeaderboardRow(participant, completedMatches) {
+function buildLeaderboardRow(participant, completedMatches, championPrediction = null, championResult = null) {
     const predictions = participant.predictions || [];
     const predictionMap = new Map();
 
@@ -2694,8 +2880,10 @@ function buildLeaderboardRow(participant, completedMatches) {
             prediction.predicted_team1_goals,
             prediction.predicted_team2_goals,
             match.actual_team1_goals,
-            match.actual_team2_goals
+            match.actual_team2_goals,
+            match
         );
+        const exactScore = isExactScorePrediction(prediction, match);
 
         return {
             points,
@@ -2703,26 +2891,33 @@ function buildLeaderboardRow(participant, completedMatches) {
             stage,
             totalGoalError: calculateTotalGoalError(prediction, match),
             goalDifferenceError: calculateGoalDifferenceError(prediction, match),
-            isExactScore: points === 50,
+            isExactScore: exactScore,
             isWinningPrediction: points > 0,
             missingPrediction: false,
         };
     }).sort((a, b) => a.kickoffTime - b.kickoffTime);
 
-    const totalPoints = completedPredictions.reduce((sum, prediction) => sum + prediction.points, 0);
+    const matchPointsTotal = completedPredictions.reduce((sum, prediction) => sum + prediction.points, 0);
+    const championPredictionPoints = championResult
+        ? calculateChampionPredictionPoints(championPrediction?.predicted_team, championResult)
+        : Number(championPrediction?.points || 0);
+    const totalPoints = matchPointsTotal + championPredictionPoints;
     const exactScoreCount = completedPredictions.filter((prediction) => prediction.isExactScore).length;
     const correctPredictionCount = completedPredictions.filter((prediction) => prediction.isWinningPrediction).length;
     const bestCorrectStreak = getBestScoringPredictionStreak(completedPredictions);
     const totalGoalError = completedPredictions.reduce((sum, prediction) => sum + prediction.totalGoalError, 0);
     const goalDifferenceError = completedPredictions.reduce((sum, prediction) => sum + prediction.goalDifferenceError, 0);
     const laterStagePoints = getLaterStagePoints(completedPredictions);
-    const scoreReachedTime = getScoreReachedTime(completedPredictions, totalPoints);
+    const scoreReachedTime = getScoreReachedTime(completedPredictions, matchPointsTotal);
 
     return {
         id: participant.id,
         name: participant.name,
         sortOrder: Number(participant.sort_order || 9999),
         points: totalPoints,
+        matchPoints: matchPointsTotal,
+        championPredictionPoints,
+        championPredictionTeam: championPrediction?.predicted_team || null,
         predictionCount: predictions.length,
         completedPredictionCount: completedPredictions.filter((prediction) => !prediction.missingPrediction).length,
         exactScoreCount,
@@ -3246,7 +3441,7 @@ async function saveAdminPrediction() {
 
     const match = adminPredictionMatches.find((item) => item.id === matchId);
     const points = match && hasActualScore(match)
-        ? calculatePoints(team1Goals, team2Goals, match.actual_team1_goals, match.actual_team2_goals)
+        ? calculatePoints(team1Goals, team2Goals, match.actual_team1_goals, match.actual_team2_goals, match)
         : 0;
 
     const { error } = await db.rpc("admin_upsert_prediction", {
@@ -3347,19 +3542,21 @@ adminParticipantSelect.addEventListener("change", async () => {
 });
 
 async function recalculatePoints(matchId, actualTeam1GoalsValue, actualTeam2GoalsValue) {
-    const { data: predictions, error } = await db
-        .from("predictions")
-        .select("*")
-        .eq("match_id", matchId);
+    const [{ data: matchRows, error: matchError }, { data: predictions, error }] = await Promise.all([
+        db.from("matches").select("id, stage, team1, team2, winner_side, actual_team1_goals, actual_team2_goals").eq("id", matchId).limit(1),
+        db.from("predictions").select("*").eq("match_id", matchId)
+    ]);
 
-    if (error) return;
+    if (error || matchError) return;
+    const match = matchRows?.[0] || { id: matchId, stage: null, actual_team1_goals: actualTeam1GoalsValue, actual_team2_goals: actualTeam2GoalsValue };
 
-    for (const prediction of predictions) {
+    for (const prediction of predictions || []) {
         const points = calculatePoints(
             prediction.predicted_team1_goals,
             prediction.predicted_team2_goals,
             actualTeam1GoalsValue,
-            actualTeam2GoalsValue
+            actualTeam2GoalsValue,
+            match
         );
 
         await db
@@ -3367,6 +3564,10 @@ async function recalculatePoints(matchId, actualTeam1GoalsValue, actualTeam2Goal
             .update({ points })
             .eq("id", prediction.id);
     }
+
+    await recalculateChampionPredictionPoints().catch((championError) => {
+        console.warn("Champion prediction recalculation skipped:", championError?.message || championError);
+    });
 }
 
 function getVersionFromAssetUrl(assetUrl) {
@@ -3493,15 +3694,29 @@ function showUpdateRequiredOverlay(latestVersion, shellVersions = getCurrentHtml
     });
 }
 
-function calculatePoints(predicted1, predicted2, actual1, actual2) {
+function calculatePoints(predicted1, predicted2, actual1, actual2, matchOrStage = null) {
     if (predicted1 === actual1 && predicted2 === actual2) {
-        return 50;
+        return getExactScorePointsForStage(matchOrStage);
     }
 
     const predictedOutcome = getOutcome(predicted1, predicted2);
     const actualOutcome = getOutcome(actual1, actual2);
 
     return predictedOutcome === actualOutcome ? 10 : 0;
+}
+
+function getExactScorePointsForStage(matchOrStage = null) {
+    const stage = typeof matchOrStage === "string"
+        ? matchOrStage
+        : (matchOrStage?.stage || "");
+
+    return BONUS_EXACT_POINTS_BY_STAGE[stage] || 50;
+}
+
+function isExactScorePrediction(prediction, match) {
+    if (!prediction || !match || !hasActualScore(match)) return false;
+    return Number(prediction.predicted_team1_goals) === Number(match.actual_team1_goals)
+        && Number(prediction.predicted_team2_goals) === Number(match.actual_team2_goals);
 }
 
 function getOutcome(team1, team2) {
@@ -3899,7 +4114,7 @@ function renderFinalRecapLockedMessage(recap, sectionTitle) {
 function renderStatisticsSnapshot(seasonStats) {
     const stats = [
         { icon: "🧾", label: "إجمالي التوقعات", value: seasonStats.totalPredictions, note: "كل اختيارات المشاركين خلال البطولة." },
-        { icon: "✅", label: "توقعات جابت نقاط", value: seasonStats.totalCorrect, note: "تشمل 10 و50 نقطة." },
+        { icon: "✅", label: "توقعات جابت نقاط", value: seasonStats.totalCorrect, note: "تشمل الاتجاه الصحيح والنتيجة بالملّي." },
         { icon: "🎯", label: "بالملّي", value: seasonStats.totalExact, note: "أغلى لحظة في اللعبة." },
         { icon: "📊", label: "نسبة الدقة", value: `${seasonStats.accuracyPercent}%`, note: "كم توقع قدر يجيب نقاط." },
         { icon: "⚽", label: "النتيجة المحبوبة", value: seasonStats.favoriteScore?.score || "-", note: "أكثر نتيجة تكررت في التوقعات." },
@@ -4009,8 +4224,8 @@ function buildCalculatedParticipantBadges(row) {
         add("📍", "موقعه في الجدول", `المركز ${row.finalRank}`, `${row.points} نقطة.`, 3);
     }
 
-    if (row.exactScores > 0) add("🎯", "بالملّي", `${row.exactScores} نتيجة كاملة`, "50 نقطة لكل ضربة كاملة.", 20);
-    if (row.correctPredictions > 0) add("✅", "جاب نقاط", `${row.correctPredictions} توقع صحيح`, "تشمل 10 و50 نقطة.", 30);
+    if (row.exactScores > 0) add("🎯", "بالملّي", `${row.exactScores} نتيجة كاملة`, "ضربة كاملة تزيد قيمتها في المراحل الأخيرة.", 20);
+    if (row.correctPredictions > 0) add("✅", "جاب نقاط", `${row.correctPredictions} توقع صحيح`, "تشمل الاتجاه الصحيح والنتيجة الكاملة.", 30);
     if (row.accuracyPercent > 0) add("🧭", "نسبة الدقة", `${row.accuracyPercent}%`, "نسبة التوقعات التي جابت نقاط.", 35);
     if (row.bestCorrectStreak > 1) add("🔥", "سلسلة صحيحة", `${row.bestCorrectStreak} متتالية`, "نَفَس طويل في أكثر من مباراة.", 40);
     if (row.bestFiveMatchSpan > 0) add("🚀", "أفضل فورة", `${row.bestFiveMatchSpan} نقطة`, "أفضل خمس مباريات متتالية.", 45);
@@ -4097,45 +4312,67 @@ function renderSeasonThankYouPage(recap = null) {
         <section class="season-thanks-card season-thanks-card-final">
             <div class="season-thanks-icon" aria-hidden="true">❤️</div>
             <p class="eyebrow">ختام المسابقة</p>
-            <h2>شكراً لأنكم جعلتموها ذكرى</h2>
+            <h2>شكراً… لأنكم جعلتم الفكرة تعيش</h2>
             <p>
-                في البداية كانت مجرد توقعات قبل المباريات، ثم صارت لحظات ننتظرها معاً: فرحة نتيجة جاءت بالملّي، حسرة هدف غيّر كل شيء، وضحكة بعد مباراة قلبت كل الحسابات.
-                شكراً لكل من آمن بالفكرة، وشارك، وتحمّس، وانتظر، وفتح الصفحة كأنه يفتح باباً صغيراً للفرح.
+                ما كانت المسابقة مجرد أرقام في جدول، ولا توقعات تُحفظ قبل المباراة. كانت لحظات ننتظرها معاً: رسالة بعد نتيجة، ضحكة على توقع ضاع في الدقيقة الأخيرة، وفرحة صغيرة عندما يطلع أحدنا بالنتيجة بالملّي.
             </p>
             <p>
-                ${participantCount ? `${participantCount} مشاركاً` : "كل المشاركين"} صنعوا لهذه المسابقة روحها. ${completedMatches ? `${completedMatches} مباراة` : "كل مباراة"} مرّت، و${totalPredictions ? `${totalPredictions} توقعاً` : "كل توقع"} كان له مكان في الحكاية.
-                مبروك لـ${escapeHtml(championName)}، ومبروك لكل اسم ترك أثراً؛ فهذه النهاية ليست إعلان فائز فقط، بل شكر صادق لكل من جعل الطريق أجمل من الكأس نفسها.
+                شكراً لكل من وثق بالفكرة وشارك فيها. وجودكم هو الذي جعلني أستمتع ببنائها، وتطويرها، ومتابعتها حتى صارت شيئاً له روح وذكرى. أنتم لم تكونوا مستخدمين للموقع فقط؛ أنتم السبب أن هذه التجربة صارت أجمل من مجرد مسابقة.
+            </p>
+            <p>
+                ${participantCount ? `${participantCount} مشاركاً` : "كل المشاركين"} صنعوا الحكاية، و${completedMatches ? `${completedMatches} مباراة` : "كل مباراة"} كان لها أثر، و${totalPredictions ? `${totalPredictions} توقعاً` : "كل توقع"} كان جزءاً من الطريق. مبروك لـ${escapeHtml(championName)}، ومبروك لكل من شارك؛ ستكون هناك جوائز لكل المشاركين، لأن الذكرى هنا للجميع، لا للمركز الأول فقط.
             </p>
         </section>
 
         <div class="season-thanks-mini-grid season-thanks-mini-grid-final">
-            <div class="season-thanks-mini-card"><strong>❤️</strong><span>شكراً من القلب لكل مشارك</span></div>
+            <div class="season-thanks-mini-card"><strong>❤️</strong><span>أنتم سبب نجاح الفكرة</span></div>
             <div class="season-thanks-mini-card"><strong>🏆</strong><span>${topNames ? `منصة الختام: ${escapeHtml(topNames)}` : "مبروك لمن وصل للمنصة"}</span></div>
-            <div class="season-thanks-mini-card"><strong>🤍</strong><span>الفكرة كبرت بوجودكم</span></div>
-            <div class="season-thanks-mini-card"><strong>✨</strong><span>كل توقع كان جزءاً من الذكرى</span></div>
+            <div class="season-thanks-mini-card"><strong>🎁</strong><span>جوائز لكل المشاركين</span></div>
+            <div class="season-thanks-mini-card"><strong>✨</strong><span>هذه الذكرى صنعتوها أنتم</span></div>
         </div>
     `;
 }
-
 // ===== V39 Final Recap Engine: calculated facts first; optional AI wording only after final data is locked =====
 async function renderSeasonRecapPage() {
-    if (!seasonRecap) return;
+    if (!seasonRecap) return false;
 
     try {
         const recap = await loadFinalRecapModel();
+        if (!isFinalRecapAvailable(recap)) {
+            seasonRecap.innerHTML = renderClosingLockedUntilFinal(recap);
+            return false;
+        }
         seasonRecap.innerHTML = renderSeasonThankYouPage(recap);
+        return true;
     } catch (error) {
         console.warn("Season closing recap unavailable:", error?.message || error);
-        seasonRecap.innerHTML = renderSeasonThankYouPage();
+        seasonRecap.innerHTML = renderClosingLockedUntilFinal();
+        return false;
     }
 }
 
+function renderClosingLockedUntilFinal(recap = null) {
+    const completed = recap?.seasonStats?.completedMatches || 0;
+    const total = recap?.seasonStats?.expectedMatches || EXPECTED_WORLD_CUP_MATCH_COUNT;
+    const remaining = Math.max(0, total - completed);
+    return `
+        <section class="season-thanks-card season-thanks-card-final season-thanks-card-locked season-thanks-card-pending">
+            <div class="season-thanks-icon" aria-hidden="true">🔒</div>
+            <p class="eyebrow">صفحة مؤجلة</p>
+            <h2>تفتح بعد نهاية البطولة</h2>
+            <p>هذه الصفحة محفوظة إلى أن تكتمل آخر نتيجة. حتى ذلك الوقت، تابعوا التوقعات، الترتيب، والأضواء.</p>
+            <p>${remaining > 0 ? `المتبقي: ${remaining} مباريات.` : "ننتظر تثبيت النتائج النهائية."}</p>
+        </section>
+    `;
+}
+
 async function loadFinalRecapModel() {
-    const [{ data: participants, error: participantsError }, { data: matches, error: matchesError }] = await Promise.all([
+    const [{ data: participants, error: participantsError }, { data: matches, error: matchesError }, { data: championPredictions }] = await Promise.all([
         db.from("participants").select("id, name, active, sort_order").eq("active", true).order("sort_order", { ascending: true }),
         db.from("matches")
             .select("id, team1, team2, kickoff_at, status, stage, score_duration, winner_side, actual_team1_goals, actual_team2_goals")
-            .order("kickoff_at", { ascending: true })
+            .order("kickoff_at", { ascending: true }),
+        db.from(CHAMPION_PREDICTIONS_TABLE).select("participant_id, predicted_team, points")
     ]);
 
     if (participantsError) throw participantsError;
@@ -4148,8 +4385,10 @@ async function loadFinalRecapModel() {
     const rawPredictions = await loadFinalRecapPredictions(completedMatches.map((match) => match.id));
     const predictions = rawPredictions.filter((prediction) => activeParticipantIds.has(String(prediction.participant_id)));
     const predictionsByMatch = groupFinalRecapBy(predictions, "match_id");
-    const models = buildFinalRecapParticipantModels(activeParticipants, completedMatches, predictionsByMatch);
-    const snapshots = buildFinalRecapSnapshots(activeParticipants, completedMatches, predictionsByMatch);
+    const championResult = getChampionPredictionResult(completedMatches);
+    const championPredictionMap = new Map((championPredictions || []).map((row) => [String(row.participant_id), row]));
+    const models = buildFinalRecapParticipantModels(activeParticipants, completedMatches, predictionsByMatch, championPredictionMap, championResult);
+    const snapshots = buildFinalRecapSnapshots(activeParticipants, completedMatches, predictionsByMatch, championPredictionMap, championResult);
     applyFinalRecapRankHistory(models, snapshots);
 
     const finalRows = rankFinalRecapModels(models);
@@ -4195,7 +4434,7 @@ async function loadFinalRecapPredictions(matchIds) {
     return allPredictions;
 }
 
-function buildFinalRecapParticipantModels(participants, completedMatches, predictionsByMatch) {
+function buildFinalRecapParticipantModels(participants, completedMatches, predictionsByMatch, championPredictionMap = new Map(), championResult = null) {
     const models = new Map(participants.map((participant) => [participant.id, {
         id: participant.id,
         name: participant.name,
@@ -4234,7 +4473,9 @@ function buildFinalRecapParticipantModels(participants, completedMatches, predic
         worstWrongStreak: 0,
         bestFiveMatchSpan: 0,
         worstFiveMatchSpan: 0,
-        yoyoScore: 0
+        yoyoScore: 0,
+        championPredictionTeam: null,
+        championPredictionPoints: 0
     }]));
 
     for (const match of completedMatches) {
@@ -4256,7 +4497,8 @@ function buildFinalRecapParticipantModels(participants, completedMatches, predic
 
             const predicted1 = Number(prediction.predicted_team1_goals);
             const predicted2 = Number(prediction.predicted_team2_goals);
-            const points = calculatePoints(predicted1, predicted2, match.actual_team1_goals, match.actual_team2_goals);
+            const points = calculatePoints(predicted1, predicted2, match.actual_team1_goals, match.actual_team2_goals, match);
+            const exactScore = predicted1 === Number(match.actual_team1_goals) && predicted2 === Number(match.actual_team2_goals);
             const correct = points > 0;
             const scoreKey = `${predicted1}-${predicted2}`;
             const predictionOutcome = getOutcome(predicted1, predicted2);
@@ -4268,7 +4510,7 @@ function buildFinalRecapParticipantModels(participants, completedMatches, predic
             model.totalPredictedGoals += predicted1 + predicted2;
             model.matchPoints.push({ matchId: match.id, points, correct, submitted: true });
 
-            if (points === 50) model.exactScores += 1;
+            if (exactScore) model.exactScores += 1;
             if (points === 10) model.correctOutcomes += 1;
             if (points > 0) model.correctPredictions += 1;
             if (points === 0) model.zeroPredictions += 1;
@@ -4296,6 +4538,17 @@ function buildFinalRecapParticipantModels(participants, completedMatches, predic
         }
     }
 
+    if (championResult) {
+        for (const participant of participants) {
+            const model = models.get(participant.id);
+            const championPrediction = championPredictionMap.get(String(participant.id));
+            const championPoints = calculateChampionPredictionPoints(championPrediction?.predicted_team, championResult);
+            model.championPredictionTeam = championPrediction?.predicted_team || null;
+            model.championPredictionPoints = championPoints;
+            model.points += championPoints;
+        }
+    }
+
     return Array.from(models.values()).map((model) => {
         model.accuracyPercent = model.predictions > 0 ? Number(((model.correctPredictions / model.predictions) * 100).toFixed(1)) : 0;
         model.exactRatePercent = model.predictions > 0 ? Number(((model.exactScores / model.predictions) * 100).toFixed(1)) : 0;
@@ -4311,12 +4564,12 @@ function buildFinalRecapParticipantModels(participants, completedMatches, predic
     });
 }
 
-function buildFinalRecapSnapshots(participants, completedMatches, predictionsByMatch) {
+function buildFinalRecapSnapshots(participants, completedMatches, predictionsByMatch, championPredictionMap = new Map(), championResult = null) {
     const snapshots = [];
 
     for (let index = 0; index < completedMatches.length; index += 1) {
         const matchesSoFar = completedMatches.slice(0, index + 1);
-        const models = buildFinalRecapParticipantModels(participants, matchesSoFar, predictionsByMatch);
+        const models = buildFinalRecapParticipantModels(participants, matchesSoFar, predictionsByMatch, championPredictionMap, getChampionPredictionResult(matchesSoFar));
         const rows = rankFinalRecapModels(models);
         rows.forEach((row, rankIndex) => row.rank = rankIndex + 1);
         snapshots.push({
@@ -4370,16 +4623,14 @@ function buildFinalRecapMatchFacts(completedMatches, predictionsByMatch, partici
     return completedMatches.map((match) => {
         const predictions = predictionsByMatch.get(match.id) || [];
         const pointsRows = predictions.map((prediction) => {
-            const points = calculatePoints(
-                Number(prediction.predicted_team1_goals),
-                Number(prediction.predicted_team2_goals),
-                match.actual_team1_goals,
-                match.actual_team2_goals
-            );
-            return { prediction, points };
+            const p1 = Number(prediction.predicted_team1_goals);
+            const p2 = Number(prediction.predicted_team2_goals);
+            const points = calculatePoints(p1, p2, match.actual_team1_goals, match.actual_team2_goals, match);
+            const exactScore = p1 === Number(match.actual_team1_goals) && p2 === Number(match.actual_team2_goals);
+            return { prediction, points, exactScore };
         });
         const awardedPoints = pointsRows.reduce((sum, row) => sum + row.points, 0);
-        const exactCount = pointsRows.filter((row) => row.points === 50).length;
+        const exactCount = pointsRows.filter((row) => row.exactScore).length;
         const correctCount = pointsRows.filter((row) => row.points > 0).length;
         const zeroOrMissing = participants.length - correctCount;
         const majorityOutcome = getFinalRecapMajorityOutcome(predictions);
@@ -4424,9 +4675,11 @@ function buildFinalRecapStageFacts(completedMatches, predictionsByMatch, partici
         row.possiblePredictions += participants.length;
 
         for (const prediction of predictions) {
-            const points = calculatePoints(Number(prediction.predicted_team1_goals), Number(prediction.predicted_team2_goals), match.actual_team1_goals, match.actual_team2_goals);
+            const p1 = Number(prediction.predicted_team1_goals);
+            const p2 = Number(prediction.predicted_team2_goals);
+            const points = calculatePoints(p1, p2, match.actual_team1_goals, match.actual_team2_goals, match);
             row.points += points;
-            if (points === 50) row.exactScores += 1;
+            if (p1 === Number(match.actual_team1_goals) && p2 === Number(match.actual_team2_goals)) row.exactScores += 1;
             if (points > 0) row.correctPredictions += 1;
         }
     }

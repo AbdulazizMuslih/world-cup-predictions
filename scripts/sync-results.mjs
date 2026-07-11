@@ -78,6 +78,14 @@ const MS = {
     day: 24 * 60 * 60 * 1000
 };
 
+const BONUS_EXACT_POINTS_BY_STAGE = {
+    SEMI_FINALS: 100,
+    THIRD_PLACE: 100,
+    FINAL: 200
+};
+const CHAMPION_WINNER_POINTS = 50;
+const CHAMPION_RUNNER_UP_POINTS = 10;
+
 const NORMAL_SYNC_LOOKBACK_HOURS = 36;
 const CORRECTION_SYNC_LOOKBACK_HOURS = 36;
 
@@ -97,8 +105,8 @@ function mapStatus(apiStatus) {
     return "scheduled";
 }
 
-function calculatePoints(predicted1, predicted2, actual1, actual2) {
-    if (predicted1 === actual1 && predicted2 === actual2) return 50;
+function calculatePoints(predicted1, predicted2, actual1, actual2, matchOrStage = null) {
+    if (predicted1 === actual1 && predicted2 === actual2) return getExactScorePointsForStage(matchOrStage);
 
     const predictedOutcome = getOutcome(predicted1, predicted2);
     const actualOutcome = getOutcome(actual1, actual2);
@@ -106,11 +114,46 @@ function calculatePoints(predicted1, predicted2, actual1, actual2) {
     return predictedOutcome === actualOutcome ? 10 : 0;
 }
 
+function getExactScorePointsForStage(matchOrStage = null) {
+    const stage = typeof matchOrStage === "string" ? matchOrStage : (matchOrStage?.stage || "");
+    return BONUS_EXACT_POINTS_BY_STAGE[stage] || 50;
+}
+
 function getOutcome(team1, team2) {
     if (team1 > team2) return "team1";
     if (team2 > team1) return "team2";
     return "draw";
 }
+function normalizeTeamName(value) {
+    return String(value || "").trim();
+}
+
+function getWinnerTeamFromMatch(match) {
+    if (!match || match.actual_team1_goals === null || match.actual_team2_goals === null) return null;
+    const winnerSide = String(match.winner_side || "").toUpperCase();
+    if (winnerSide === "HOME_TEAM") return match.team1;
+    if (winnerSide === "AWAY_TEAM") return match.team2;
+    if (Number(match.actual_team1_goals) > Number(match.actual_team2_goals)) return match.team1;
+    if (Number(match.actual_team2_goals) > Number(match.actual_team1_goals)) return match.team2;
+    return null;
+}
+
+function getLoserTeamFromMatch(match) {
+    const winner = getWinnerTeamFromMatch(match);
+    if (!winner) return null;
+    if (normalizeTeamName(winner) === normalizeTeamName(match.team1)) return match.team2;
+    if (normalizeTeamName(winner) === normalizeTeamName(match.team2)) return match.team1;
+    return null;
+}
+
+function calculateChampionPredictionPoints(predictedTeam, championResult) {
+    if (!predictedTeam || !championResult?.champion) return 0;
+    const normalized = normalizeTeamName(predictedTeam);
+    if (normalized === normalizeTeamName(championResult.champion)) return CHAMPION_WINNER_POINTS;
+    if (championResult.runnerUp && normalized === normalizeTeamName(championResult.runnerUp)) return CHAMPION_RUNNER_UP_POINTS;
+    return 0;
+}
+
 
 function toApiDate(date) {
     return date.toISOString().slice(0, 10);
@@ -356,7 +399,8 @@ async function recalculatePointsForScoredMatch(match) {
             prediction.predicted_team1_goals,
             prediction.predicted_team2_goals,
             match.actual_team1_goals,
-            match.actual_team2_goals
+            match.actual_team2_goals,
+            match
         );
 
         await supabaseFetch(`predictions?id=eq.${prediction.id}`, {
@@ -366,6 +410,35 @@ async function recalculatePointsForScoredMatch(match) {
             },
             body: JSON.stringify({ points })
         });
+    }
+}
+
+async function recalculateChampionPredictions() {
+    try {
+        const finalMatches = await supabaseFetch(
+            "matches?stage=eq.FINAL&select=id,team1,team2,kickoff_at,stage,winner_side,actual_team1_goals,actual_team2_goals&order=kickoff_at.desc&limit=1"
+        );
+        const finalMatch = finalMatches?.[0];
+        const champion = getWinnerTeamFromMatch(finalMatch);
+        const runnerUp = getLoserTeamFromMatch(finalMatch);
+        if (!champion) return;
+
+        const championPredictions = await supabaseFetch(
+            "champion_predictions?select=id,predicted_team"
+        );
+
+        for (const row of championPredictions || []) {
+            const points = calculateChampionPredictionPoints(row.predicted_team, { champion, runnerUp });
+            await supabaseFetch(`champion_predictions?id=eq.${row.id}`, {
+                method: "PATCH",
+                headers: { Prefer: "return=minimal" },
+                body: JSON.stringify({ points })
+            });
+        }
+
+        console.log(`Champion predictions recalculated. Champion=${champion}, runnerUp=${runnerUp || "-"}.`);
+    } catch (error) {
+        console.warn(`Champion predictions recalculation skipped: ${error.message}`);
     }
 }
 
@@ -401,6 +474,8 @@ async function normalizeUpsertAndScore(apiMatches, exactFilter, label) {
     for (const match of scoredMatches) {
         await recalculatePointsForScoredMatch(match);
     }
+
+    await recalculateChampionPredictions();
 }
 
 async function runNormalSync() {

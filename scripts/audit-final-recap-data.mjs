@@ -101,9 +101,21 @@ function calculatePoints(prediction, match) {
     const predicted1 = Number(prediction.predicted_team1_goals);
     const predicted2 = Number(prediction.predicted_team2_goals);
 
-    if (predicted1 === match.actual_team1_goals && predicted2 === match.actual_team2_goals) return 50;
+    if (isExactScorePrediction(prediction, match)) return getExactScorePointsForStage(match);
 
     return getOutcome(predicted1, predicted2) === getOutcome(match.actual_team1_goals, match.actual_team2_goals) ? 10 : 0;
+}
+
+function getExactScorePointsForStage(match = {}) {
+    const stage = match.stage || "";
+    if (stage === "FINAL") return 200;
+    if (stage === "SEMI_FINALS" || stage === "THIRD_PLACE") return 100;
+    return 50;
+}
+
+function isExactScorePrediction(prediction, match) {
+    return Number(prediction.predicted_team1_goals) === Number(match.actual_team1_goals)
+        && Number(prediction.predicted_team2_goals) === Number(match.actual_team2_goals);
 }
 
 function groupBy(rows, key) {
@@ -192,7 +204,7 @@ async function main() {
             for (const prediction of predictionsByMatch.get(match.id) || []) {
                 const points = calculatePoints(prediction, match);
                 stagePoints += points;
-                if (points === 50) exactScores += 1;
+                if (isExactScorePrediction(prediction, match)) exactScores += 1;
                 if (points > 0) correctPredictions += 1;
             }
         }
@@ -218,7 +230,7 @@ async function main() {
         for (const prediction of matchPredictions) {
             const earned = calculatePoints(prediction, match);
             points += earned;
-            if (earned === 50) exact += 1;
+            if (isExactScorePrediction(prediction, match)) exact += 1;
             if (earned > 0) correct += 1;
         }
 
@@ -247,7 +259,7 @@ async function main() {
             if (!match) continue;
             const earned = calculatePoints(prediction, match);
             points += earned;
-            if (earned === 50) exact += 1;
+            if (isExactScorePrediction(prediction, match)) exact += 1;
             if (earned > 0) correct += 1;
         }
 
@@ -271,8 +283,6 @@ async function main() {
     const approvedEventNotesByStage = countBy(approvedEventNotes.map((note) => getStageForEventNote(note, matchById) || "unspecified"));
     const approvedEventNotesByType = countBy(approvedEventNotes.map((note) => note.event_type || "unspecified"));
     const approvedEventNotesByMood = countBy(approvedEventNotes.map((note) => note.mood || "unspecified"));
-    const eventNotesBySource = countBy(allEventNotes.map((note) => note.source_name || "unspecified"));
-    const draftEventNotesBySource = countBy(draftEventNotes.map((note) => note.source_name || "unspecified"));
 
     const warnings = [];
 
@@ -353,8 +363,6 @@ async function main() {
             approved_by_stage: approvedEventNotesByStage,
             approved_by_type: approvedEventNotesByType,
             approved_by_mood: approvedEventNotesByMood,
-            by_source: eventNotesBySource,
-            draft_by_source: draftEventNotesBySource,
             next_review_items: draftEventNotes.slice(0, 8).map((note) => compactEventNote(note, matchById)),
             missing_match_items: eventNotesWithMissingMatch.slice(0, 8).map((note) => compactEventNote(note, matchById))
         },

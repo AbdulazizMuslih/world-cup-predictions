@@ -67,12 +67,14 @@ const AI_TOP_UP_WITH_CALCULATED_HIGHLIGHTS = String(process.env.AI_TOP_UP_WITH_C
 const AI_CALCULATED_HIGHLIGHT_TOP_UP_TO = Math.max(0, Number(process.env.AI_CALCULATED_HIGHLIGHT_TOP_UP_TO || Math.min(MAX_HIGHLIGHTS, Math.max(45, AI_MIN_VALID_HIGHLIGHT_ROWS))));
 const AI_ENFORCE_UNIQUE_TITLES = String(process.env.AI_ENFORCE_UNIQUE_TITLES || "true").toLowerCase() !== "false";
 const AI_TITLE_MATCH_HINT = String(process.env.AI_TITLE_MATCH_HINT || "true").toLowerCase() !== "false";
+const AI_SKIP_IF_SAME_COMPLETED_COUNT_EXISTS = String(process.env.AI_SKIP_IF_SAME_COMPLETED_COUNT_EXISTS || "false").toLowerCase() === "true";
 
 const EXPECTED_WORLD_CUP_MATCH_COUNT = Number(process.env.EXPECTED_WORLD_CUP_MATCH_COUNT || 104);
 const ALLOW_FINAL_PREVIEW = String(process.env.ALLOW_FINAL_PREVIEW || "false").toLowerCase() === "true";
 const PUBLISH_VISIBLE = String(process.env.PUBLISH_VISIBLE || "false").toLowerCase() === "true";
 const RESET_EXISTING_FINAL_AI = String(process.env.RESET_EXISTING_FINAL_AI || "true").toLowerCase() !== "false";
-const GENERATE_PROFILES = String(process.env.GENERATE_PROFILES || "true").toLowerCase() === "true";
+const GENERATE_PROFILES_SETTING = String(process.env.GENERATE_PROFILES || "auto").toLowerCase();
+let GENERATE_PROFILES = false;
 const MIN_APPROVED_EVENT_NOTES = Math.max(0, Number(process.env.MIN_APPROVED_EVENT_NOTES || 0));
 const REQUIRE_EVENT_NOTES_FOR_PUBLISH = String(process.env.REQUIRE_EVENT_NOTES_FOR_PUBLISH || "false").toLowerCase() === "true";
 const USE_TRUSTED_EVENT_NOTES = String(process.env.USE_TRUSTED_EVENT_NOTES || "true").toLowerCase() !== "false";
@@ -86,7 +88,10 @@ const POSTS_TABLE = "ai_posts";
 const EVENT_NOTES_TABLE = "final_event_notes";
 const FINAL_HIGHLIGHTS_SECTION = "final_highlights";
 const FINAL_PROFILE_SECTION = "final_profile";
-const GENERATOR_VERSION = "wc-final-recap-story-seeds-v9-final-profile-title-polish";
+const GENERATOR_VERSION = "wc-final-recap-v39-champion-bonus-stage-points";
+const BONUS_EXACT_POINTS_BY_STAGE = { SEMI_FINALS: 100, THIRD_PLACE: 100, FINAL: 200 };
+const CHAMPION_WINNER_POINTS = 50;
+const CHAMPION_RUNNER_UP_POINTS = 10;
 
 const FEMALE_NAMES = new Set([
     "منار",
@@ -111,6 +116,24 @@ if (!Number.isInteger(EXPECTED_WORLD_CUP_MATCH_COUNT) || EXPECTED_WORLD_CUP_MATC
 
 async function main() {
     const factsPack = await buildFactsPack();
+    GENERATE_PROFILES = shouldGenerateProfilesForRun(factsPack);
+
+    if (!shouldGenerateHighlightsForRun(factsPack)) {
+        console.log("AUTO AI GENERATION SKIPPED: no end-stage checkpoint is ready yet.");
+        console.log(JSON.stringify({
+            completedMatches: factsPack.audit.completedMatches,
+            quarterFinalsComplete: factsPack.audit.quarterFinalsComplete,
+            semiFinalsComplete: factsPack.audit.semiFinalsComplete,
+            thirdPlaceComplete: factsPack.audit.thirdPlaceComplete,
+            tournamentComplete: factsPack.audit.finalDataReady
+        }, null, 2));
+        return;
+    }
+
+    if (await shouldSkipBecauseSameCompletedCountExists(factsPack)) {
+        console.log(`AUTO AI GENERATION SKIPPED: final_highlights already exist for ${factsPack.audit.completedMatches} completed matches.`);
+        return;
+    }
 
     console.log("FINAL AI GENERATION FACT SUMMARY");
     console.log(JSON.stringify({
@@ -398,9 +421,57 @@ function calculatePoints(prediction, match) {
     const p1 = Number(prediction.predicted_team1_goals);
     const p2 = Number(prediction.predicted_team2_goals);
 
-    if (p1 === match.actual_team1_goals && p2 === match.actual_team2_goals) return 50;
+    if (p1 === match.actual_team1_goals && p2 === match.actual_team2_goals) return getExactScorePointsForStage(match);
 
     return getOutcome(p1, p2) === getOutcome(match.actual_team1_goals, match.actual_team2_goals) ? 10 : 0;
+}
+
+function getExactScorePointsForStage(matchOrStage = null) {
+    const stage = typeof matchOrStage === "string" ? matchOrStage : (matchOrStage?.stage || "");
+    return BONUS_EXACT_POINTS_BY_STAGE[stage] || 50;
+}
+
+function isExactScorePrediction(prediction, match) {
+    if (!prediction || !match) return false;
+    return Number(prediction.predicted_team1_goals) === Number(match.actual_team1_goals)
+        && Number(prediction.predicted_team2_goals) === Number(match.actual_team2_goals);
+}
+
+function normalizeTeamName(value) {
+    return String(value || "").trim();
+}
+
+function getWinnerTeamFromMatch(match) {
+    if (!match || !hasActualScore(match)) return null;
+    const winnerSide = String(match.winner_side || "").toUpperCase();
+    if (winnerSide === "HOME_TEAM") return match.team1;
+    if (winnerSide === "AWAY_TEAM") return match.team2;
+    if (Number(match.actual_team1_goals) > Number(match.actual_team2_goals)) return match.team1;
+    if (Number(match.actual_team2_goals) > Number(match.actual_team1_goals)) return match.team2;
+    return null;
+}
+
+function getLoserTeamFromMatch(match) {
+    const winner = getWinnerTeamFromMatch(match);
+    if (!winner) return null;
+    if (normalizeTeamName(winner) === normalizeTeamName(match.team1)) return match.team2;
+    if (normalizeTeamName(winner) === normalizeTeamName(match.team2)) return match.team1;
+    return null;
+}
+
+function getChampionResult(matches = []) {
+    const finalMatch = [...matches].filter((match) => match.stage === "FINAL" && hasActualScore(match)).sort((a, b) => new Date(b.kickoff_at || 0) - new Date(a.kickoff_at || 0))[0];
+    if (!finalMatch) return null;
+    const champion = getWinnerTeamFromMatch(finalMatch);
+    return champion ? { champion, runnerUp: getLoserTeamFromMatch(finalMatch), finalMatch } : null;
+}
+
+function calculateChampionPredictionPoints(predictedTeam, championResult) {
+    if (!predictedTeam || !championResult?.champion) return 0;
+    const normalized = normalizeTeamName(predictedTeam);
+    if (normalized === normalizeTeamName(championResult.champion)) return CHAMPION_WINNER_POINTS;
+    if (championResult.runnerUp && normalized === normalizeTeamName(championResult.runnerUp)) return CHAMPION_RUNNER_UP_POINTS;
+    return 0;
 }
 
 function groupBy(rows, key) {
@@ -415,6 +486,11 @@ function groupBy(rows, key) {
 
 function percent(value, total) {
     return total > 0 ? Number(((value / total) * 100).toFixed(1)) : 0;
+}
+
+function isStageComplete(matches = [], stage) {
+    const stageMatches = matches.filter((match) => match.stage === stage);
+    return stageMatches.length > 0 && stageMatches.every(hasActualScore);
 }
 
 async function loadPredictionsForMatches(matchIds) {
@@ -437,10 +513,11 @@ async function loadPredictionsForMatches(matchIds) {
 }
 
 async function buildFactsPack() {
-    const [participants, matches, allEventNotes] = await Promise.all([
+    const [participants, matches, allEventNotes, championPredictions] = await Promise.all([
         supabaseFetch("participants?select=id,name,active,sort_order&order=sort_order.asc"),
         supabaseFetch("matches?select=id,team1,team2,kickoff_at,status,stage,score_duration,winner_side,actual_team1_goals,actual_team2_goals&order=kickoff_at.asc"),
-        loadFinalEventNotes()
+        loadFinalEventNotes(),
+        optionalSupabaseFetch("champion_predictions?select=participant_id,predicted_team,points")
     ]);
 
     const allParticipants = participants || [];
@@ -458,7 +535,9 @@ async function buildFactsPack() {
     const predictions = rawPredictions.filter((prediction) => activeParticipantIds.has(String(prediction.participant_id)));
     const predictionsByMatch = groupBy(predictions, "match_id");
     const predictionsByParticipant = groupBy(predictions, "participant_id");
-    const participantRows = buildParticipantFacts(activeParticipants, completedMatches, predictionsByParticipant);
+    const championResult = getChampionResult(completedMatches);
+    const championPredictionMap = new Map((championPredictions || []).map((row) => [String(row.participant_id), row]));
+    const participantRows = buildParticipantFacts(activeParticipants, completedMatches, predictionsByParticipant, championPredictionMap, championResult);
     const rankedParticipants = rankParticipants(participantRows);
     const matchFacts = buildMatchFacts(completedMatches, predictionsByMatch, participantMap, activeParticipants.length);
     const stageFacts = buildStageFacts(completedMatches, matchFacts, activeParticipants.length);
@@ -493,7 +572,10 @@ async function buildFactsPack() {
             approvedEventNotesWithSource: approvedEventNotes.filter((note) => Boolean(note.source_url || note.source_name)).length,
             approvedEventNotesByStage: countBy(approvedEventNotes.map((note) => note.stage || getStageForEventNote(note, allMatches) || "unspecified")),
             approvedEventNotesByMood: countBy(approvedEventNotes.map((note) => note.mood || "unspecified")),
-            finalDataReady: allMatches.length >= EXPECTED_WORLD_CUP_MATCH_COUNT && completedMatches.length >= EXPECTED_WORLD_CUP_MATCH_COUNT && allMatches.every(hasActualScore)
+            finalDataReady: allMatches.length >= EXPECTED_WORLD_CUP_MATCH_COUNT && completedMatches.length >= EXPECTED_WORLD_CUP_MATCH_COUNT && allMatches.every(hasActualScore),
+            quarterFinalsComplete: isStageComplete(allMatches, "QUARTER_FINALS"),
+            semiFinalsComplete: isStageComplete(allMatches, "SEMI_FINALS"),
+            thirdPlaceComplete: isStageComplete(allMatches, "THIRD_PLACE")
         },
         language: {
             femaleNames: [...FEMALE_NAMES],
@@ -505,6 +587,7 @@ async function buildFactsPack() {
         contest: {
             activeParticipants: activeParticipants.map((participant) => ({ id: participant.id, name: participant.name })),
             leaderboard: rankedParticipants.map(publicParticipantFact),
+            championPrediction: championResult ? { champion: championResult.champion, runnerUp: championResult.runnerUp } : null,
             stages: stageFacts,
             matches: matchFacts.map(publicMatchFact),
             eventNotes: approvedEventNotes.map((note) => publicEventNote(note, allMatches)),
@@ -529,14 +612,14 @@ async function buildFactsPack() {
             "لا تفضح قلة المشاركة ولا تسخر من أحد.",
             "استخدم ضمائر صحيحة للأسماء النسائية المذكورة في participantLanguage.",
             "لا تستخدم عبارات صحفية عامة مثل الجمهور كان متحمساً أو تداولت الأحاديث، ولا تتكلم عن جمهور غير موجود في البيانات.",
-            "نتيجة بالملّي = 50 نقطة، والاتجاه الصحيح فقط = 10 نقاط. لا تخترع نقاطاً إضافية.",
+            "نتيجة بالملّي = 50 نقطة، وفي نصف النهائي والمركز الثالث = 100، وفي النهائي = 200. الاتجاه الصحيح فقط = 10 نقاط. لا تخترع نقاطاً إضافية.",
             "كل منشور: عنوان قصصي واضح + وصف فيه 3 إلى 6 جمل قصيرة. لا مقالات طويلة ولا كروت صغيرة.",
             "إذا لم توجد معلومة كافية عن حدث كروي خارجي، تجاهله ولا تخترعه وركز على قصة المسابقة."
         ]
     };
 }
 
-function buildParticipantFacts(participants, completedMatches, predictionsByParticipant) {
+function buildParticipantFacts(participants, completedMatches, predictionsByParticipant, championPredictionMap = new Map(), championResult = null) {
     return participants.map((participant) => {
         const rows = predictionsByParticipant.get(participant.id) || [];
         let points = 0;
@@ -565,7 +648,7 @@ function buildParticipantFacts(participants, completedMatches, predictionsByPart
             stageRow.points += earned;
             stageRow.predictions += 1;
 
-            if (earned === 50) {
+            if (isExactScorePrediction(prediction, match)) {
                 exactScores += 1;
                 correctPredictions += 1;
                 stageRow.exactScores += 1;
@@ -592,6 +675,8 @@ function buildParticipantFacts(participants, completedMatches, predictionsByPart
             name: participant.name,
             gender: FEMALE_NAMES.has(String(participant.name).trim()) ? "female" : "male",
             points,
+            championPredictionTeam: championPrediction?.predicted_team || null,
+            championPredictionPoints,
             predictions: rows.length,
             missing: Math.max(0, completedMatches.length - rows.length),
             exactScores,
@@ -632,7 +717,7 @@ function buildMatchFacts(matches, predictionsByMatch, participantMap, participan
             scoreCounts.set(predictedScore, (scoreCounts.get(predictedScore) || 0) + 1);
             const points = calculatePoints(prediction, match);
             awardedPoints += points;
-            if (points === 50) exactNames.push(participant.name);
+            if (isExactScorePrediction(prediction, match)) exactNames.push(participant.name);
             else if (points === 10) correctNames.push(participant.name);
             else zeroNames.push(participant.name);
         }
@@ -770,7 +855,7 @@ function buildIntegratedStorySeeds({ rankedParticipants, matchFacts, stageFacts,
                     why_it_matters: story.reasons,
                     must_include_facts: compactFacts([
                         `المباراة: ${match.title} (${getStageLabel(match.stage)})، النتيجة ${match.score}. اذكرها مرة واحدة فقط داخل النص ولا تبدأ بها.`,
-                        match.exactCount > 0 ? `${match.exactCount} نتيجة بالملّي = 50 نقطة لكل نتيجة بالملّي` : null,
+                        match.exactCount > 0 ? `${match.exactCount} نتيجة بالملّي، وقيمتها تعتمد على المرحلة` : null,
                         match.exactNames.length ? `أسماء بالملّي: ${match.exactNames.slice(0, 5).join("، ")}` : null,
                         match.correctCount > 0 ? `${match.correctCount} توقع صحيح للاتجاه = 10 نقاط لكل توقع صحيح` : null,
                         names.length ? `أسماء محورية للقصة: ${names.join("، ")}` : null,
@@ -1622,6 +1707,23 @@ function topUpHighlightsWithCalculatedStories(output, factsPack, targetCount, us
     }
 }
 
+function buildVariedMatchStoryTitle(match = {}, fallback = "لقطة تستحق الأضواء", category = "story", index = 0) {
+    const matchTitle = String(match.title || "").replace(/ ضد /g, " × ").trim();
+    const score = match.score ? ` ${match.score}` : "";
+    const prefixes = {
+        real_event_plus_contest: ["حين دخلت الكرة دفتر التوقعات", "لقطة كروية صارت قصة في الجدول", "ما حدث في الملعب وصل إلى المسابقة"],
+        knockout_pressure: ["اختبار أعصاب لا يشبه المجموعات", "قراءة تحت ضغط الخروج", "الهدوء يكسب في وقت صعب"],
+        popular_trap: ["الطريق المزدحم لم ينفع", "الأغلبية راحت للاتجاه الخطأ", "الفخ الهادئ الذي غيّر اللقطة"],
+        lone_reader: ["قراءة خارج الزحمة", "عين شافت ما فاتها الآخرون", "هدوء قليل ونقاط كثيرة"],
+        exact_circle: ["بالملّي في توقيت ثمين", "نتيجة كاملة رفعت الأسماء", "فرحة الخمسين بنكهة خاصة"],
+        points_swing: ["خزنة النقاط انفتحت", "مباراة حرّكت السباق", "نقاط كثيرة في ليلة واحدة"],
+        hard_stop: ["ليلة قاسية على التوقعات", "حين توقف عداد النقاط", "مطب صغير بصوت كبير"]
+    };
+    const choices = prefixes[category] || [fallback];
+    const phrase = choices[Math.abs(index) % choices.length] || fallback;
+    return matchTitle ? `${matchTitle}${score}: ${phrase}` : phrase;
+}
+
 function buildCalculatedHighlightPost(seed, index) {
     const match = seed.match || {};
     const stage = match.stageLabel || seed.stage?.label_ar || "أضواء المسابقة";
@@ -1640,25 +1742,25 @@ function buildCalculatedHighlightPost(seed, index) {
     let body = "";
 
     if (category === "real_event_plus_contest") {
-        title = buildMatchHintTitle(match, contextText ? "كرة القدم دخلت دفتر التوقعات" : "أكثر من نتيجة في الجدول");
+        title = buildVariedMatchStoryTitle(match, contextText ? "لقطة كروية وصلت للتوقعات" : "مباراة صارت لها حكاية", category, index);
         body = `${contextText ? `${contextText} ` : "كانت المباراة تحمل ثقلاً أكبر من رقم في الجدول. "}داخل المسابقة، لم تكن اللقطة في النتيجة وحدها، بل في طريقة انعكاسها على توقعات المشاركين.\n\n${matchTitle} ${scoreText}، لكنها صارت مادة للأضواء لأنها جمعت بين سياق كروي واضح وأثر مباشر في التوقعات. ${names.length ? `${nameText} كانوا من الأسماء الأقرب للقصة، بين قراءة صحيحة ونقاط ظهرت في وقت مهم.` : `القصة هنا أن أرقام المسابقة التقطت لحظة كروية حقيقية وحولتها إلى ذاكرة داخل التنافس.`}`;
     } else if (category === "knockout_pressure") {
-        title = buildMatchHintTitle(match, "ضغط الإقصائيات ما يرحم");
-        body = `في الأدوار الإقصائية، كل توقع يدخل بثقل مختلف. المباراة لا تعطي نقاطاً فقط؛ تعطي إحساساً أن الخطأ صار أغلى، وأن القراءة الهادئة قد تساوي قفزة كاملة في الجدول.\n\n${matchTitle} ${scoreText}، وكانت من اللحظات التي جعلت ${nameText} يظهرون في الصورة. ${match.exactCount ? `${match.exactCount} نتيجة بالملّي منحت أصحابها 50 نقطة.` : "حتى التوقع الصحيح للاتجاه كان له وزن واضح."} الأهم أن القصة هنا لم تكن نتيجة فقط، بل اختبار أعصاب في مرحلة لا ترحم.`;
+        title = buildVariedMatchStoryTitle(match, "اختبار أعصاب في الإقصائيات", category, index);
+        body = `في الأدوار الإقصائية، كل توقع يدخل بثقل مختلف. المباراة لا تعطي نقاطاً فقط؛ تعطي إحساساً أن الخطأ صار أغلى، وأن القراءة الهادئة قد تساوي قفزة كاملة في الجدول.\n\n${matchTitle} ${scoreText}، وكانت من اللحظات التي جعلت ${nameText} يظهرون في الصورة. ${match.exactCount ? `${match.exactCount} نتيجة بالملّي منحت أصحابها نقاطاً كبيرة.` : "حتى التوقع الصحيح للاتجاه كان له وزن واضح."} الأهم أن القصة هنا لم تكن نتيجة فقط، بل اختبار أعصاب في مرحلة لا ترحم.`;
     } else if (category === "popular_trap") {
-        title = buildMatchHintTitle(match, "الفخ الذي مشى معه كثيرون");
+        title = buildVariedMatchStoryTitle(match, "الطريق المزدحم لم يكسب", category, index);
         body = `أحياناً يكون التوقع الأكثر راحة هو أكثر واحد يخدع الناس. في هذه اللقطة، بدا الطريق الشائع واضحاً، لكن المباراة أخذت زاوية مختلفة وتركت جزءاً كبيراً من الجدول بلا مكسب.\n\n${matchTitle} ${scoreText}. ${common ? `التوقع الأكثر تكراراً كان ${common.score} عند ${common.count} مشاركين، لكنه لم يطابق الواقع.` : "التوقعات تكدست في اتجاه لم يكسب في النهاية."} وسط هذا الفخ، ${nameText} خرجوا بصورة مختلفة؛ ليس لأنهم أكثر حظاً فقط، بل لأنهم لم يسيروا مع الطريق المزدحم.`;
     } else if (category === "lone_reader") {
-        title = buildMatchHintTitle(match, "قراءة مختلفة وسط الزحمة");
-        body = `هذه من اللقطات التي لا تحتاج ضجيجاً. أغلب التوقعات كانت تمشي في اتجاه مألوف، لكن اسماً أو اسمين قرأوا المباراة من زاوية ثانية وخرجوا منها بما يستحق الأضواء.\n\n${matchTitle} ${scoreText}. ${exactNames.length ? `${exactNames.join("، ")} أخذوا النتيجة بالملّي وخرجوا بـ50 نقطة لكل واحد.` : `${nameText} كانوا الأقرب لقراءة اللحظة.`} ومع ${match.zeroOrMissingPercent || 0}% بلا نقاط أو بلا توقع، صارت اللقطة أوضح: أحياناً القراءة الهادئة تكسب أكثر من التوقع الشعبي.`;
+        title = buildVariedMatchStoryTitle(match, "قراءة هادئة خرجت من الزحمة", category, index);
+        body = `هذه من اللقطات التي لا تحتاج ضجيجاً. أغلب التوقعات كانت تمشي في اتجاه مألوف، لكن اسماً أو اسمين قرأوا المباراة من زاوية ثانية وخرجوا منها بما يستحق الأضواء.\n\n${matchTitle} ${scoreText}. ${exactNames.length ? `${exactNames.join("، ")} أخذوا النتيجة بالملّي وخرجوا بمكافأة كاملة.` : `${nameText} كانوا الأقرب لقراءة اللحظة.`} ومع ${match.zeroOrMissingPercent || 0}% بلا نقاط أو بلا توقع، صارت اللقطة أوضح: أحياناً القراءة الهادئة تكسب أكثر من التوقع الشعبي.`;
     } else if (category === "exact_circle") {
-        title = buildMatchHintTitle(match, "ليلة بالملّي لم تمر بهدوء");
-        body = `في بعض المباريات، الفرحة لا تكون لشخص واحد. النتيجة الدقيقة فتحت باباً صغيراً لمجموعة أسماء دخلوا منه معاً، وكأن المباراة وزعت عليهم لقطة خاصة في نفس الليلة.\n\n${matchTitle} ${scoreText}. ${exactNames.length ? `${exactNames.join("، ")} ضربوا النتيجة كاملة، و50 نقطة لكل قراءة بالملّي.` : `${nameText} كانوا في قلب اللقطة.`} جمال هذه اللحظة أنها لم تكن مجرد رقم؛ كانت تذكيراً أن المسابقة تحفظ التفاصيل الصغيرة حين يقرأها أكثر من شخص بالطريقة الصحيحة.`;
+        title = buildVariedMatchStoryTitle(match, "بالملّي في توقيت ثمين", category, index);
+        body = `في بعض المباريات، الفرحة لا تكون لشخص واحد. النتيجة الدقيقة فتحت باباً صغيراً لمجموعة أسماء دخلوا منه معاً، وكأن المباراة وزعت عليهم لقطة خاصة في نفس الليلة.\n\n${matchTitle} ${scoreText}. ${exactNames.length ? `${exactNames.join("، ")} ضربوا النتيجة كاملة، وكانت مكافأة بالملّي هي الأثقل في اللقطة.` : `${nameText} كانوا في قلب اللقطة.`} جمال هذه اللحظة أنها لم تكن مجرد رقم؛ كانت تذكيراً أن المسابقة تحفظ التفاصيل الصغيرة حين يقرأها أكثر من شخص بالطريقة الصحيحة.`;
     } else if (category === "points_swing") {
-        title = buildMatchHintTitle(match, "خزنة النقاط انفتحت");
+        title = buildVariedMatchStoryTitle(match, "خزنة النقاط انفتحت", category, index);
         body = `هناك مباريات تمر بهدوء، وهناك مباريات تفتح الجدول كأنها خزنة. هذه كانت من النوع الثاني: نقاط كثيرة خرجت دفعة واحدة، وخلت المطاردة تبدو أكثر جدية بعد صافرة النهاية.\n\n${matchTitle} ${scoreText}. ${match.awardedPoints ? `المباراة وزعت ${match.awardedPoints} نقطة على المشاركين،` : "النقاط تحركت بشكل واضح،"} وظهرت معها أسماء مثل ${nameText}. ليست الأضواء هنا لأن النتيجة كبيرة، بل لأن أثرها على المسابقة كان محسوساً: بعض الأسماء اقتربت، وبعض الفوارق بدأت تضيق.`;
     } else if (category === "hard_stop") {
-        title = buildMatchHintTitle(match, "ليلة أوقفت الجدول للحظة");
+        title = buildVariedMatchStoryTitle(match, "ليلة قاسية على التوقعات", category, index);
         body = `ليست كل لقطة مضيئة لأنها منحت نقاطاً كثيرة. أحياناً تدخل الأضواء لأنها كانت قاسية على الجميع تقريباً، وتترك الجدول كأنه أخذ نفساً طويلاً قبل أن يتحرك من جديد.\n\n${matchTitle} ${scoreText}. ${match.zeroOrMissingPercent ? `${match.zeroOrMissingPercent}% خرجوا بلا نقاط أو بلا توقع،` : "عدد كبير من المشاركين لم يستفيدوا منها،"} لذلك كانت قيمة الناجين أكبر. ${names.length ? `${nameText} خرجوا من الليلة بصورة أفضل.` : "القصة هنا في ندرة من قرأها، لا في النتيجة نفسها."} هذه لحظة تذكّر أن الصفر الجماعي يصنع دراما أيضاً.`;
     } else if (category === "stage_mood") {
         const stageLabel = seed.stage?.label_ar || stage;
@@ -1732,7 +1834,7 @@ function buildBatchPrompt({ batchName, instruction, highlightTarget, profileTarg
 - لا تستخدم عبارات مستهلكة أو عامة: أعادت تشكيل المزاج، أعادت تشكيل ملامح المنافسة، الثقة العمياء، القراء الهادئين، الجمهور كان متحمساً، تداولت الأحاديث، استثمروا الوقت في تحليل الفرق.
 - ممنوع عناوين خام أو مكررة: "مباراة أهدافها كثيرة"، "شباك نظيفة"، "حسم ضيق"، "النجوم تتألق"، "الطاقة تتفجر"، "التحول المفاجئ"، "ليلة 3 توقعات بالملّي".
 - لا تكدس الأرقام. اختر رقمين أو ثلاثة فقط تخدم القصة.
-- نتيجة بالملّي = 50 نقطة. الاتجاه الصحيح فقط = 10 نقاط. لا تخترع نقاطاً إضافية ولا أرقاماً غير موجودة.
+- نتيجة بالملّي = 50 نقطة قبل نصف النهائي، و100 في نصف النهائي/المركز الثالث، و200 في النهائي. الاتجاه الصحيح فقط = 10 نقاط. توقع بطل كأس العالم له نقاطه الخاصة ولا يُحسب بالملّي.
 - اذكر 1 إلى 4 أسماء فقط داخل النص، حتى لو seed فيه أسماء أكثر.
 - لا تسخر من أي مشارك ولا تذكر الغياب أو قلة المشاركة.
 - استخدم ضمائر صحيحة للبنات حسب participantLanguage.
@@ -2783,7 +2885,7 @@ function isUnsafeCalculatedHighlightPost(post = {}) {
 
     if (compactLength < 220) return true;
     if (/ما فيهاش|كده|بيقرأوا|فارغين|ما كانش|دارتت|النجاحة|البمثيلة|واجتهد/i.test(full)) return true;
-    if (/^(مباراة أهدافها كثيرة|حسم ضيق|شباك نظيفة|نتيجة موثقة|مباراة حماسية|مباراة متقاربة)/i.test(title)) return true;
+    if (/^(مباراة أهدافها كثيرة|حسم ضيق|شباك نظيفة|نتيجة موثقة|مباراة حماسية|مباراة متقاربة)$/i.test(title)) return true;
     if (/^\d+\s*[-–]\s*\d+/.test(title)) return true;
     if (/الجمهور كان|تداولت الأحاديث|أصبح الحديث يدور/i.test(full)) return true;
     return false;

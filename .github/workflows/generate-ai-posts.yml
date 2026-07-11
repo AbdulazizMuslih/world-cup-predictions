@@ -91,7 +91,9 @@ jobs:
           PUBLISH_VISIBLE: ${{ github.event_name == 'schedule' && 'true' || inputs.publish_visible }}
           MAX_HIGHLIGHTS: ${{ github.event_name == 'schedule' && '60' || inputs.max_highlights }}
           RESET_EXISTING_FINAL_AI: ${{ github.event_name == 'schedule' && 'true' || inputs.reset_existing }}
-          GENERATE_PROFILES: "true"
+          GENERATE_PROFILES: ${{ github.event_name == 'schedule' && 'auto' || 'true' }}
+          AI_AUTO_STAGE_MODE: ${{ github.event_name == 'schedule' && 'true' || 'false' }}
+          AI_SKIP_IF_SAME_COMPLETED_COUNT_EXISTS: ${{ github.event_name == 'schedule' && 'true' || 'false' }}
           MIN_APPROVED_EVENT_NOTES: "0"
           REQUIRE_EVENT_NOTES_FOR_PUBLISH: "false"
           USE_TRUSTED_EVENT_NOTES: "true"

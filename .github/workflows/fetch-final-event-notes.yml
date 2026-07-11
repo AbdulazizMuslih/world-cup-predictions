@@ -1,32 +1,61 @@
-name: Fetch Final Event Notes
+name: Fetch Final Event Notes Drafts
 
 on:
   workflow_dispatch:
     inputs:
       dry_run:
-        description: "Preview only? Use false to insert rows."
+        description: "Preview only? Keep true for first test."
+        required: true
+        default: "true"
+        type: choice
+        options:
+          - "true"
+          - "false"
+      fetch_football_data_notes:
+        description: "Fetch official result/duration notes using FOOTBALL_DATA_TOKEN?"
+        required: true
+        default: "true"
+        type: choice
+        options:
+          - "true"
+          - "false"
+      fetch_api_football_events:
+        description: "Fetch detailed goals/cards/VAR from API-Football/API-Sports? Requires API_FOOTBALL_KEY."
         required: true
         default: "false"
         type: choice
-        options: ["false", "true"]
-      recent_completed_days:
-        description: "Only matches from the last N days. Use 0 for all completed matches."
-        required: true
-        default: "3"
+        options:
+          - "false"
+          - "true"
       fetch_news_events:
         description: "Fetch news/article candidates from GDELT?"
         required: true
         default: "true"
         type: choice
-        options: ["true", "false"]
+        options:
+          - "true"
+          - "false"
+      recent_completed_days:
+        description: "Only matches from the last N days. Use 0 for all completed matches."
+        required: true
+        default: "3"
       news_max_per_match:
         description: "News rows per match, 0-5."
         required: true
         default: "2"
+      default_approved:
+        description: "Insert fetched notes as approved=true? Keep false for review."
+        required: true
+        default: "false"
+        type: choice
+        options:
+          - "false"
+          - "true"
 
   schedule:
-    # End-stage auto refresh. The script deduplicates before insert.
-    - cron: "17 */2 * * *"
+    # During the end of the tournament, this keeps fetching drafts after new results land.
+    # The script deduplicates by match/event/source before inserting.
+    - cron: "17 * * * *"
 
 jobs:
   fetch-final-event-notes:
@@ -41,22 +70,19 @@ jobs:
         with:
           node-version: "20"
 
-      - name: Fetch final event notes
+      - name: Fetch final event notes drafts
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           FOOTBALL_DATA_TOKEN: ${{ secrets.FOOTBALL_DATA_TOKEN }}
           API_FOOTBALL_KEY: ${{ secrets.API_FOOTBALL_KEY }}
-          FETCH_FOOTBALL_DATA_NOTES: "true"
-          FETCH_FOOTBALL_EVENTS: "false"
+          FETCH_FOOTBALL_DATA_NOTES: ${{ github.event_name == 'schedule' && 'true' || inputs.fetch_football_data_notes }}
+          FETCH_FOOTBALL_EVENTS: ${{ github.event_name == 'schedule' && 'false' || inputs.fetch_api_football_events }}
           FETCH_NEWS_EVENTS: ${{ github.event_name == 'schedule' && 'true' || inputs.fetch_news_events }}
           TARGET_RECENT_COMPLETED_DAYS: ${{ github.event_name == 'schedule' && '3' || inputs.recent_completed_days }}
           NEWS_MAX_PER_MATCH: ${{ github.event_name == 'schedule' && '2' || inputs.news_max_per_match }}
+          DEFAULT_APPROVED: ${{ github.event_name == 'schedule' && 'false' || inputs.default_approved }}
           DRY_RUN: ${{ github.event_name == 'schedule' && 'false' || inputs.dry_run }}
-          DEFAULT_APPROVED: "false"
-          AUTO_APPROVE_FOOTBALL_DATA_NOTES: "true"
-          AUTO_APPROVE_API_FOOTBALL_EVENTS: "true"
-          AUTO_APPROVE_NEWS_EVENTS: "true"
           SCHEDULE_ACTIVE_FROM: "2026-07-10T00:00:00Z"
-          SCHEDULE_ACTIVE_UNTIL: "2026-07-22T23:59:59Z"
+          SCHEDULE_ACTIVE_UNTIL: "2026-07-21T23:59:59Z"
         run: node scripts/fetch-final-event-notes.mjs

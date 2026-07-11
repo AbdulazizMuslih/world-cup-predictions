@@ -185,7 +185,7 @@
                     <div class="menu-page-header">
                         <p class="eyebrow">الأضواء</p>
                         <h3>لقطات الختام</h3>
-                        <p class="menu-page-subtitle">تفتح بعد نهاية البطولة: أضواء قصيرة لكل المشاركين مع لقطات حقيقية من أرقام المسابقة.</p>
+                        <p class="menu-page-subtitle">لقطات مختارة من الطريق؛ قراءات ذكية، مفاجآت، وأسماء ظهرت في اللحظة المناسبة.</p>
                     </div>
 
                     <div id="seasonHighlights" class="season-highlights-grid">
@@ -197,7 +197,7 @@
                     <div class="menu-page-header">
                         <p class="eyebrow">الإحصائيات والشارات</p>
                         <h3>أرقام لها طعم</h3>
-                        <p class="menu-page-subtitle">تفتح بعد نهاية البطولة: أرقام مختصرة وشارات واضحة بدون تقارير طويلة.</p>
+                        <p class="menu-page-subtitle">أرقام وشارات تلخص روح المنافسة بطريقة خفيفة وممتعة.</p>
                     </div>
 
                     <div id="statisticsCards" class="stats-grid">
@@ -207,7 +207,7 @@
                     <div class="menu-page-header menu-page-subsection-header">
                         <p class="eyebrow">الشارات</p>
                         <h3>ألقاب المسابقة</h3>
-                        <p class="menu-page-subtitle">كل شارة لها سبب محسوب ووصف قصير. وصف قصير وواضح، بدون كلام طويل.</p>
+                        <p class="menu-page-subtitle">شارات خفيفة لكل مشارك: لقطة، إنجاز، أو بصمة صغيرة من رحلته في المسابقة.</p>
                     </div>
 
                     <div id="statisticsBadges" class="awards-grid recap-awards-grid">
@@ -218,12 +218,12 @@
                 <section id="seasonRecapTab" class="tab-panel menu-page-panel hidden" data-menu-page="seasonRecap">
                     <div class="menu-page-header">
                         <p class="eyebrow">ختام المسابقة</p>
-                        <h3>شكراً يا أبطال</h3>
-                        <p class="menu-page-subtitle">صفحة خفيفة للختام، تقدير، وذكرى جميلة بعد نهاية البطولة.</p>
+                        <h3>صفحة محفوظة</h3>
+                        <p class="menu-page-subtitle">تفتح بعد اكتمال آخر نتيجة.</p>
                     </div>
 
                     <div id="seasonRecap" class="season-thanks-wrap">
-                        <div class="placeholder-card">سيظهر شكر الختام هنا.</div>
+                        <div class="placeholder-card">هذه الصفحة تفتح بعد نهاية البطولة.</div>
                     </div>
                 </section>
 
@@ -328,13 +328,12 @@
           "plannedVersion": "39.0",
           "aiMode": "manual_final_only",
           "dataSource": "supabase_database",
-          "rule": "Code calculates facts first. Gemini/OpenAI-compatible AI may only write final highlights/profile phrases from locked calculated facts, then saves drafts to ai_posts for review.",
+          "rule": "Code calculates all facts first. AI may only rewrite short fun phrases from locked calculated facts after the tournament ends.",
           "liveSchedule": "disabled",
-          "publishRule": "final_highlights and final_profile rows stay visible=false until reviewed and approved.",
           "sections": [
-            "final_highlights",
+            "highlights",
             "statistics_and_badges",
-            "final_profile",
+            "profile",
             "season_closing"
           ],
           "tone": {

@@ -1,0 +1,12 @@
+Manual merge package for branch before-merging
+
+Included:
+- v39 final UI sections: highlights, statistics/badges, profile, closing, about/contact
+- v39 final AI generator + event notes scripts/workflows
+- latest available v38 sync-results/workflows from uploaded files
+- release version set to 38.10.0 in app.js and version.json
+
+Important:
+- This package is built from the latest files available in this chat/container.
+- Apply it on branch before-merging, then run node --check commands and test locally.
+- Next patch should handle final-extra-points and scheduled backend AI/event-notes automation.
