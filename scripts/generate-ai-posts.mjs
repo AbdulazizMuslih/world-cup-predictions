@@ -68,6 +68,8 @@ const AI_CALCULATED_HIGHLIGHT_TOP_UP_TO = Math.max(0, Number(process.env.AI_CALC
 const AI_ENFORCE_UNIQUE_TITLES = String(process.env.AI_ENFORCE_UNIQUE_TITLES || "true").toLowerCase() !== "false";
 const AI_TITLE_MATCH_HINT = String(process.env.AI_TITLE_MATCH_HINT || "true").toLowerCase() !== "false";
 const AI_SKIP_IF_SAME_COMPLETED_COUNT_EXISTS = String(process.env.AI_SKIP_IF_SAME_COMPLETED_COUNT_EXISTS || "false").toLowerCase() === "true";
+const AI_AUTO_STAGE_MODE = String(process.env.AI_AUTO_STAGE_MODE || "false").toLowerCase() === "true";
+const AUTO_GENERATION_REMAINING_MATCHES = Math.max(0, Number(process.env.AUTO_GENERATION_REMAINING_MATCHES || 6));
 
 const EXPECTED_WORLD_CUP_MATCH_COUNT = Number(process.env.EXPECTED_WORLD_CUP_MATCH_COUNT || 104);
 const ALLOW_FINAL_PREVIEW = String(process.env.ALLOW_FINAL_PREVIEW || "false").toLowerCase() === "true";
@@ -88,7 +90,7 @@ const POSTS_TABLE = "ai_posts";
 const EVENT_NOTES_TABLE = "final_event_notes";
 const FINAL_HIGHLIGHTS_SECTION = "final_highlights";
 const FINAL_PROFILE_SECTION = "final_profile";
-const GENERATOR_VERSION = "wc-final-recap-v39-champion-bonus-stage-points";
+const GENERATOR_VERSION = "wc-final-recap-v39-source-aware-highlights";
 const BONUS_EXACT_POINTS_BY_STAGE = { SEMI_FINALS: 100, THIRD_PLACE: 100, FINAL: 200 };
 const CHAMPION_WINNER_POINTS = 50;
 const CHAMPION_RUNNER_UP_POINTS = 10;
@@ -112,6 +114,47 @@ if (!AI_API_KEY) throw new Error("Missing AI_API_KEY, OPENAI_API_KEY, or OPENROU
 if (!AI_MODEL) throw new Error("Missing AI_MODEL, OPENAI_MODEL, or OPENROUTER_MODEL");
 if (!Number.isInteger(EXPECTED_WORLD_CUP_MATCH_COUNT) || EXPECTED_WORLD_CUP_MATCH_COUNT < 1) {
     throw new Error("EXPECTED_WORLD_CUP_MATCH_COUNT must be a positive integer");
+}
+
+function shouldGenerateProfilesForRun(factsPack = {}) {
+    if (GENERATE_PROFILES_SETTING === "true") return true;
+    if (GENERATE_PROFILES_SETTING === "false") return false;
+
+    // "auto": profile closing messages are final content, so generate them only
+    // after the entire tournament data is complete.
+    return Boolean(factsPack?.audit?.finalDataReady);
+}
+
+function shouldGenerateHighlightsForRun(factsPack = {}) {
+    // Manual workflow runs are explicitly requested and may use preview mode.
+    if (!AI_AUTO_STAGE_MODE) return true;
+
+    const remaining = Number(factsPack?.audit?.remainingExpectedMatches);
+    const completed = Number(factsPack?.audit?.completedMatches);
+
+    if (!Number.isFinite(remaining) || !Number.isFinite(completed) || completed <= 0) {
+        return false;
+    }
+
+    // Scheduled generation starts for the final six matches and then refreshes
+    // once for every newly completed match. The completed-count guard below
+    // prevents repeated AI calls while no new result has landed.
+    return remaining >= 0 && remaining <= AUTO_GENERATION_REMAINING_MATCHES;
+}
+
+async function shouldSkipBecauseSameCompletedCountExists(factsPack = {}) {
+    if (!AI_SKIP_IF_SAME_COMPLETED_COUNT_EXISTS) return false;
+
+    const completed = Number(factsPack?.audit?.completedMatches);
+    if (!Number.isInteger(completed) || completed < 1) return false;
+
+    const existing = await optionalSupabaseFetch(
+        `${POSTS_TABLE}?section_key=eq.${FINAL_HIGHLIGHTS_SECTION}` +
+        `&source_completed_match_count=eq.${completed}` +
+        `&visible=eq.true&select=id&limit=1`
+    );
+
+    return Array.isArray(existing) && existing.length > 0;
 }
 
 async function main() {
@@ -207,6 +250,7 @@ async function main() {
 
     const aiOutput = await generateFinalContent(factsPack);
     let rows = normalizeAiOutputToRows(aiOutput, factsPack);
+    rows = dedupeFinalHighlightRows(rows, factsPack, "normalized AI rows");
     let highlightRows = rows.filter((row) => row.section_key === FINAL_HIGHLIGHTS_SECTION);
     let profileRows = rows.filter((row) => row.section_key === FINAL_PROFILE_SECTION);
 
@@ -219,6 +263,7 @@ async function main() {
             Math.max(AI_MIN_VALID_HIGHLIGHT_ROWS, AI_CALCULATED_HIGHLIGHT_TOP_UP_TO)
         );
         rows = addCalculatedHighlightRowsToRows(rows, factsPack, topUpTarget);
+        rows = dedupeFinalHighlightRows(rows, factsPack, "rows after calculated top-up");
         highlightRows = rows.filter((row) => row.section_key === FINAL_HIGHLIGHTS_SECTION);
         profileRows = rows.filter((row) => row.section_key === FINAL_PROFILE_SECTION);
         console.warn(`Final row guard top-up: final_highlights ${before} -> ${highlightRows.length}.`);
@@ -242,10 +287,20 @@ async function main() {
         profileRows = rows.filter((row) => row.section_key === FINAL_PROFILE_SECTION);
     }
 
+    rows = dedupeFinalHighlightRows(rows, factsPack, "pre-insert rows");
     rows = sortAndRenumberAiRows(rows, factsPack);
     highlightRows = rows.filter((row) => row.section_key === FINAL_HIGHLIGHTS_SECTION);
     profileRows = rows.filter((row) => row.section_key === FINAL_PROFILE_SECTION);
-    console.log(`Sorted final AI rows: ${highlightRows.length} final_highlights, ${profileRows.length} final_profile.`);
+
+    if (highlightRows.length < AI_MIN_VALID_HIGHLIGHT_ROWS) {
+        throw new Error(
+            `Only ${highlightRows.length} unique final_highlights remained after final duplicate protection; ` +
+            `minimum is ${AI_MIN_VALID_HIGHLIGHT_ROWS}. Existing database rows were not cleared.`
+        );
+    }
+
+    assertNoDuplicateFinalHighlights(rows, factsPack);
+    console.log(`Validated final AI rows: ${highlightRows.length} unique final_highlights, ${profileRows.length} final_profile.`);
 
     if (RESET_EXISTING_FINAL_AI) {
         await clearExistingFinalAiRows();
@@ -670,6 +725,13 @@ function buildParticipantFacts(participants, completedMatches, predictionsByPart
             .filter((stage) => stage.predictions > 0)
             .sort((a, b) => b.points - a.points || b.correctPredictions - a.correctPredictions)[0] || null;
 
+        const championPrediction = championPredictionMap.get(String(participant.id)) || null;
+        const championPredictionPoints = calculateChampionPredictionPoints(
+            championPrediction?.predicted_team,
+            championResult
+        );
+        points += championPredictionPoints;
+
         return {
             id: participant.id,
             name: participant.name,
@@ -779,6 +841,321 @@ function buildStageFacts(matches, matchFacts, participantCount) {
 }
 
 
+
+const HIGHLIGHT_DEDUPE_STOP_WORDS = new Set([
+    "في", "من", "على", "الى", "إلى", "عن", "مع", "ما", "لا", "لم", "لن", "هو", "هي", "كان", "كانت",
+    "هذا", "هذه", "ذلك", "التي", "الذي", "اللي", "بعد", "قبل", "بين", "كل", "لكن", "ثم", "او", "أو",
+    "ان", "أن", "إن", "داخل", "عند", "حتى", "فقط", "هنا", "هناك", "مرة", "اكثر", "أكثر", "اقل", "أقل",
+    "المباراة", "المسابقة", "التوقع", "التوقعات", "النتيجة", "النقاط", "نقطة", "لقطة", "الأضواء", "اضواء"
+]);
+
+function normalizeHighlightDedupeText(value) {
+    return String(value || "")
+        .normalize("NFKD")
+        .replace(/[\u064B-\u065F\u0670]/g, "")
+        .replace(/[أإآ]/g, "ا")
+        .replace(/ى/g, "ي")
+        .replace(/ة/g, "ه")
+        .replace(/ؤ/g, "و")
+        .replace(/ئ/g, "ي")
+        .replace(/[^\p{L}\p{N}\s]/gu, " ")
+        .replace(/\s+/g, " ")
+        .trim()
+        .toLowerCase();
+}
+
+function highlightDedupeTokenSet(value) {
+    return new Set(
+        normalizeHighlightDedupeText(value)
+            .split(" ")
+            .filter((token) => token.length >= 3 && !HIGHLIGHT_DEDUPE_STOP_WORDS.has(token))
+    );
+}
+
+function tokenSetJaccard(first, second) {
+    if (!first.size || !second.size) return 0;
+    let intersection = 0;
+    for (const token of first) {
+        if (second.has(token)) intersection += 1;
+    }
+    return intersection / (first.size + second.size - intersection);
+}
+
+function getHighlightCard(post = {}) {
+    return Array.isArray(post.cards_json) ? (post.cards_json[0] || {}) : {};
+}
+
+function getHighlightSourceNoteIds(post = {}) {
+    const card = getHighlightCard(post);
+    const raw = Array.isArray(post.source_note_ids)
+        ? post.source_note_ids
+        : (Array.isArray(card.source_note_ids) ? card.source_note_ids : []);
+    return [...new Set(raw.map((value) => String(value || "").trim()).filter(Boolean))].sort();
+}
+
+function getHighlightSourceKey(post = {}) {
+    const card = getHighlightCard(post);
+    return cleanText(post.source_key || card.source_key || "", 180).toLowerCase();
+}
+
+function getHighlightExplicitMatchId(post = {}) {
+    const card = getHighlightCard(post);
+    return String(post.source_match_id || card.source_match_id || "").trim();
+}
+
+function getHighlightCategory(post = {}) {
+    const card = getHighlightCard(post);
+    return String(post.category || card.type || "timeline").trim().toLowerCase();
+}
+
+function getHighlightParticipantNames(post = {}) {
+    const card = getHighlightCard(post);
+    const raw = Array.isArray(post.participant_names)
+        ? post.participant_names
+        : (Array.isArray(card.participant_names) ? card.participant_names : []);
+    return [...new Set(raw.map((name) => cleanText(name, 80)).filter(Boolean))].sort((a, b) => a.localeCompare(b, "ar"));
+}
+
+function inferHighlightMatchId(post = {}, factsPack = {}) {
+    const explicit = getHighlightExplicitMatchId(post);
+    if (explicit) return explicit;
+
+    const card = getHighlightCard(post);
+    const haystack = normalizeHighlightDedupeText([
+        post.title_ar,
+        post.subtitle_ar,
+        post.body_ar,
+        post.source_fact,
+        card.source_fact
+    ].filter(Boolean).join(" "));
+
+    if (!haystack) return "";
+
+    for (const match of factsPack?.contest?.matches || []) {
+        const matchId = String(match?.id || "").trim();
+        const matchTitle = normalizeHighlightDedupeText(match?.title || "");
+        if (matchId && matchTitle && haystack.includes(matchTitle)) return matchId;
+
+        const titleParts = String(match?.title || "").split(/\s+ضد\s+/).map(normalizeHighlightDedupeText).filter(Boolean);
+        if (matchId && titleParts.length === 2 && titleParts.every((part) => haystack.includes(part))) return matchId;
+    }
+
+    return "";
+}
+
+function getHighlightTextParts(post = {}) {
+    const card = getHighlightCard(post);
+    return {
+        title: normalizeHighlightDedupeText(post.title_ar || ""),
+        body: normalizeHighlightDedupeText(post.body_ar || ""),
+        sourceFact: normalizeHighlightDedupeText(post.source_fact || card.source_fact || "")
+    };
+}
+
+function getHighlightDuplicateReason(first, second, factsPack = {}) {
+    const firstNotes = getHighlightSourceNoteIds(first);
+    const secondNotes = new Set(getHighlightSourceNoteIds(second));
+    const sharedNote = firstNotes.find((id) => secondNotes.has(id));
+    if (sharedNote) return `same source note ${sharedNote}`;
+
+    const firstSourceKey = getHighlightSourceKey(first);
+    const secondSourceKey = getHighlightSourceKey(second);
+    if (firstSourceKey && secondSourceKey && firstSourceKey === secondSourceKey) {
+        return `same source key ${firstSourceKey}`;
+    }
+
+    const firstCategory = getHighlightCategory(first);
+    const secondCategory = getHighlightCategory(second);
+    const participantCategories = new Set(["participant", "participant_arc", "profile"]);
+
+    if (participantCategories.has(firstCategory) && participantCategories.has(secondCategory)) {
+        const firstNames = getHighlightParticipantNames(first);
+        const secondNames = getHighlightParticipantNames(second);
+        if (firstNames.length === 1 && secondNames.length === 1 && firstNames[0] === secondNames[0]) {
+            return `same participant story ${firstNames[0]}`;
+        }
+    }
+
+    const firstText = getHighlightTextParts(first);
+    const secondText = getHighlightTextParts(second);
+    if (firstText.title && firstText.title === secondText.title) return "same normalized title";
+    if (firstText.sourceFact && firstText.sourceFact.length >= 12 && firstText.sourceFact === secondText.sourceFact) {
+        return "same source fact";
+    }
+
+    const titleSimilarity = tokenSetJaccard(
+        highlightDedupeTokenSet(firstText.title),
+        highlightDedupeTokenSet(secondText.title)
+    );
+    const bodySimilarity = tokenSetJaccard(
+        highlightDedupeTokenSet(firstText.body),
+        highlightDedupeTokenSet(secondText.body)
+    );
+    const combinedSimilarity = tokenSetJaccard(
+        highlightDedupeTokenSet(`${firstText.title} ${firstText.body} ${firstText.sourceFact}`),
+        highlightDedupeTokenSet(`${secondText.title} ${secondText.body} ${secondText.sourceFact}`)
+    );
+
+    const firstMatchId = inferHighlightMatchId(first, factsPack);
+    const secondMatchId = inferHighlightMatchId(second, factsPack);
+    const sameMatch = firstMatchId && secondMatchId && firstMatchId === secondMatchId;
+
+    // Same match + same story category means the generator described the same
+    // angle twice, even if the wording changed.
+    if (sameMatch && firstCategory === secondCategory) {
+        return `same match/category ${firstMatchId}/${firstCategory}`;
+    }
+
+    // Different legitimate angles from one match are allowed. They are removed
+    // only when their actual text is strongly overlapping.
+    if (sameMatch && (combinedSimilarity >= 0.58 || (titleSimilarity >= 0.58 && bodySimilarity >= 0.42))) {
+        return `same match with overlapping story (${combinedSimilarity.toFixed(2)})`;
+    }
+
+    if (combinedSimilarity >= 0.82 || (titleSimilarity >= 0.72 && bodySimilarity >= 0.52)) {
+        return `high semantic similarity (${combinedSimilarity.toFixed(2)})`;
+    }
+
+    return "";
+}
+
+function dedupeRawHighlightPosts(posts = [], factsPack = {}, label = "AI output") {
+    const kept = [];
+    const removed = [];
+
+    for (const post of posts) {
+        const duplicateOf = kept.find((candidate) => getHighlightDuplicateReason(post, candidate, factsPack));
+        if (duplicateOf) {
+            removed.push({
+                title: post?.title_ar || "بدون عنوان",
+                keptTitle: duplicateOf?.title_ar || "بدون عنوان",
+                reason: getHighlightDuplicateReason(post, duplicateOf, factsPack)
+            });
+            continue;
+        }
+        kept.push(post);
+    }
+
+    if (removed.length) {
+        console.warn(`${label}: removed ${removed.length} semantic duplicate highlight(s).`);
+        for (const item of removed.slice(0, 20)) {
+            console.warn(`Duplicate removed [${item.reason}]: ${item.title} -> kept ${item.keptTitle}`);
+        }
+    }
+
+    return kept;
+}
+
+function highlightKeeperScore(row) {
+    const noteCount = getHighlightSourceNoteIds(row).length;
+    const sourceKeyBonus = getHighlightSourceKey(row) ? 16 : 0;
+    const bodyLength = String(row?.body_ar || "").length;
+    return highlightRowScore(row) + noteCount * 30 + sourceKeyBonus + Math.min(15, bodyLength / 100);
+}
+
+function dedupeFinalHighlightRows(rows = [], factsPack = {}, label = "final rows") {
+    const profiles = rows.filter((row) => row.section_key !== FINAL_HIGHLIGHTS_SECTION);
+    const candidates = rows
+        .filter((row) => row.section_key === FINAL_HIGHLIGHTS_SECTION)
+        .sort((a, b) => highlightKeeperScore(b) - highlightKeeperScore(a) || compareHighlightRows(a, b));
+    const kept = [];
+    const removed = [];
+
+    for (const row of candidates) {
+        const duplicateOf = kept.find((candidate) => getHighlightDuplicateReason(row, candidate, factsPack));
+        if (duplicateOf) {
+            removed.push({
+                title: row.title_ar,
+                keptTitle: duplicateOf.title_ar,
+                reason: getHighlightDuplicateReason(row, duplicateOf, factsPack)
+            });
+            continue;
+        }
+        kept.push(row);
+    }
+
+    if (removed.length) {
+        console.warn(`${label}: removed ${removed.length} semantic duplicate final_highlights row(s).`);
+        for (const item of removed.slice(0, 20)) {
+            console.warn(`Final duplicate removed [${item.reason}]: ${item.title} -> kept ${item.keptTitle}`);
+        }
+    }
+
+    return [...kept, ...profiles];
+}
+
+function assertNoDuplicateFinalHighlights(rows = [], factsPack = {}) {
+    const highlights = rows.filter((row) => row.section_key === FINAL_HIGHLIGHTS_SECTION);
+    const conflicts = [];
+
+    for (let i = 0; i < highlights.length; i += 1) {
+        for (let j = i + 1; j < highlights.length; j += 1) {
+            const reason = getHighlightDuplicateReason(highlights[i], highlights[j], factsPack);
+            if (!reason) continue;
+            conflicts.push({
+                first: highlights[i].title_ar,
+                second: highlights[j].title_ar,
+                reason
+            });
+        }
+    }
+
+    if (conflicts.length) {
+        const preview = conflicts.slice(0, 8)
+            .map((item) => `- ${item.first} <> ${item.second} [${item.reason}]`)
+            .join("\n");
+        throw new Error(
+            `Duplicate final_highlights remained after deduplication. Existing database rows were not cleared.\n${preview}`
+        );
+    }
+}
+
+function buildHighlightSemanticKey(post = {}, factsPack = {}, fallbackIndex = 0) {
+    const noteIds = getHighlightSourceNoteIds(post);
+    if (noteIds.length) return `notes:${noteIds.join(",")}`;
+
+    const sourceKey = getHighlightSourceKey(post);
+    if (sourceKey) return sourceKey;
+
+    const matchId = inferHighlightMatchId(post, factsPack);
+    const category = getHighlightCategory(post);
+    if (matchId && !["participant", "participant_arc", "profile", "stage", "stage_mood"].includes(category)) {
+        return `match:${matchId}:${category}`;
+    }
+
+    const participantNames = getHighlightParticipantNames(post);
+    if (["participant", "participant_arc", "profile"].includes(category) && participantNames.length === 1) {
+        return `participant:${normalizeHighlightDedupeText(participantNames[0])}`;
+    }
+
+    const text = getHighlightTextParts(post);
+    const fallbackText = `${text.title}|${text.sourceFact}|${text.body}`;
+    return `text:${hashObject(fallbackText || String(fallbackIndex))}`;
+}
+
+function buildStorySeedKey(seed = {}) {
+    const noteIds = (seed.verified_event_context || [])
+        .map((item) => item?.source_note_id || item?.id)
+        .filter(Boolean)
+        .map(String)
+        .sort();
+
+    // A verified event note is a stable real-world event identity. Do not let
+    // the same event produce several differently worded posts.
+    if (noteIds.length && seed.type === "real_event_plus_contest") {
+        return `notes:${noteIds.join(",")}`;
+    }
+
+    // One match may legitimately have different contest stories, such as an
+    // exact-score celebration and an upset of the popular prediction.
+    if (seed.match?.id) return `match:${seed.match.id}:${seed.type || "story"}`;
+    if (seed.participant?.id) return `participant:${seed.participant.id}`;
+    if (seed.participant?.name) return `participant:${normalizeHighlightDedupeText(seed.participant.name)}`;
+    if (seed.stage?.stage) return `stage:${seed.stage.stage}`;
+    if (noteIds.length) return `notes:${noteIds.join(",")}:${seed.type || "story"}`;
+    return `seed:${hashObject([seed.type, seed.title].filter(Boolean))}`;
+}
+
 function buildIntegratedStorySeeds({ rankedParticipants, matchFacts, stageFacts, activeParticipants, approvedEventNotes, allMatches }) {
     const notesByMatch = groupBy(approvedEventNotes.filter((note) => note.match_id), "match_id");
     const candidates = [];
@@ -791,11 +1168,11 @@ function buildIntegratedStorySeeds({ rankedParticipants, matchFacts, stageFacts,
         .map((note) => publicEventNote(note, allMatches));
 
     const addCandidate = (seed) => {
-        const key = [seed.type, seed.match?.id || seed.participant?.name || seed.stage?.stage || seed.title].join("|");
-        if (seen.has(key)) return;
+        const storyKey = seed.story_key || buildStorySeedKey(seed);
+        if (seen.has(storyKey)) return;
         if (seed.match && !isStoryWorthyMatch(seed.match, seed.verified_event_context || [])) return;
-        seen.add(key);
-        candidates.push(seed);
+        seen.add(storyKey);
+        candidates.push({ ...seed, story_key: storyKey });
     };
 
     const leaderboardContext = rankedParticipants.slice(0, 6).map((row) => `${row.rank}. ${row.name} (${row.points} نقطة)`).join("، ");
@@ -837,7 +1214,7 @@ function buildIntegratedStorySeeds({ rankedParticipants, matchFacts, stageFacts,
         const storyTypes = classifyMatchStoryTypes(match, notes, worldCupContext);
         if (!storyTypes.length) continue;
 
-        for (const storyType of storyTypes.slice(0, 2)) {
+        for (const storyType of storyTypes.slice(0, 1)) {
             const names = namesForStoryType(match, storyType).slice(0, 5);
             const story = buildStoryTypeBlueprint(match, storyType, names, worldCupContext);
 
@@ -1391,6 +1768,11 @@ async function generateFinalContentInBatches(factsPack) {
     const checkpointKey = buildBatchCheckpointKey(factsPack);
     const checkpoint = loadBatchCheckpoint(checkpointKey);
     const output = checkpoint?.output || { highlights: [], profile_messages: [] };
+    output.highlights = dedupeRawHighlightPosts(
+        Array.isArray(output.highlights) ? output.highlights : [],
+        factsPack,
+        "checkpoint"
+    );
     const completedBatches = new Set(checkpoint?.completedBatches || []);
     const usedHighlightKeys = new Set();
     const usedProfileNames = new Set();
@@ -1448,14 +1830,23 @@ async function generateFinalContentInBatches(factsPack) {
             const title = cleanText(post?.title_ar || "", AI_POST_TITLE_MAX_CHARS);
             const body = cleanText(post?.body_ar || "", AI_POST_BODY_MAX_CHARS);
             if (!title || !body || isLowQualityHighlightPost(post)) continue;
-            const key = `${title}|${body}`.toLowerCase();
-            if (usedHighlightKeys.has(key)) continue;
-            usedHighlightKeys.add(key);
-            output.highlights.push({
+            const normalizedPost = {
                 ...post,
                 title_ar: title,
                 body_ar: body
-            });
+            };
+            const key = `${title}|${body}`.toLowerCase();
+            if (usedHighlightKeys.has(key)) continue;
+            const duplicateOf = output.highlights.find((candidate) => getHighlightDuplicateReason(normalizedPost, candidate, factsPack));
+            if (duplicateOf) {
+                console.warn(
+                    `Batch ${batchName}: skipped semantic duplicate "${title}" because it overlaps with "${duplicateOf.title_ar || "بدون عنوان"}" ` +
+                    `(${getHighlightDuplicateReason(normalizedPost, duplicateOf, factsPack)}).`
+                );
+                continue;
+            }
+            usedHighlightKeys.add(key);
+            output.highlights.push(normalizedPost);
         }
 
         for (const message of batchProfiles) {
@@ -1557,7 +1948,11 @@ async function generateFinalContentInBatches(factsPack) {
                 profileTarget: 0,
                 facts: {
                     ...contextBase,
-                    event_notes: notes,
+                    event_notes: notes.map((note) => ({
+                        ...note,
+                        source_key: `note:${note.id}`,
+                        source_match_id: note.match_id || null
+                    })),
                     related_matches: relatedMatchesForEventNotes(notes, factsPack.contest.matches || [])
                 }
             });
@@ -1605,7 +2000,10 @@ async function generateFinalContentInBatches(factsPack) {
             profileTarget,
             facts: {
                 ...contextBase,
-                participants
+                participants: participants.map((participant) => ({
+                    ...participant,
+                    source_key: `participant:${participant.id || normalizeHighlightDedupeText(participant.name)}`
+                }))
             }
         });
         await runBatch(batchName, batchPrompt);
@@ -1623,7 +2021,11 @@ async function generateFinalContentInBatches(factsPack) {
                 profileTarget: 0,
                 facts: {
                     ...contextBase,
-                    matches: fillBatches[index]
+                    matches: fillBatches[index].map((match) => ({
+                        ...match,
+                        source_key: `match:${match.id}`,
+                        source_match_id: match.id
+                    }))
                 }
             });
             await runBatch(batchName, batchPrompt);
@@ -1695,10 +2097,12 @@ function topUpHighlightsWithCalculatedStories(output, factsPack, targetCount, us
         const title = cleanText(post.title_ar || "", AI_POST_TITLE_MAX_CHARS);
         const body = cleanText(post.body_ar || "", AI_POST_BODY_MAX_CHARS);
         if (!title || !body || isLowQualityHighlightPost({ ...post, title_ar: title, body_ar: body })) continue;
+        const normalizedPost = { ...post, title_ar: title, body_ar: body, generated_by: "calculated_top_up" };
         const key = `${title}|${body}`.toLowerCase();
         if (usedHighlightKeys.has(key)) continue;
+        if (output.highlights.some((candidate) => getHighlightDuplicateReason(normalizedPost, candidate, factsPack))) continue;
         usedHighlightKeys.add(key);
-        output.highlights.push({ ...post, title_ar: title, body_ar: body, generated_by: "calculated_top_up" });
+        output.highlights.push(normalizedPost);
         added += 1;
     }
 
@@ -1779,7 +2183,9 @@ function buildCalculatedHighlightPost(seed, index) {
         stage_ar: stage,
         participant_names: names,
         source_fact: seed.title || matchTitle,
-        source_note_ids: context.map((item) => item.source_note_id || item.id).filter(Boolean).slice(0, 4)
+        source_note_ids: context.map((item) => item.source_note_id || item.id).filter(Boolean).slice(0, 4),
+        source_key: seed.story_key || buildStorySeedKey(seed),
+        source_match_id: match.id || null
     };
 }
 
@@ -1801,7 +2207,9 @@ function buildBatchPrompt({ batchName, instruction, highlightTarget, profileTarg
       "stage_ar": "اسم المرحلة أو أضواء المسابقة",
       "participant_names": ["اسم مشارك إن وجد"],
       "source_fact": "الحقيقة المستخدمة باختصار",
-      "source_note_ids": ["id من final_event_notes إذا استخدمت حدثاً كروياً"]
+      "source_note_ids": ["id من final_event_notes إذا استخدمت حدثاً كروياً"],
+      "source_key": "انسخ story_key/source_key من المصدر المستخدم حرفياً",
+      "source_match_id": "id المباراة إذا كان المنشور مرتبطاً بمباراة"
     }
   ],
   "profile_messages": [
@@ -1819,6 +2227,8 @@ function buildBatchPrompt({ batchName, instruction, highlightTarget, profileTarg
 
 طريقة الكتابة المطلوبة:
 - اقرأ post_blueprint في كل story_seed: kind, hook_style, story_question, mood, must_include_facts, real_world_cup_context.
+- لكل منشور استخدم مصدراً واحداً فقط، وانسخ story_key أو source_key منه حرفياً إلى source_key.
+- لا تنشئ أكثر من منشور لنفس story_key أو source_key أو source_note_id أو source_match_id داخل الدفعة.
 - اكتب من نوع القصة، وليس من نتيجة المباراة.
 - الفقرة الأولى: hook ممتع أو إحساس اللحظة. لا تبدأ بـ "عندما انتهت" ولا "في مباراة" ولا باسم الفريقين.
 - الفقرة الثانية: اربط القصة بالأسماء والنقاط والتوقعات. اذكر المباراة ونتيجتها مرة واحدة بشكل طبيعي إذا كانت seed تحتوي مباراة.
@@ -1830,6 +2240,7 @@ function buildBatchPrompt({ batchName, instruction, highlightTarget, profileTarg
 - JSON فقط، بدون markdown، بدون أي نص خارج JSON، وبدون trailing commas.
 - لا تكتب match report. لا تجعل العنوان أو أول جملة عن "الفريق فاز" أو "المباراة انتهت".
 - لا تستخدم قالب مكرر: نتيجة المباراة + من أخذ نقاط + غيرت الترتيب.
+- ممنوع تكرار نفس المباراة أو الحدث بصياغة أخرى؛ منشور واحد فقط لكل مباراة/حدث.
 - لا تستخدم لهجة مصرية أو عامية غريبة: ما فيهاش، كده، بيقرأوا، فارغين، ما كانش.
 - لا تستخدم عبارات مستهلكة أو عامة: أعادت تشكيل المزاج، أعادت تشكيل ملامح المنافسة، الثقة العمياء، القراء الهادئين، الجمهور كان متحمساً، تداولت الأحاديث، استثمروا الوقت في تحليل الفرق.
 - ممنوع عناوين خام أو مكررة: "مباراة أهدافها كثيرة"، "شباك نظيفة"، "حسم ضيق"، "النجوم تتألق"، "الطاقة تتفجر"، "التحول المفاجئ"، "ليلة 3 توقعات بالملّي".
@@ -2206,7 +2617,9 @@ function buildPrompt(factsPack) {
       "stage_ar": "دور المجموعات أو غيره",
       "participant_names": ["اسم"],
       "source_fact": "وصف مختصر للحقيقة المستخدمة",
-      "source_note_ids": ["id من final_event_notes إذا كان المنشور عن حدث كروي حقيقي"]
+      "source_note_ids": ["id من final_event_notes إذا كان المنشور عن حدث كروي حقيقي"],
+      "source_key": "معرف المصدر الثابت",
+      "source_match_id": "id المباراة إن وجد"
     }
   ],
   "profile_messages": [
@@ -2232,6 +2645,7 @@ function buildPrompt(factsPack) {
 - لا تخترع أحداث كرة قدم مثل بطاقة حمراء، هوشة، إصابة، VAR، تصريح، احتفال، جدل، أو خبر بعد المباراة إلا إذا وجدت في eventNotes. إذا استخدمت eventNotes، ضع id الخاص بها داخل source_note_ids.
 - لو لم توجد eventNotes، ركز على أحداث مسابقة التوقعات نفسها.
 - لا تستخدم عبارة مكررة في أكثر من منشور.
+- لا تكتب منشورين عن نفس المباراة أو نفس eventNote حتى لو اختلف العنوان والأسلوب.
 - ممنوع أن تكون الأضواء مجرد "فاز/خسر/سجل". يجب أن تكون قصة مسابقة وتوقعات.
 - لا تستخدم عبارات مكررة مثل "مباراة أهدافها كثيرة" أو "حسم ضيق" أو "شباك نظيفة" كعنوان مباشر.
 - لا تستخدم عبارة "مو كثير كلام، بس ضربات نظيفة".
@@ -2692,12 +3106,14 @@ function normalizeAiOutputToRows(output, factsPack) {
                 stage_ar: cleanText(post.stage_ar || "", 80),
                 participant_names: Array.isArray(post.participant_names) ? post.participant_names.slice(0, 6) : [],
                 source_fact: cleanText(post.source_fact || "", 180),
-                source_note_ids: Array.isArray(post.source_note_ids) ? post.source_note_ids.slice(0, 6) : []
+                source_note_ids: Array.isArray(post.source_note_ids) ? post.source_note_ids.slice(0, 6) : [],
+                source_key: cleanText(post.source_key || "", 180),
+                source_match_id: cleanText(post.source_match_id || "", 80) || null
             }],
             participant_id: null,
             source_completed_match_count: sourceCompletedMatchCount,
             source_match_ids: sourceMatchIds,
-            source_hash: `${GENERATOR_VERSION}:${sourceHashBase}:highlight:${String(index + 1).padStart(2, "0")}`,
+            source_hash: `${GENERATOR_VERSION}:${sourceHashBase}:highlight:${hashObject(buildHighlightSemanticKey({ ...post, title_ar: title, body_ar: body }, factsPack, index))}`,
             display_order: 1000 - index,
             visible: PUBLISH_VISIBLE
         });
@@ -2765,7 +3181,9 @@ function addCalculatedHighlightRowsToRows(existingRows, factsPack, targetCount) 
         const title = cleanText(buildDisplayHighlightTitle(post, currentCount), AI_POST_TITLE_MAX_CHARS);
         const body = cleanBodyText(post.body_ar, AI_POST_BODY_MAX_CHARS);
         const key = `${title}|${body}`.toLowerCase();
-        if (!title || !body || used.has(key) || isUnsafeCalculatedHighlightPost({ ...post, title_ar: title, body_ar: body })) continue;
+        const candidatePost = { ...post, title_ar: title, body_ar: body };
+        if (!title || !body || used.has(key) || isUnsafeCalculatedHighlightPost(candidatePost)) continue;
+        if (rows.some((row) => row.section_key === FINAL_HIGHLIGHTS_SECTION && getHighlightDuplicateReason(candidatePost, row, factsPack))) continue;
         used.add(key);
 
         rows.push({
@@ -2779,12 +3197,14 @@ function addCalculatedHighlightRowsToRows(existingRows, factsPack, targetCount) 
                 stage_ar: cleanText(post.stage_ar || "", 80),
                 participant_names: Array.isArray(post.participant_names) ? post.participant_names.slice(0, 6) : [],
                 source_fact: cleanText(post.source_fact || "calculated_story_top_up", 180),
-                source_note_ids: Array.isArray(post.source_note_ids) ? post.source_note_ids.slice(0, 6) : []
+                source_note_ids: Array.isArray(post.source_note_ids) ? post.source_note_ids.slice(0, 6) : [],
+                source_key: cleanText(post.source_key || "", 180),
+                source_match_id: cleanText(post.source_match_id || "", 80) || null
             }],
             participant_id: null,
             source_completed_match_count: sourceCompletedMatchCount,
             source_match_ids: sourceMatchIds,
-            source_hash: `${GENERATOR_VERSION}:${sourceHashBase}:calculated-highlight:${String(currentCount + 1).padStart(2, "0")}`,
+            source_hash: `${GENERATOR_VERSION}:${sourceHashBase}:highlight:${hashObject(buildHighlightSemanticKey({ ...post, title_ar: title, body_ar: body }, factsPack, currentCount))}`,
             display_order: 900 - currentCount,
             visible: PUBLISH_VISIBLE
         });
