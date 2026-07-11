@@ -18,7 +18,7 @@ on:
       max_highlights:
         description: "Maximum highlight posts to ask for"
         required: true
-        default: "50"
+        default: "40"
       reset_existing:
         description: "Delete old final_highlights/final_profile rows before inserting new rows?"
         required: true
@@ -30,6 +30,9 @@ on:
     # Check twice per hour after result syncs. The script exits before any AI call when the completed-match count has not changed.
     - cron: "27,57 * * * *"
 
+env:
+  AUTOMATION_ACTIVE_UNTIL: "2026-07-21T03:00:00Z"
+
 concurrency:
   group: generate-final-highlights
   cancel-in-progress: false
@@ -39,15 +42,38 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      - name: Check automatic-call window
+        id: automation_window
+        shell: bash
+        run: |
+          if [[ "${{ github.event_name }}" != "schedule" ]]; then
+            echo "allowed=true" >> "$GITHUB_OUTPUT"
+            echo "Manual run: automatic cutoff does not apply."
+            exit 0
+          fi
+
+          now_epoch=$(date -u +%s)
+          cutoff_epoch=$(date -u -d "$AUTOMATION_ACTIVE_UNTIL" +%s)
+
+          if (( now_epoch <= cutoff_epoch )); then
+            echo "allowed=true" >> "$GITHUB_OUTPUT"
+            echo "Scheduled external calls allowed until $AUTOMATION_ACTIVE_UNTIL."
+          else
+            echo "allowed=false" >> "$GITHUB_OUTPUT"
+            echo "Scheduled external calls stopped after $AUTOMATION_ACTIVE_UNTIL. Manual workflow_dispatch runs remain available."
+          fi
       - name: Checkout repository
+        if: steps.automation_window.outputs.allowed == 'true'
         uses: actions/checkout@v4
 
       - name: Setup Node.js
+        if: steps.automation_window.outputs.allowed == 'true'
         uses: actions/setup-node@v4
         with:
           node-version: "24"
 
       - name: Generate final highlights and profile messages
+        if: steps.automation_window.outputs.allowed == 'true'
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
@@ -65,7 +91,7 @@ jobs:
           OPENROUTER_APP_TITLE: "World Cup 2026 Predictions"
           AI_RESPONSE_FORMAT: ${{ secrets.AI_RESPONSE_FORMAT || 'false' }}
           AI_DISABLE_REPAIR_CALL: "false"
-          AI_TEMPERATURE: "0.62"
+          AI_TEMPERATURE: "0.55"
           AI_MAX_TOKENS: "7000"
           AI_BATCH_GENERATION: "true"
           AI_BATCH_HIGHLIGHT_TARGET: "3"
@@ -75,18 +101,18 @@ jobs:
           AI_ENABLE_FILL_MATCHES: "false"
           AI_REQUIRE_CONTEST_SIGNAL: "true"
           AI_STORY_SEED_BATCH_SIZE: "6"
-          AI_POST_BODY_MAX_CHARS: "520"
-          AI_HIGHLIGHT_MAX_WORDS: "62"
+          AI_POST_BODY_MAX_CHARS: "460"
+          AI_HIGHLIGHT_MAX_WORDS: "54"
           AI_ENFORCE_UNIQUE_TITLES: "true"
           AI_TITLE_MATCH_HINT: "true"
-          AI_MAX_BATCHES_PER_RUN: "12"
+          AI_MAX_BATCHES_PER_RUN: "14"
           AI_INSERT_PARTIAL_ON_QUOTA: "true"
           AI_INSERT_PARTIAL_ON_BATCH_FAILURE: "true"
           AI_INSERT_PARTIAL_ON_MAX_BATCHES: "true"
           AI_MIN_HIGHLIGHTS_FOR_PARTIAL_INSERT: "12"
           AI_MIN_VALID_HIGHLIGHT_ROWS: "25"
           AI_TOP_UP_WITH_CALCULATED_HIGHLIGHTS: "true"
-          AI_CALCULATED_HIGHLIGHT_TOP_UP_TO: "45"
+          AI_CALCULATED_HIGHLIGHT_TOP_UP_TO: "38"
           AI_CONTINUE_ON_BATCH_FAILURE: "true"
           AI_MAX_FAILED_BATCHES: "10"
           AI_ENABLE_CONTEST_MOMENT_BATCHES: "false"
@@ -94,10 +120,15 @@ jobs:
           EXPECTED_WORLD_CUP_MATCH_COUNT: "104"
           ALLOW_FINAL_PREVIEW: ${{ github.event_name == 'schedule' && 'true' || inputs.allow_preview_generation }}
           PUBLISH_VISIBLE: ${{ github.event_name == 'schedule' && 'true' || inputs.publish_visible }}
-          MAX_HIGHLIGHTS: ${{ github.event_name == 'schedule' && '50' || inputs.max_highlights }}
+          MAX_HIGHLIGHTS: ${{ github.event_name == 'schedule' && '40' || inputs.max_highlights }}
+          AI_PUBLIC_HIGHLIGHT_TARGET: "38"
+          AI_GROUP_STAGE_HIGHLIGHT_MAX: "10"
+          AI_PARTICIPANT_HIGHLIGHT_MAX: "6"
+          AI_STAGE_SUMMARY_MAX: "2"
           RESET_EXISTING_FINAL_AI: ${{ github.event_name == 'schedule' && 'true' || inputs.reset_existing }}
           GENERATE_PROFILES: "auto"
           AI_AUTO_STAGE_MODE: ${{ github.event_name == 'schedule' && 'true' || 'false' }}
+          AI_AUTO_MIN_MATCH_AGE_HOURS: "4"
           AUTO_GENERATION_REMAINING_MATCHES: "6"
           AI_SKIP_IF_SAME_COMPLETED_COUNT_EXISTS: ${{ github.event_name == 'schedule' && 'true' || 'false' }}
           MIN_APPROVED_EVENT_NOTES: "0"

@@ -1,0 +1,28 @@
+Baseline from the supplied 41-post highlight export
+
+Observed before this patch:
+- 41 total posts
+- 31 group-stage-labelled posts
+- 2 quarterfinal posts
+- 1 Round-of-16 post
+- 6 Round-of-32 posts
+- 1 participant-labelled post
+
+Repeated style phrases:
+- "قراءة هادئة": 5
+- "الزحمة": 6
+- "الضجيج": 4
+- "الثبات": 6
+- "التوقع المريح": 2
+- "اللقطة هنا": 3
+- "التفاصيل الصغيرة": 3
+
+Examples caught by the new QA:
+- incomplete bare-number sentence: "بينما غادر 87"
+- wrong football term: "أهداف بالملّي"
+- broken percentage: "55. 9%"
+- tone outlier: "يا ساتر"
+- participant totals incorrectly labelled as group-stage content
+- premature final-position wording before the competition is complete
+
+The new generator directly addresses each of these categories.

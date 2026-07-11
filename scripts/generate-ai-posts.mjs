@@ -60,10 +60,17 @@ const AI_ENABLE_CONTEST_MOMENT_BATCHES = String(process.env.AI_ENABLE_CONTEST_MO
 const AI_INSERT_PARTIAL_ANY_STORY_COUNT = String(process.env.AI_INSERT_PARTIAL_ANY_STORY_COUNT || "false").toLowerCase() === "true";
 const AI_STORY_SEED_BATCH_SIZE = Math.max(4, Math.min(28, Number(process.env.AI_STORY_SEED_BATCH_SIZE || 6)));
 const AI_POST_TITLE_MAX_CHARS = Math.max(90, Math.min(170, Number(process.env.AI_POST_TITLE_MAX_CHARS || 140)));
-const AI_POST_BODY_MAX_CHARS = Math.max(320, Math.min(700, Number(process.env.AI_POST_BODY_MAX_CHARS || 520)));
-const AI_HIGHLIGHT_MAX_WORDS = Math.max(35, Math.min(85, Number(process.env.AI_HIGHLIGHT_MAX_WORDS || 62)));
+const AI_POST_BODY_MAX_CHARS = Math.max(280, Math.min(620, Number(process.env.AI_POST_BODY_MAX_CHARS || 460)));
+const AI_HIGHLIGHT_MAX_WORDS = Math.max(30, Math.min(70, Number(process.env.AI_HIGHLIGHT_MAX_WORDS || 54)));
 const AI_MIN_VALID_HIGHLIGHT_ROWS = Math.max(1, Number(process.env.AI_MIN_VALID_HIGHLIGHT_ROWS || AI_MIN_HIGHLIGHTS_FOR_PARTIAL_INSERT));
-const MAX_HIGHLIGHTS = Math.min(90, Math.max(20, Number(process.env.MAX_HIGHLIGHTS || 60)));
+const MAX_HIGHLIGHTS = Math.min(70, Math.max(20, Number(process.env.MAX_HIGHLIGHTS || 40)));
+const AI_PUBLIC_HIGHLIGHT_TARGET = Math.max(
+    AI_MIN_VALID_HIGHLIGHT_ROWS,
+    Math.min(MAX_HIGHLIGHTS, Number(process.env.AI_PUBLIC_HIGHLIGHT_TARGET || 38))
+);
+const AI_GROUP_STAGE_HIGHLIGHT_MAX = Math.max(4, Number(process.env.AI_GROUP_STAGE_HIGHLIGHT_MAX || 10));
+const AI_PARTICIPANT_HIGHLIGHT_MAX = Math.max(2, Number(process.env.AI_PARTICIPANT_HIGHLIGHT_MAX || 6));
+const AI_STAGE_SUMMARY_MAX = Math.max(0, Number(process.env.AI_STAGE_SUMMARY_MAX || 2));
 const AI_TOP_UP_WITH_CALCULATED_HIGHLIGHTS = String(process.env.AI_TOP_UP_WITH_CALCULATED_HIGHLIGHTS || "true").toLowerCase() !== "false";
 const AI_CALCULATED_HIGHLIGHT_TOP_UP_TO = Math.max(0, Number(process.env.AI_CALCULATED_HIGHLIGHT_TOP_UP_TO || Math.min(MAX_HIGHLIGHTS, Math.max(45, AI_MIN_VALID_HIGHLIGHT_ROWS))));
 const AI_ENFORCE_UNIQUE_TITLES = String(process.env.AI_ENFORCE_UNIQUE_TITLES || "true").toLowerCase() !== "false";
@@ -71,6 +78,7 @@ const AI_TITLE_MATCH_HINT = String(process.env.AI_TITLE_MATCH_HINT || "true").to
 const AI_SKIP_IF_SAME_COMPLETED_COUNT_EXISTS = String(process.env.AI_SKIP_IF_SAME_COMPLETED_COUNT_EXISTS || "false").toLowerCase() === "true";
 const AI_AUTO_STAGE_MODE = String(process.env.AI_AUTO_STAGE_MODE || "false").toLowerCase() === "true";
 const AUTO_GENERATION_REMAINING_MATCHES = Math.max(0, Number(process.env.AUTO_GENERATION_REMAINING_MATCHES || 6));
+const AI_AUTO_MIN_MATCH_AGE_HOURS = Math.max(0, Number(process.env.AI_AUTO_MIN_MATCH_AGE_HOURS || 4));
 
 const EXPECTED_WORLD_CUP_MATCH_COUNT = Number(process.env.EXPECTED_WORLD_CUP_MATCH_COUNT || 104);
 const ALLOW_FINAL_PREVIEW = String(process.env.ALLOW_FINAL_PREVIEW || "false").toLowerCase() === "true";
@@ -91,7 +99,7 @@ const POSTS_TABLE = "ai_posts";
 const EVENT_NOTES_TABLE = "final_event_notes";
 const FINAL_HIGHLIGHTS_SECTION = "final_highlights";
 const FINAL_PROFILE_SECTION = "final_profile";
-const GENERATOR_VERSION = "wc-final-recap-v39-source-aware-short-highlights-v2";
+const GENERATOR_VERSION = "wc-final-recap-v39-curated-highlights-v3";
 const BONUS_EXACT_POINTS_BY_STAGE = { SEMI_FINALS: 100, THIRD_PLACE: 100, FINAL: 200 };
 const CHAMPION_WINNER_POINTS = 50;
 const CHAMPION_RUNNER_UP_POINTS = 10;
@@ -109,10 +117,13 @@ const FEMALE_NAMES = new Set([
     "سديم"
 ]);
 
-if (!SUPABASE_URL) throw new Error("Missing SUPABASE_URL");
-if (!SUPABASE_SERVICE_ROLE_KEY) throw new Error("Missing SUPABASE_SERVICE_ROLE_KEY");
-if (!AI_API_KEY) throw new Error("Missing AI_API_KEY, OPENAI_API_KEY, or OPENROUTER_API_KEY");
-if (!AI_MODEL) throw new Error("Missing AI_MODEL, OPENAI_MODEL, or OPENROUTER_MODEL");
+
+const HIGHLIGHT_QUALITY_SELF_TEST = String(process.env.HIGHLIGHT_QUALITY_SELF_TEST || "false").toLowerCase() === "true";
+
+if (!HIGHLIGHT_QUALITY_SELF_TEST && !SUPABASE_URL) throw new Error("Missing SUPABASE_URL");
+if (!HIGHLIGHT_QUALITY_SELF_TEST && !SUPABASE_SERVICE_ROLE_KEY) throw new Error("Missing SUPABASE_SERVICE_ROLE_KEY");
+if (!HIGHLIGHT_QUALITY_SELF_TEST && !AI_API_KEY) throw new Error("Missing AI_API_KEY, OPENAI_API_KEY, or OPENROUTER_API_KEY");
+if (!HIGHLIGHT_QUALITY_SELF_TEST && !AI_MODEL) throw new Error("Missing AI_MODEL, OPENAI_MODEL, or OPENROUTER_MODEL");
 if (!Number.isInteger(EXPECTED_WORLD_CUP_MATCH_COUNT) || EXPECTED_WORLD_CUP_MATCH_COUNT < 1) {
     throw new Error("EXPECTED_WORLD_CUP_MATCH_COUNT must be a positive integer");
 }
@@ -121,26 +132,53 @@ function shouldGenerateProfilesForRun(factsPack = {}) {
     if (GENERATE_PROFILES_SETTING === "true") return true;
     if (GENERATE_PROFILES_SETTING === "false") return false;
 
-    // "auto": profile closing messages are final content, so generate them only
-    // after the entire tournament data is complete.
-    return Boolean(factsPack?.audit?.finalDataReady);
+    /*
+      "auto": refresh the participant closing messages after every result in
+      the final-six window. These rows are built deterministically from the
+      latest calculated participant facts, so they stay current without
+      spending separate AI profile batches.
+    */
+    const remaining = Number(factsPack?.audit?.remainingExpectedMatches);
+    return Number.isFinite(remaining)
+        && remaining >= 0
+        && remaining <= AUTO_GENERATION_REMAINING_MATCHES;
 }
 
-function shouldGenerateHighlightsForRun(factsPack = {}) {
-    // Manual workflow runs are explicitly requested and may use preview mode.
-    if (!AI_AUTO_STAGE_MODE) return true;
+function getAutoGenerationSkipReason(factsPack = {}) {
+    // Manual workflow_dispatch runs are always allowed.
+    if (!AI_AUTO_STAGE_MODE) return "";
 
     const remaining = Number(factsPack?.audit?.remainingExpectedMatches);
     const completed = Number(factsPack?.audit?.completedMatches);
 
     if (!Number.isFinite(remaining) || !Number.isFinite(completed) || completed <= 0) {
-        return false;
+        return "invalid or incomplete tournament progress data";
     }
 
-    // Scheduled generation starts for the final six matches and then refreshes
-    // once for every newly completed match. The completed-count guard below
-    // prevents repeated AI calls while no new result has landed.
-    return remaining >= 0 && remaining <= AUTO_GENERATION_REMAINING_MATCHES;
+    if (remaining < 0 || remaining > AUTO_GENERATION_REMAINING_MATCHES) {
+        return `outside final-${AUTO_GENERATION_REMAINING_MATCHES} automatic window`;
+    }
+
+    /*
+      Wait after the latest completed match's kickoff before the paid AI call.
+      This lets result sync and final-event-note fetching settle first, so the
+      single generation for that completed count includes the available notes.
+    */
+    const latestKickoff = factsPack?.audit?.latestCompletedMatchKickoff;
+    const latestKickoffMs = latestKickoff ? new Date(latestKickoff).getTime() : NaN;
+
+    if (Number.isFinite(latestKickoffMs) && AI_AUTO_MIN_MATCH_AGE_HOURS > 0) {
+        const readyAtMs = latestKickoffMs + AI_AUTO_MIN_MATCH_AGE_HOURS * 60 * 60 * 1000;
+        if (Date.now() < readyAtMs) {
+            return `waiting for result/event-note stabilization until ${new Date(readyAtMs).toISOString()}`;
+        }
+    }
+
+    return "";
+}
+
+function shouldGenerateHighlightsForRun(factsPack = {}) {
+    return !getAutoGenerationSkipReason(factsPack);
 }
 
 async function shouldSkipBecauseSameCompletedCountExists(factsPack = {}) {
@@ -163,7 +201,7 @@ async function main() {
     GENERATE_PROFILES = shouldGenerateProfilesForRun(factsPack);
 
     if (!shouldGenerateHighlightsForRun(factsPack)) {
-        console.log("AUTO AI GENERATION SKIPPED: no end-stage checkpoint is ready yet.");
+        console.log(`AUTO AI GENERATION SKIPPED: ${getAutoGenerationSkipReason(factsPack) || "not ready"}.`);
         console.log(JSON.stringify({
             completedMatches: factsPack.audit.completedMatches,
             quarterFinalsComplete: factsPack.audit.quarterFinalsComplete,
@@ -225,7 +263,13 @@ async function main() {
         aiTopUpWithCalculatedHighlights: AI_TOP_UP_WITH_CALCULATED_HIGHLIGHTS,
         aiCalculatedHighlightTopUpTo: AI_CALCULATED_HIGHLIGHT_TOP_UP_TO,
         aiResumeFromCheckpoint: AI_RESUME_FROM_CHECKPOINT,
-        aiBatchCheckpointFile: AI_BATCH_CHECKPOINT_FILE
+        aiBatchCheckpointFile: AI_BATCH_CHECKPOINT_FILE,
+        publicHighlightTarget: AI_PUBLIC_HIGHLIGHT_TARGET,
+        groupStageHighlightMax: AI_GROUP_STAGE_HIGHLIGHT_MAX,
+        participantHighlightMax: AI_PARTICIPANT_HIGHLIGHT_MAX,
+        stageSummaryMax: AI_STAGE_SUMMARY_MAX,
+        autoMinMatchAgeHours: AI_AUTO_MIN_MATCH_AGE_HOURS,
+        latestCompletedMatchKickoff: factsPack.audit.latestCompletedMatchKickoff
     }, null, 2));
 
     if (!factsPack.audit.finalDataReady && !ALLOW_FINAL_PREVIEW) {
@@ -252,22 +296,24 @@ async function main() {
     const aiOutput = await generateFinalContent(factsPack);
     let rows = normalizeAiOutputToRows(aiOutput, factsPack);
     rows = dedupeFinalHighlightRows(rows, factsPack, "normalized AI rows");
+    rows = curateHighlightRows(rows, factsPack, AI_PUBLIC_HIGHLIGHT_TARGET);
     let highlightRows = rows.filter((row) => row.section_key === FINAL_HIGHLIGHTS_SECTION);
     let profileRows = rows.filter((row) => row.section_key === FINAL_PROFILE_SECTION);
 
-    console.log(`Prepared rows for ${POSTS_TABLE}: ${highlightRows.length} final_highlights, ${profileRows.length} final_profile.`);
+    console.log(`Prepared curated rows for ${POSTS_TABLE}: ${highlightRows.length} final_highlights, ${profileRows.length} final_profile.`);
 
-    if (AI_TOP_UP_WITH_CALCULATED_HIGHLIGHTS && highlightRows.length < AI_MIN_VALID_HIGHLIGHT_ROWS) {
+    if (AI_TOP_UP_WITH_CALCULATED_HIGHLIGHTS && highlightRows.length < AI_PUBLIC_HIGHLIGHT_TARGET) {
         const before = highlightRows.length;
         const topUpTarget = Math.min(
             MAX_HIGHLIGHTS,
-            Math.max(AI_MIN_VALID_HIGHLIGHT_ROWS, AI_CALCULATED_HIGHLIGHT_TOP_UP_TO)
+            Math.max(AI_MIN_VALID_HIGHLIGHT_ROWS, AI_PUBLIC_HIGHLIGHT_TARGET, AI_CALCULATED_HIGHLIGHT_TOP_UP_TO)
         );
         rows = addCalculatedHighlightRowsToRows(rows, factsPack, topUpTarget);
         rows = dedupeFinalHighlightRows(rows, factsPack, "rows after calculated top-up");
+        rows = curateHighlightRows(rows, factsPack, AI_PUBLIC_HIGHLIGHT_TARGET);
         highlightRows = rows.filter((row) => row.section_key === FINAL_HIGHLIGHTS_SECTION);
         profileRows = rows.filter((row) => row.section_key === FINAL_PROFILE_SECTION);
-        console.warn(`Final row guard top-up: final_highlights ${before} -> ${highlightRows.length}.`);
+        console.warn(`Curated top-up: final_highlights ${before} -> ${highlightRows.length}.`);
     }
 
     if (rows.length === 0) {
@@ -289,6 +335,7 @@ async function main() {
     }
 
     rows = dedupeFinalHighlightRows(rows, factsPack, "pre-insert rows");
+    rows = curateHighlightRows(rows, factsPack, AI_PUBLIC_HIGHLIGHT_TARGET);
     rows = sortAndRenumberAiRows(rows, factsPack);
     highlightRows = rows.filter((row) => row.section_key === FINAL_HIGHLIGHTS_SECTION);
     profileRows = rows.filter((row) => row.section_key === FINAL_PROFILE_SECTION);
@@ -618,6 +665,9 @@ async function buildFactsPack() {
             totalMatchesInDb: allMatches.length,
             completedMatches: completedMatches.length,
             remainingExpectedMatches: Math.max(0, EXPECTED_WORLD_CUP_MATCH_COUNT - completedMatches.length),
+            latestCompletedMatchKickoff: completedMatches.length
+                ? completedMatches[completedMatches.length - 1].kickoff_at
+                : null,
             missingFixtureRows: Math.max(0, EXPECTED_WORLD_CUP_MATCH_COUNT - allMatches.length),
             activeParticipants: activeParticipants.length,
             inactiveParticipants: allParticipants.filter((p) => p.active === false).map((p) => p.name),
@@ -664,12 +714,15 @@ async function buildFactsPack() {
             "eventNotes قد تكون approved=true أو من مصدر موثوق مثل Football-Data/API-Football/GDELT حسب إعدادات السكربت، فلا تستخدم شيئاً خارجها.",
             "الأضواء ليست شارات وليست نتائج مباريات. اكتبها كمنشورات timeline ممتعة تربط المباراة بأثرها داخل مسابقة التوقعات.",
             "ابدأ من القصة: من قرأها؟ من استفاد؟ من انصدم؟ ما الذي تغير في الجو؟ ثم اذكر نتيجة المباراة كخلفية فقط.",
-            "لا تجعل القصة عن البطل فقط. كل مشارك نشط يجب أن يظهر مرة واحدة على الأقل في الأضواء.",
+            "لا تجعل القصة عن البطل فقط، لكن لا تجبر كل مشارك على منشور مستقل؛ صفحات الملف الشخصي تغطي الجميع، والأضواء تختار القصص الأقوى فقط.",
             "لا تفضح قلة المشاركة ولا تسخر من أحد.",
             "استخدم ضمائر صحيحة للأسماء النسائية المذكورة في participantLanguage.",
             "لا تستخدم عبارات صحفية عامة مثل الجمهور كان متحمساً أو تداولت الأحاديث، ولا تتكلم عن جمهور غير موجود في البيانات.",
             "نتيجة بالملّي = 50 نقطة، وفي نصف النهائي والمركز الثالث = 100، وفي النهائي = 200. الاتجاه الصحيح فقط = 10 نقاط. لا تخترع نقاطاً إضافية.",
-            "كل منشور: عنوان قصصي واضح + وصف مختصر من جملتين إلى ثلاث جمل، بين 32 و60 كلمة تقريباً. لا مقالات طويلة ولا حشو.",
+            "كل منشور: عنوان محدد + وصف من جملتين أو ثلاث، بين 28 و54 كلمة تقريباً. لا مقالات طويلة ولا حشو.",
+            "كل منشور مرتبط بمباراة يجب أن يذكر الفريقين في العنوان أو أول جملة.",
+            "لا تكرر هذه الصيغ أكثر من مرة أو مرتين في كامل المجموعة: قراءة هادئة، الزحمة، الضجيج، الثبات، التوقع المريح، اللقطة هنا.",
+            "لا تستخدم كلمة أهداف بالملّي؛ الصحيح نتائج بالملّي أو توقعات بالملّي.",
             "إذا لم توجد معلومة كافية عن حدث كروي خارجي، تجاهله ولا تخترعه وركز على قصة المسابقة."
         ]
     };
@@ -1010,37 +1063,12 @@ function getHighlightDuplicateReason(first, second, factsPack = {}) {
     );
 
     /*
-      A match may legitimately produce more than one highlight when the angles
-      are genuinely different: for example, one real match event and one
-      participant prediction story. Never remove a post merely because it has
-      the same match/category. Require shared source identity or strong wording
-      overlap as well.
+      Final-feed rule: one highlight per match. The user considers two differently
+      worded posts about the same match/event duplicates, so keep only the
+      strongest story for that match.
     */
     if (sameMatch) {
-        if (
-            participantCategories.has(firstCategory)
-            && participantCategories.has(secondCategory)
-            && sharedParticipants.length > 0
-            && (combinedSimilarity >= 0.42 || titleSimilarity >= 0.50 || bodySimilarity >= 0.38)
-        ) {
-            return `same participant/match story ${firstMatchId}/${sharedParticipants.join(",")}`;
-        }
-
-        if (
-            firstCategory === secondCategory
-            && !participantCategories.has(firstCategory)
-            && (
-                combinedSimilarity >= 0.54
-                || (titleSimilarity >= 0.58 && bodySimilarity >= 0.40)
-                || (sourceFactSimilarity >= 0.72 && bodySimilarity >= 0.34)
-            )
-        ) {
-            return `same match/category with overlapping story ${firstMatchId}/${firstCategory}`;
-        }
-
-        if (combinedSimilarity >= 0.68 || (titleSimilarity >= 0.66 && bodySimilarity >= 0.46)) {
-            return `same match with overlapping story (${combinedSimilarity.toFixed(2)})`;
-        }
+        return `same match ${firstMatchId}`;
     }
 
     const clearlyDifferentSources = (
@@ -1225,7 +1253,7 @@ function buildIntegratedStorySeeds({ rankedParticipants, matchFacts, stageFacts,
         if (!isMajorStage) continue;
         addCandidate({
             type: "stage_mood",
-            priority: 88 - stageOrder(stage.stage),
+            priority: 62 + stageOrder(stage.stage) * 8,
             title: `${stage.label_ar}: مزاج المرحلة`,
             stage,
             post_blueprint: {
@@ -1297,7 +1325,7 @@ function buildIntegratedStorySeeds({ rankedParticipants, matchFacts, stageFacts,
     for (const participant of rankedParticipants) {
         const lang = participantLanguageWords(participant.name, participant.gender);
         const highlightBits = [];
-        if (participant.rank <= 3) highlightBits.push(participant.gender === "female" ? `ختمت في المركز ${participant.rank}` : `ختم في المركز ${participant.rank}`);
+        if (participant.rank <= 3) highlightBits.push(`حالياً في المركز ${participant.rank}`);
         if (participant.points > 0) highlightBits.push(`${participant.points} نقطة`);
         if (participant.exactScores > 0) highlightBits.push(`${participant.exactScores} نتيجة بالملّي`);
         if (participant.correctPredictions > 0) highlightBits.push(`${participant.correctPredictions} توقع صحيح`);
@@ -1306,7 +1334,7 @@ function buildIntegratedStorySeeds({ rankedParticipants, matchFacts, stageFacts,
 
         addCandidate({
             type: "participant_arc",
-            priority: 76 - Math.min(45, participant.rank),
+            priority: participantSpotlightPriority(participant, rankedParticipants),
             participant,
             title: `لقطة ${participant.name}`,
             post_blueprint: {
@@ -1331,8 +1359,8 @@ function buildIntegratedStorySeeds({ rankedParticipants, matchFacts, stageFacts,
         exact_circle: 8,
         points_swing: 8,
         hard_stop: 8,
-        stage_mood: 5,
-        participant_arc: Math.max(8, Math.min(18, activeParticipants.length))
+        stage_mood: AI_STAGE_SUMMARY_MAX,
+        participant_arc: Math.min(AI_PARTICIPANT_HIGHLIGHT_MAX, activeParticipants.length)
     };
     const typeCounts = new Map();
 
@@ -1348,6 +1376,21 @@ function buildIntegratedStorySeeds({ rankedParticipants, matchFacts, stageFacts,
         .slice(0, 90);
 }
 
+
+function participantSpotlightPriority(participant = {}, rankedParticipants = []) {
+    const exactLeader = Math.max(...rankedParticipants.map((row) => Number(row.exactScores || 0)), 0);
+    const streakLeader = Math.max(...rankedParticipants.map((row) => Number(row.bestCorrectStreak || 0)), 0);
+    const accuracyLeader = Math.max(...rankedParticipants.map((row) => Number(row.accuracyPercent || 0)), 0);
+
+    let score = 48 - Math.min(20, Number(participant.rank || 20));
+    if ((participant.rank || 999) <= 3) score += 28;
+    if (Number(participant.exactScores || 0) >= Math.max(2, exactLeader - 1)) score += 20;
+    if (Number(participant.bestCorrectStreak || 0) >= Math.max(3, streakLeader - 1)) score += 16;
+    if (Number(participant.accuracyPercent || 0) >= Math.max(45, accuracyLeader - 6)) score += 14;
+    if (Number(participant.predictions || 0) < 12) score -= 10;
+    return score;
+}
+
 const COMMON_STORY_AVOID_LIST = [
     "لا تبدأ بالنتيجة ولا بجملة: عندما انتهت المباراة",
     "لا تكتب: في مباراة كذا ضد كذا، حصل كذا",
@@ -1355,7 +1398,10 @@ const COMMON_STORY_AVOID_LIST = [
     "لا تستخدم لهجة مصرية: كده، ما فيهاش، بيقرأوا، فارغين",
     "لا تستخدم عبارات عامة: أعادت تشكيل المزاج، كشفت القراء الهادئين، الثقة العمياء، الجمهور كان متحمساً، تداولت الأحاديث",
     "لا تجعلها خبر رياضي. اجعلها لقطة من مسابقة توقعات فيها روح وشخصيات",
-    "لا تخترع VAR أو طرد أو إصابة أو مشاجرة أو تصريحات إذا لم توجد في real_event_notes"
+    "لا تخترع VAR أو طرد أو إصابة أو مشاجرة أو تصريحات إذا لم توجد في real_event_notes",
+    "لا تكرر: قراءة هادئة، بعيداً عن الزحمة، الضجيج، التوقع المريح، الثبات يصنع الفارق، اللقطة هنا مو في",
+    "لا تستخدم يا ساتر أو استعارات مبالغ فيها",
+    "لا تقل أهداف بالملّي؛ قل نتائج بالملّي"
 ];
 
 function compactFacts(items = []) {
@@ -1392,7 +1438,8 @@ function scoreStoryCandidate(match, notes = []) {
     return (
         (worldCupContext.length ? 38 : 0) +
         (notes.length ? 30 : 0) +
-        (match.stage !== "GROUP_STAGE" ? 24 : 0) +
+        (match.stage !== "GROUP_STAGE" ? 30 : 0) +
+        (stageOrder(match.stage) * 20) +
         (match.exactCount === 1 ? 26 : 0) +
         (match.exactCount >= 2 ? Math.min(70, match.exactCount * 18) : 0) +
         Math.min(55, match.awardedPoints / 6) +
@@ -1400,7 +1447,7 @@ function scoreStoryCandidate(match, notes = []) {
         (match.zeroOrMissingPercent >= 85 ? 22 : 0) +
         (match.mostCommonPrediction && !match.mostCommonPrediction.wasActual ? 26 : 0) +
         (match.uniqueCorrectNames.length > 0 ? 18 : 0) +
-        Math.max(0, 12 - stageOrder(match.stage))
+        0
     );
 }
 
@@ -1819,7 +1866,7 @@ async function generateFinalContentInBatches(factsPack) {
     const completedBatches = new Set(checkpoint?.completedBatches || []);
     const usedHighlightKeys = new Set();
     const usedProfileNames = new Set();
-    const targetHighlights = MAX_HIGHLIGHTS;
+    const targetHighlights = AI_PUBLIC_HIGHLIGHT_TARGET;
 
     for (const post of Array.isArray(output.highlights) ? output.highlights : []) {
         const title = cleanText(post?.title_ar || "", AI_POST_TITLE_MAX_CHARS);
@@ -1958,8 +2005,29 @@ async function generateFinalContentInBatches(factsPack) {
     };
 
     const storySeeds = factsPack.contest.integratedStorySeeds || [];
-    const storyBatches = chunkArray(storySeeds, AI_STORY_SEED_BATCH_SIZE);
-    const maxStoryBatches = Math.min(storyBatches.length, Math.ceil(Math.max(24, targetHighlights * 0.75) / AI_BATCH_HIGHLIGHT_TARGET));
+    const participantStorySeeds = storySeeds
+        .filter((seed) => seed.type === "participant_arc")
+        .sort((a, b) => (b.priority || 0) - (a.priority || 0))
+        .slice(0, AI_PARTICIPANT_HIGHLIGHT_MAX);
+    const primaryStorySeeds = storySeeds.filter((seed) => seed.type !== "participant_arc");
+
+    if (participantStorySeeds.length > 0 && !stoppedEarly && output.highlights.length < targetHighlights) {
+        const batchName = "participant-spotlights";
+        const batchPrompt = buildBatchPrompt({
+            batchName,
+            instruction: "اكتب لقطة شخصية واحدة لكل seed مختار. ركز على بصمة مختلفة ومحددة، لا على سرد كل الأرقام. استخدم stage_ar = أضواء المشاركين. لا تقل ختم أو أنهى قبل اكتمال 104 مباراة، ولا تجعلها بطاقة إحصائية.",
+            highlightTarget: Math.min(participantStorySeeds.length, targetHighlights - output.highlights.length),
+            profileTarget: 0,
+            facts: {
+                ...contextBase,
+                story_seeds: participantStorySeeds
+            }
+        });
+        await runBatch(batchName, batchPrompt);
+    }
+
+    const storyBatches = chunkArray(primaryStorySeeds, AI_STORY_SEED_BATCH_SIZE);
+    const maxStoryBatches = Math.min(storyBatches.length, Math.ceil(Math.max(24, targetHighlights * 0.82) / AI_BATCH_HIGHLIGHT_TARGET));
 
     for (let index = 0; index < maxStoryBatches && !stoppedEarly && output.highlights.length < targetHighlights; index += 1) {
         const batchName = `story-seeds-${index + 1}`;
@@ -2025,34 +2093,13 @@ async function generateFinalContentInBatches(factsPack) {
         }
     }
 
+    /*
+      Participant spotlights are already represented by the curated participant_arc
+      story seeds. Do not run a second "one post per participant" pass: it created
+      repetitive stat cards and pushed stronger knockout stories out of the feed.
+      Every participant still receives an updated final_profile row.
+    */
     const participantRows = factsPack.contest.leaderboard || [];
-    const participantBatches = chunkArray(participantRows, AI_PROFILE_BATCH_SIZE);
-    for (let index = 0; index < participantBatches.length && !stoppedEarly; index += 1) {
-        const participants = participantBatches[index];
-        const remainingHighlights = Math.max(0, targetHighlights - output.highlights.length);
-        const batchName = `participants-${index + 1}`;
-        const highlightTarget = Math.min(participants.length, remainingHighlights);
-        // Profile rows are built deterministically in normalizeAiOutputToRows.
-        // Do not spend AI batches on profile JSON.
-        const profileTarget = 0;
-        if (highlightTarget <= 0 && profileTarget <= 0) continue;
-        const batchPrompt = buildBatchPrompt({
-            batchName,
-            instruction: GENERATE_PROFILES
-                ? "اكتب لقطة highlight واحدة لكل مشارك في هذه الدفعة. لا تعتمد على AI لرسائل profile؛ اترك profile_messages فارغة لأن السكربت سيبنيها بشكل آمن ومحسوب. لا تذكر قلة المشاركة ولا الغياب. استخدم الضمائر الصحيحة."
-                : "اكتب لقطة highlight واحدة لكل مشارك في هذه الدفعة. اجعلها إنسانية وممتعة وليست badge. لا تكتب profile_messages. لا تذكر قلة المشاركة ولا الغياب. استخدم الضمائر الصحيحة.",
-            highlightTarget,
-            profileTarget,
-            facts: {
-                ...contextBase,
-                participants: participants.map((participant) => ({
-                    ...participant,
-                    source_key: `participant:${participant.id || normalizeHighlightDedupeText(participant.name)}`
-                }))
-            }
-        });
-        await runBatch(batchName, batchPrompt);
-    }
 
     if (AI_ENABLE_FILL_MATCHES && output.highlights.length < Math.min(35, targetHighlights)) {
         const remainingFacts = (factsPack.contest.matches || []).slice(0, 80);
@@ -2192,6 +2239,29 @@ function buildCalculatedStoryTitle(match = {}, phrase = "لقطة تستحق ا�
     return cleanText(shortMatch ? `${shortMatch}: ${phrase}` : phrase, AI_POST_TITLE_MAX_CHARS);
 }
 
+
+function exactCountArabic(count) {
+    const value = Number(count || 0);
+    if (value === 0) return "من دون نتيجة بالملّي";
+    if (value === 1) return "بنتيجة واحدة بالملّي";
+    if (value === 2) return "بنتيجتين بالملّي";
+    if (value >= 3 && value <= 10) return `بـ${value} نتائج بالملّي`;
+    return `بـ${value} نتيجة بالملّي`;
+}
+
+function stageSummaryTitle(stageLabel = "") {
+    const titles = {
+        "دور المجموعات": "المجموعات: البداية التي فتحت كل الاحتمالات",
+        "دور الـ32": "دور الـ32: أول ضغط حقيقي",
+        "دور الـ16": "دور الـ16: المساحة صارت أضيق",
+        "ربع النهائي": "ربع النهائي: كل توقع صار أغلى",
+        "نصف النهائي": "نصف النهائي: خطوة واحدة عن الكأس",
+        "المركز الثالث": "المركز الثالث: آخر فرصة للنقاط",
+        "النهائي": "النهائي: اللقطة التي تحسم كل شيء"
+    };
+    return titles[stageLabel] || `${stageLabel}: لقطة المرحلة`;
+}
+
 function buildCalculatedHighlightPost(seed, index) {
     const match = seed.match || {};
     const stage = match.stageLabel || seed.stage?.label_ar || "أضواء المسابقة";
@@ -2222,40 +2292,40 @@ function buildCalculatedHighlightPost(seed, index) {
         const pointsText = match.exactCount
             ? `${match.exactCount} توقع بالملّي جعل المكافأة أثقل`
             : "حتى الاتجاه الصحيح كان له وزن واضح";
-        body = `في الإقصائيات، كل اختيار يدخل بضغط مختلف. ${resultText}، وبرز ${nameText} لأن ${pointsText}. لقطة قالت إن الهدوء في هذه المرحلة قد يساوي قفزة كاملة.`;
+        body = `ضغط الإقصائيات رفع قيمة كل اختيار. ${resultText}، وبرز ${nameText} لأن ${pointsText}. هنا صار الخطأ أغلى، وصارت الإصابة الدقيقة أوضح في سباق النقاط.`;
     } else if (category === "popular_trap") {
         title = buildCalculatedStoryTitle(match, "الطريق المزدحم لم يكسب");
         const commonText = common
             ? `التوقع الأكثر تكراراً كان ${common.score} عند ${common.count} مشاركين لكنه لم يصب`
             : "الاختيار الأكثر شيوعاً لم ينجح";
-        body = `التوقع المريح بدا آمناً، لكنه وقع في الفخ. ${resultText}؛ ${commonText}، بينما خرج ${nameText} بقراءة مختلفة. أحياناً أفضل لقطة تبدأ من قرار عدم السير مع الزحمة.`;
+        body = `الاختيار الشائع بدا آمناً، لكنه لم يكمل الطريق. ${resultText}؛ ${commonText}، بينما التقط ${nameText} السيناريو الصحيح. الفارق هنا كان قراراً واحداً قبل البداية.`;
     } else if (category === "lone_reader") {
-        title = buildCalculatedStoryTitle(match, "قراءة هادئة خرجت من الزحمة");
+        title = buildCalculatedStoryTitle(match, "قراءة منفردة سبقت البقية");
         const readers = exactNames.length ? exactNames.join("، ") : nameText;
-        body = `وسط زحمة التوقعات، ظهرت قراءة مختلفة من ${readers}. ${resultText}، ومع ${match.zeroOrMissingPercent || 0}% بلا نقاط أو بلا توقع، صارت هذه القراءة أثمن. لقطة صغيرة قالت الكثير عن قيمة الخروج من توقع الأغلبية.`;
+        body = `قلة فقط التقطت السيناريو الصحيح قبل البداية. ${resultText}، وكان ${readers} ضمن الأسماء التي استفادت، بينما خرج ${match.zeroOrMissingPercent || 0}% بلا نقاط أو بلا توقع. قراءة نادرة استحقت مكانها في الأضواء.`;
     } else if (category === "exact_circle") {
         title = buildCalculatedStoryTitle(match, "بالملّي في توقيت ثمين");
         const readers = exactNames.length ? exactNames.join("، ") : nameText;
-        body = `الفرحة هنا كانت جماعية وليست لقطة فردية. ${resultText}، و${readers} أصابوا النتيجة بالملّي. لحظة دقيقة وخفيفة أثبتت أن التفاصيل الصغيرة قد تصنع أجمل مشاهد المسابقة.`;
+        body = `هذه المرة كانت الدقة جماعية. ${resultText}، وكتب ${readers} النتيجة كاملة قبل البداية. إصابة بالملّي واضحة، من النوع الذي يختصر القصة في رقمين صحيحين.`;
     } else if (category === "points_swing") {
         title = buildCalculatedStoryTitle(match, "خزنة النقاط انفتحت");
         const pointsText = match.awardedPoints
             ? `وزعت ${match.awardedPoints} نقطة`
             : "حرّكت النقاط بوضوح";
-        body = `هذه المباراة فتحت خزنة النقاط دفعة واحدة. ${resultText} و${pointsText}، فظهر ${nameText} واقتربت بعض المسافات في السباق. لم تكن النتيجة وحدها هي القصة؛ أثرها على الجدول كان واضحاً.`;
+        body = `هذه المباراة حرّكت الجدول أكثر من غيرها. ${resultText} و${pointsText}، فاستفاد ${nameText} واقتربت المسافات في السباق. أثرها ظهر مباشرة في النقاط، لا في النتيجة وحدها.`;
     } else if (category === "hard_stop") {
         title = buildCalculatedStoryTitle(match, "ليلة قاسية على التوقعات");
         const difficulty = match.zeroOrMissingPercent
             ? `${match.zeroOrMissingPercent}% خرجوا بلا نقاط أو بلا توقع`
             : "أغلب التوقعات لم تستفد";
-        body = `هذه كانت ليلة ثقيلة على الجدول، لا ليلة نقاط سهلة. ${resultText}؛ ${difficulty}، لذلك بدت قراءة ${nameText} أكثر قيمة من المعتاد. حين يقل الناجون، تصبح كل قراءة صحيحة لقطة بحد ذاتها.`;
+        body = `كانت من أصعب مباريات الجولة على التوقعات. ${resultText}؛ ${difficulty}، لذلك ارتفعت قيمة قراءة ${nameText}. كل نقطة هنا جاءت بعد اختبار حقيقي، لا نتيجة سهلة.`;
     } else if (category === "stage_mood") {
         const stageLabel = seed.stage?.label_ar || stage;
-        title = `${stageLabel}: صفحة من مزاج المسابقة`;
-        body = `${stageLabel} صنع إيقاعه الخاص بين الدقة والمفاجآت. المرحلة شهدت ${seed.stage?.exactCount ?? "عدة"} نتيجة بالملّي و${seed.stage?.awardedPoints ?? "عدداً من"} نقطة. ومع كل مباراة، بدأت أسماء جديدة تظهر وتغيّر شكل المطاردة.`;
+        title = stageSummaryTitle(stageLabel);
+        body = `${stageLabel} ضم ${seed.stage?.matches ?? "عدة"} مباريات وخرج ${exactCountArabic(seed.stage?.exactCount)}، مع ${seed.stage?.awardedPoints ?? 0} نقطة موزعة. ملخص سريع لمرحلة ضيّقت الخيارات ورفعت قيمة كل توقع.`;
     } else {
         title = buildCalculatedStoryTitle(match, seed.title || "لقطة تستحق مكانها في الأضواء");
-        body = `هذه لم تكن نتيجة عابرة في الجدول. ${resultText}، وظهر الفرق بين قراءة ${nameText} وبين الطريق الذي بدا سهلاً قبل البداية. لقطة مختصرة، لكنها تركت أثراً واضحاً في جو المسابقة.`;
+        body = `${resultText}، وظهر أثرها في قراءة ${nameText}. قصة قصيرة من المسابقة: اختيار واضح، نتيجة محسوبة، ونقاط وجدت طريقها إلى أصحابها.`;
     }
 
     return {
@@ -2284,7 +2354,7 @@ function buildBatchPrompt({ batchName, instruction, highlightTarget, profileTarg
   "highlights": [
     {
       "title_ar": "عنوان قصصي جذاب ومحدد من 6 إلى 12 كلمة، يلمح للحظة بدون أن يكون تقرير مباراة",
-      "body_ar": "وصف خفيف من جملتين إلى ثلاث جمل قصيرة، بين 32 و60 كلمة تقريباً",
+      "body_ar": "وصف خفيف من جملتين إلى ثلاث جمل قصيرة، بين 28 و54 كلمة تقريباً",
       "icon": "✨",
       "category": "timeline|match|participant|emotional|fun|stage",
       "stage_ar": "اسم المرحلة أو أضواء المسابقة",
@@ -2315,7 +2385,7 @@ function buildBatchPrompt({ batchName, instruction, highlightTarget, profileTarg
 - اكتب من نوع القصة، وليس من نتيجة المباراة.
 - الجملة الأولى: hook ممتع أو إحساس اللحظة. لا تبدأ بـ "عندما انتهت" ولا "في مباراة" ولا باسم الفريقين.
 - الجملة الثانية أو الثالثة: اربط القصة بالأسماء والنقاط والتوقعات. اذكر المباراة ونتيجتها مرة واحدة بشكل طبيعي إذا كانت seed تحتوي مباراة.
-- اجعل النص سريع القراءة على الجوال: لا تتجاوز 60 كلمة، ولا تكرر الفكرة نفسها بصياغتين.
+- اجعل النص سريع القراءة على الجوال: من 28 إلى 54 كلمة، ولا تكرر الفكرة نفسها بصياغتين.
 - استخدم real_world_cup_context فقط إذا كان موجوداً. إذا لم يوجد، لا تخترع VAR أو طرد أو إصابة أو جمهور أو تصريح.
 - إذا كانت المباراة إقصائية أو فيها ركلات ترجيح/وقت إضافي من real_world_cup_context، استعملها كخلفية تزيد الضغط، ثم ارجع لأثرها في المسابقة.
 - كل منشور يجب أن يشعر القارئ أنه يقرأ لقطة من مسابقة أصدقاء/عائلة، وليس خبر مباراة.
@@ -2331,10 +2401,14 @@ function buildBatchPrompt({ batchName, instruction, highlightTarget, profileTarg
 - لا تكدس الأرقام. اختر رقمين أو ثلاثة فقط تخدم القصة.
 - نتيجة بالملّي = 50 نقطة قبل نصف النهائي، و100 في نصف النهائي/المركز الثالث، و200 في النهائي. الاتجاه الصحيح فقط = 10 نقاط. توقع بطل كأس العالم له نقاطه الخاصة ولا يُحسب بالملّي.
 - اذكر 1 إلى 4 أسماء فقط داخل النص، حتى لو seed فيه أسماء أكثر.
+- إذا اجتمعت أسماء من الذكور والإناث، تجنب ضمير الجمع المذكر أو المؤنث؛ استخدم صياغة محايدة مثل: وكان نصيب كل اسم 50 نقطة.
+- كل قصة مرتبطة بمباراة يجب أن تذكر الفريقين في العنوان أو أول جملة.
+- لا تستخدم أكثر من واحدة من هذه العبارات داخل المنشور: قراءة هادئة، الزحمة، الضجيج، التوقع المريح، الثبات، التفاصيل الصغيرة.
+- لا تستخدم عبارة أهداف بالملّي؛ الصحيح نتائج بالملّي.
 - لا تسخر من أي مشارك ولا تذكر الغياب أو قلة المشاركة.
 - استخدم ضمائر صحيحة للبنات حسب participantLanguage.
-- لا تكتب أقل من 90 كلمة تقريباً. لا تكتب منشوراً من جملة واحدة.
-- الأسلوب اللغوي مهم جداً: عربي واضح وسليم أولاً، وفقط لمسات سعودية خفيفة عند الحاجة مثل: مو، لقطة، يا ساتر، اللي، بدون تكسير grammar.
+- لا تتجاوز 54 كلمة تقريباً، ولا تقل عن 28 كلمة. اكتب جملتين أو ثلاثاً فقط.
+- الأسلوب اللغوي مهم جداً: عربي واضح وسليم أولاً، وفقط لمسات سعودية خفيفة عند الحاجة مثل: مو، لقطة، اللي، بدون تكسير القواعد. تجنب يا ساتر في الأضواء.
 - لا تستخدم لهجات مصرية أو شامية أو مغاربية أو خليط عاميات. ممنوع: مش، دي، ده، زي، كده، بتوقع، خلات، ما فيهاش، شافوا بمعنى غريب.
 - لا تخترع اقتباسات أو كلام على لسان مشارك. ممنوع: قال/قالت بين علامات تنصيص إلا إذا كانت موجودة في البيانات.
 - لا تكتب جملة لا معنى لها أو استعارات غريبة مثل: السحابة اللي فاتت الفرصة، حكرت الوقت، من اليد إلى الخلف.
@@ -2348,9 +2422,9 @@ function buildBatchPrompt({ batchName, instruction, highlightTarget, profileTarg
 - "الجمهور كان متحمساً وتداولت الأحاديث."
 
 مثال اتجاه جيد:
-"كان فيه توقع مريح يمشي بين أكثر من اسم، لكن المباراة قررت تكسر هذا الهدوء وتقول للجميع إن الطريق الأسهل مو دائماً آمن. اللقطة هنا ليست في النتيجة نفسها؛ اللقطة في الناس اللي خرجوا من الزحمة وشافوا الاحتمال الأصعب قبل ما يصير واضحاً.
+"إسبانيا × بلجيكا: دقة تحت ضغط ربع النهائي
 
-رحاب وتالين كانوا في المكان الصحيح في الوقت الصحيح. قراءة بالملّي أعطت كل وحدة 50 نقطة، بينما التوقع الأكثر تكراراً ترك أصحابه بلا المكافأة الكبيرة. هذه من اللحظات اللي تخلي الأضواء تروح للجرأة الهادئة، لا للصوت الأعلى."
+كان ربع النهائي أقصر طريق إلى الخطأ، لكن عبدالرحمن ولمار وعبدالمجيد أصابوا 2-1 بالملّي. حصل كل اسم على 50 نقطة، بينما اكتفت غادة بالاتجاه الصحيح؛ لقطة واضحة، بلا مبالغة ولا حشو."
 
 FACTS:
 ${JSON.stringify(facts, null, 2)}
@@ -2403,7 +2477,7 @@ async function runAiJsonBatch(prompt, batchName) {
 
 
 
-function buildDisplayHighlightTitle(post = {}, index = 0) {
+function buildDisplayHighlightTitle(post = {}, index = 0, factsPack = {}) {
     const rawTitle = cleanText(post.title_ar || "", AI_POST_TITLE_MAX_CHARS);
     if (!AI_TITLE_MATCH_HINT) return rawTitle;
 
@@ -2412,6 +2486,22 @@ function buildDisplayHighlightTitle(post = {}, index = 0) {
     const stage = String(post.stage_ar || "");
     const matchFromSource = extractMatchAndScoreHint(source) || extractMatchAndScoreHint(body);
     const generic = isGenericHighlightTitle(rawTitle);
+    const explicitMatchId = getHighlightExplicitMatchId(post);
+    const explicitMatch = (factsPack?.contest?.matches || []).find(
+        (match) => String(match.id) === String(explicitMatchId)
+    );
+
+    if (explicitMatch?.title) {
+        const [team1, team2] = String(explicitMatch.title).split(/\s+ضد\s+/);
+        const normalizedRaw = normalizeHighlightDedupeText(rawTitle);
+        const hasBothTeams = team1 && team2
+            && normalizedRaw.includes(normalizeHighlightDedupeText(team1))
+            && normalizedRaw.includes(normalizeHighlightDedupeText(team2));
+        if (!hasBothTeams) {
+            const shortMatch = String(explicitMatch.title).replace(/\s+ضد\s+/g, " × ");
+            return cleanText(`${shortMatch}: ${stripGenericTitle(rawTitle)}`, AI_POST_TITLE_MAX_CHARS);
+        }
+    }
 
     if (matchFromSource && (generic || /^(الفخ|حين دخلت|ضغط الإقصائيات|ليلة|خزنة|قراءة مختلفة|لقطة من)/.test(rawTitle))) {
         return cleanText(`${matchFromSource}: ${stripGenericTitle(rawTitle)}`, AI_POST_TITLE_MAX_CHARS);
@@ -2724,7 +2814,7 @@ function buildPrompt(factsPack) {
 - لا تجعل الصفحة عن صاحب المركز الأول فقط.
 - لا تذكر أن أحدهم لم يشارك كثيراً أو فاته مباريات كثيرة.
 - العنوان: 5 إلى 11 كلمة، وليس مجرد نتيجة مباراة.
-- الوصف: جملتان إلى ثلاث جمل قصيرة، 32 إلى 60 كلمة تقريباً، ويربط الحدث بجو المسابقة أو المشاركين. لا حشو ولا فقرتان طويلتان.
+- الوصف: جملتان إلى ثلاث جمل قصيرة، 28 إلى 54 كلمة تقريباً، ويربط الحدث بجو المسابقة أو المشاركين. لا حشو ولا فقرتان طويلتان.
 - استخدم ضمائر صحيحة. أسماء البنات موضحة في participantLanguage.
 - لا تخترع أحداث كرة قدم مثل بطاقة حمراء، هوشة، إصابة، VAR، تصريح، احتفال، جدل، أو خبر بعد المباراة إلا إذا وجدت في eventNotes. إذا استخدمت eventNotes، ضع id الخاص بها داخل source_note_ids.
 - لو لم توجد eventNotes، ركز على أحداث مسابقة التوقعات نفسها.
@@ -2918,7 +3008,7 @@ function buildLocalFallbackAiOutput(factsPack, error) {
         highlights.push({
             title_ar: title,
             body_ar: body,
-            icon: cleanText(post.icon || "✨", 8),
+            icon: cleanText(presentation.icon, 8),
             category: cleanText(post.category || "timeline", 40),
             stage_ar: cleanText(post.stage_ar || "أضواء الختام", 80),
             participant_names: Array.isArray(post.participant_names) ? post.participant_names.slice(0, 6) : [],
@@ -3158,6 +3248,236 @@ function participantLanguageWords(name, gender) {
         };
 }
 
+
+function polishHighlightArabicText(value = "") {
+    return String(value || "")
+        .replace(/(\d+)\.\s+(\d+)\s*%/g, "$1.$2%")
+        .replace(/(\d+)\s+%/g, "$1%")
+        .replace(/([3-9]|10)\s+نتيجة بالملّي/g, "$1 نتائج بالملّي")
+        .replace(/أهداف بالملّي/g, "نتائج بالملّي")
+        .replace(/إصابات بالملّي/g, "نتائج بالملّي")
+        .replace(/يا ساتر[،,!]?\s*/g, "")
+        .replace(/\s+/g, " ")
+        .trim();
+}
+
+function resolveHighlightPresentation(post = {}, factsPack = {}) {
+    const category = getHighlightCategory(post);
+    const participantCategories = new Set(["participant", "participant_arc", "profile"]);
+    const explicitMatchId = getHighlightExplicitMatchId(post);
+    const match = (factsPack?.contest?.matches || []).find(
+        (item) => String(item.id) === String(explicitMatchId)
+    );
+
+    let stage = cleanText(post.stage_ar || post.subtitle_ar || "أضواء المسابقة", 80);
+    if (participantCategories.has(category)) {
+        stage = "أضواء المشاركين";
+    } else if (match?.stageLabel) {
+        stage = match.stageLabel;
+    }
+
+    let icon = cleanText(post.icon || "", 8);
+    if (!icon || icon === "✨") {
+        const iconByCategory = {
+            popular_trap: "🌪️",
+            lone_reader: "🎯",
+            exact_circle: "🎯",
+            knockout_pressure: "🔥",
+            real_event_plus_contest: "⚽",
+            match: "⚽",
+            points_swing: "📈",
+            hard_stop: "🧱",
+            participant: "🌟",
+            participant_arc: "🌟",
+            stage: "🏟️",
+            stage_mood: "🏟️",
+            emotional: "💫",
+            fun: "🎉"
+        };
+        icon = iconByCategory[category] || "✨";
+    }
+
+    return { stage, icon, match };
+}
+
+const HIGHLIGHT_STYLE_FAMILIES = [
+    { key: "quiet_read", pattern: /قراءة هادئة|هدوء القراءة|بهدوء قبل|الهدوء يجمع/ },
+    { key: "crowd", pattern: /الزحمة|الطريق المزدحم|خارج القطيع|الأغلبية/ },
+    { key: "noise", pattern: /الضجيج|الصوت العالي|الصوت الأعلى/ },
+    { key: "steady", pattern: /الثبات|خطوات ثابتة|بخطى ثابتة|الاستمرارية/ },
+    { key: "comfortable", pattern: /التوقع المريح|الطريق الآمن|الطريق الأسهل/ },
+    { key: "the_point", pattern: /اللقطة هنا مو في|اللقطة هنا ليست في/ },
+    { key: "small_details", pattern: /التفاصيل الصغيرة|تفاصيل صغيرة/ }
+];
+
+function highlightStyleFamilies(row = {}) {
+    const text = `${row.title_ar || ""} ${row.body_ar || ""}`;
+    return HIGHLIGHT_STYLE_FAMILIES.filter((family) => family.pattern.test(text)).map((family) => family.key);
+}
+
+function rowHighlightCategory(row = {}) {
+    return getHighlightCategory(row);
+}
+
+function rowHighlightStageKey(row = {}) {
+    const text = `${row.subtitle_ar || ""} ${getHighlightCard(row).stage_ar || ""}`;
+    if (/النهائي|FINAL/i.test(text)) return "FINAL";
+    if (/المركز الثالث|THIRD/i.test(text)) return "THIRD_PLACE";
+    if (/نصف|SEMI/i.test(text)) return "SEMI_FINALS";
+    if (/ربع|QUARTER/i.test(text)) return "QUARTER_FINALS";
+    if (/16/.test(text)) return "LAST_16";
+    if (/32/.test(text)) return "LAST_32";
+    if (/المجموعات|GROUP/i.test(text)) return "GROUP_STAGE";
+    if (/المشاركين/.test(text)) return "PARTICIPANT";
+    return "OTHER";
+}
+
+function stageHighlightCap(stageKey) {
+    const caps = {
+        GROUP_STAGE: AI_GROUP_STAGE_HIGHLIGHT_MAX,
+        LAST_32: 8,
+        LAST_16: 6,
+        QUARTER_FINALS: 5,
+        SEMI_FINALS: 3,
+        THIRD_PLACE: 2,
+        FINAL: 2,
+        PARTICIPANT: AI_PARTICIPANT_HIGHLIGHT_MAX,
+        OTHER: 3
+    };
+    return caps[stageKey] ?? 3;
+}
+
+function hasMalformedHighlightLanguage(row = {}) {
+    const text = `${row.title_ar || ""} ${row.body_ar || ""}`;
+    if (/(?:غادر|خرج|بقي|بينما)\s+\d+(?:\.\d+)?[%٪]?\s*[.!؟]?(?:\s|$)/.test(text)) return true;
+    if (/\d+\.\s+\d+\s*%/.test(text)) return true;
+    if (/أهداف بالملّي|إصابات بالملّي/.test(text)) return true;
+    const names = getHighlightParticipantNames(row);
+    const hasFemale = names.some((name) => FEMALE_NAMES.has(String(name).trim()));
+    const hasMale = names.some((name) => !FEMALE_NAMES.has(String(name).trim()));
+    if (/(?:حصدت|حصلت|أخذت) كل منهن/.test(text) && hasMale) return true;
+    if (/(?:حصد|حصل|أخذ) كل منهم/.test(text) && hasFemale && !hasMale) return true;
+    if (/ختم(?:ت|ه)?\s+(?:في|المسابقة)/.test(text) && Number(row.source_completed_match_count || 0) < EXPECTED_WORLD_CUP_MATCH_COUNT) return true;
+    return false;
+}
+
+function highlightCurationScore(row = {}) {
+    const card = getHighlightCard(row);
+    const matchId = getHighlightExplicitMatchId(row);
+    const noteCount = getHighlightSourceNoteIds(row).length;
+    const participantCount = getHighlightParticipantNames(row).length;
+    const words = String(row.body_ar || "").split(/\s+/).filter(Boolean).length;
+    const concreteTitle = /×|ضد/.test(String(row.title_ar || "")) ? 18 : 0;
+    const compactBonus = words >= 28 && words <= 54 ? 18 : 0;
+    const sourceBonus = matchId ? 18 : 0;
+    const noteBonus = Math.min(24, noteCount * 12);
+    const participantBonus = Math.min(10, participantCount * 3);
+    const genericPenalty = /صفحة من مزاج|قراءة هادئة|الثبات يصنع|لقطة تستحق/.test(`${row.title_ar} ${row.body_ar}`) ? 18 : 0;
+    return highlightRowScore(row) + concreteTitle + compactBonus + sourceBonus + noteBonus + participantBonus - genericPenalty;
+}
+
+function curateHighlightRows(rows = [], factsPack = {}, targetCount = AI_PUBLIC_HIGHLIGHT_TARGET) {
+    const profiles = rows.filter((row) => row.section_key !== FINAL_HIGHLIGHTS_SECTION);
+    const prepared = rows
+        .filter((row) => row.section_key === FINAL_HIGHLIGHTS_SECTION)
+        .map((row) => {
+            const card = getHighlightCard(row);
+            const presentation = resolveHighlightPresentation({ ...row, ...card }, factsPack);
+            const title = polishHighlightArabicText(
+                buildDisplayHighlightTitle({ ...row, ...card, stage_ar: presentation.stage }, 0, factsPack)
+            );
+            const body = formatHighlightBody(polishHighlightArabicText(row.body_ar));
+            return {
+                ...row,
+                title_ar: title,
+                subtitle_ar: presentation.stage,
+                body_ar: body,
+                icon: presentation.icon,
+                cards_json: [{
+                    ...card,
+                    stage_ar: presentation.stage
+                }]
+            };
+        })
+        .filter((row) => row.title_ar && row.body_ar)
+        .filter((row) => !hasMalformedHighlightLanguage(row))
+        .filter((row) => !isLowQualityHighlightPost({
+            ...row,
+            category: rowHighlightCategory(row),
+            participant_names: getHighlightParticipantNames(row)
+        }))
+        .sort((a, b) => highlightCurationScore(b) - highlightCurationScore(a) || compareHighlightRows(a, b));
+
+    const kept = [];
+    const seenMatches = new Set();
+    const seenParticipants = new Set();
+    const stageCounts = new Map();
+    const styleCounts = new Map();
+    const stageSummaryStages = new Set();
+    let stageSummaryCount = 0;
+
+    for (const row of prepared) {
+        if (kept.length >= targetCount) break;
+
+        const category = rowHighlightCategory(row);
+        const matchId = getHighlightExplicitMatchId(row) || inferHighlightMatchId(row, factsPack);
+        const stageKey = rowHighlightStageKey(row);
+        const stageCount = stageCounts.get(stageKey) || 0;
+        if (stageCount >= stageHighlightCap(stageKey)) continue;
+
+        if (matchId) {
+            if (seenMatches.has(matchId)) continue;
+        }
+
+        if (["participant", "participant_arc", "profile"].includes(category)) {
+            const names = getHighlightParticipantNames(row);
+            const mainName = names[0] || "";
+            if (!mainName || seenParticipants.has(mainName)) continue;
+            if (seenParticipants.size >= AI_PARTICIPANT_HIGHLIGHT_MAX) continue;
+        }
+
+        if (["stage", "stage_mood"].includes(category)) {
+            if (stageSummaryCount >= AI_STAGE_SUMMARY_MAX) continue;
+            if (stageSummaryStages.has(stageKey)) continue;
+        }
+
+        const families = highlightStyleFamilies(row);
+        if (families.some((family) => (styleCounts.get(family) || 0) >= 2)) continue;
+
+        kept.push(row);
+        stageCounts.set(stageKey, stageCount + 1);
+        if (matchId) seenMatches.add(matchId);
+
+        if (["participant", "participant_arc", "profile"].includes(category)) {
+            const mainName = getHighlightParticipantNames(row)[0];
+            if (mainName) seenParticipants.add(mainName);
+        }
+
+        if (["stage", "stage_mood"].includes(category)) {
+            stageSummaryCount += 1;
+            stageSummaryStages.add(stageKey);
+        }
+
+        for (const family of families) {
+            styleCounts.set(family, (styleCounts.get(family) || 0) + 1);
+        }
+    }
+
+    console.log("Highlight curation summary:");
+    console.log(JSON.stringify({
+        inputHighlights: prepared.length,
+        keptHighlights: kept.length,
+        targetHighlights: targetCount,
+        byStage: Object.fromEntries([...stageCounts.entries()]),
+        participantSpotlights: seenParticipants.size,
+        stageSummaries: stageSummaryCount,
+        uniqueMatches: seenMatches.size,
+        repeatedStyleFamilies: Object.fromEntries([...styleCounts.entries()])
+    }, null, 2));
+
+    return [...kept, ...profiles];
+}
+
 function normalizeAiOutputToRows(output, factsPack) {
     const rows = [];
     const activeParticipants = factsPack.contest.activeParticipants || [];
@@ -3175,19 +3495,27 @@ function normalizeAiOutputToRows(output, factsPack) {
 
     const highlights = Array.isArray(output?.highlights) ? output.highlights : [];
     highlights.slice(0, MAX_HIGHLIGHTS).forEach((post, index) => {
-        const body = formatHighlightBody(post.body_ar);
-        const title = cleanText(buildDisplayHighlightTitle(post, index), AI_POST_TITLE_MAX_CHARS);
-        if (!title || !body || isLowQualityHighlightPost({ ...post, title_ar: title, body_ar: body })) return;
+        const presentation = resolveHighlightPresentation(post, factsPack);
+        const polishedPost = {
+            ...post,
+            stage_ar: presentation.stage,
+            icon: presentation.icon,
+            body_ar: polishHighlightArabicText(post.body_ar),
+            title_ar: polishHighlightArabicText(post.title_ar)
+        };
+        const body = formatHighlightBody(polishedPost.body_ar);
+        const title = cleanText(buildDisplayHighlightTitle(polishedPost, index, factsPack), AI_POST_TITLE_MAX_CHARS);
+        if (!title || !body || isLowQualityHighlightPost({ ...polishedPost, title_ar: title, body_ar: body })) return;
 
         rows.push({
             section_key: FINAL_HIGHLIGHTS_SECTION,
             title_ar: title,
-            subtitle_ar: cleanText(post.stage_ar || "أضواء المسابقة", 80),
+            subtitle_ar: cleanText(presentation.stage, 80),
             body_ar: body,
             icon: cleanText(post.icon || "✨", 8),
             cards_json: [{
                 type: cleanText(post.category || "timeline", 40),
-                stage_ar: cleanText(post.stage_ar || "", 80),
+                stage_ar: cleanText(presentation.stage, 80),
                 participant_names: Array.isArray(post.participant_names) ? post.participant_names.slice(0, 6) : [],
                 source_fact: cleanText(post.source_fact || "", 180),
                 source_note_ids: Array.isArray(post.source_note_ids) ? post.source_note_ids.slice(0, 6) : [],
@@ -3207,7 +3535,9 @@ function normalizeAiOutputToRows(output, factsPack) {
         const profileMessages = Array.isArray(output?.profile_messages) ? output.profile_messages : [];
         for (const participant of activeParticipants) {
             const row = factsPack.contest.leaderboard.find((item) => item.name === participant.name);
-            const title = cleanText(row?.rank === 1 ? "لمحة البطل" : "لمحة شخصية", AI_POST_TITLE_MAX_CHARS);
+            const title = cleanText(row?.rank === 1
+                ? (factsPack.audit.finalDataReady ? "لمحة البطل" : "لمحة المتصدر")
+                : "لمحة شخصية", AI_POST_TITLE_MAX_CHARS);
             const body = cleanBodyText(buildFallbackProfileMessage(participant.name, factsPack), 950);
 
             rows.push({
@@ -3262,10 +3592,18 @@ function addCalculatedHighlightRowsToRows(existingRows, factsPack, targetCount) 
         const post = buildCalculatedHighlightPost(seed, currentCount + 1);
         if (!post) continue;
 
-        const title = cleanText(buildDisplayHighlightTitle(post, currentCount), AI_POST_TITLE_MAX_CHARS);
-        const body = formatHighlightBody(post.body_ar);
+        const presentation = resolveHighlightPresentation(post, factsPack);
+        const polishedPost = {
+            ...post,
+            stage_ar: presentation.stage,
+            icon: presentation.icon,
+            title_ar: polishHighlightArabicText(post.title_ar),
+            body_ar: polishHighlightArabicText(post.body_ar)
+        };
+        const title = cleanText(buildDisplayHighlightTitle(polishedPost, currentCount, factsPack), AI_POST_TITLE_MAX_CHARS);
+        const body = formatHighlightBody(polishedPost.body_ar);
         const key = `${title}|${body}`.toLowerCase();
-        const candidatePost = { ...post, title_ar: title, body_ar: body };
+        const candidatePost = { ...polishedPost, title_ar: title, body_ar: body };
         if (!title || !body || used.has(key) || isUnsafeCalculatedHighlightPost(candidatePost)) continue;
         if (rows.some((row) => row.section_key === FINAL_HIGHLIGHTS_SECTION && getHighlightDuplicateReason(candidatePost, row, factsPack))) continue;
         used.add(key);
@@ -3273,12 +3611,12 @@ function addCalculatedHighlightRowsToRows(existingRows, factsPack, targetCount) 
         rows.push({
             section_key: FINAL_HIGHLIGHTS_SECTION,
             title_ar: title,
-            subtitle_ar: cleanText(post.stage_ar || "أضواء المسابقة", 80),
+            subtitle_ar: cleanText(presentation.stage, 80),
             body_ar: body,
-            icon: cleanText(post.icon || "✨", 8),
+            icon: cleanText(presentation.icon, 8),
             cards_json: [{
                 type: cleanText(post.category || "timeline", 40),
-                stage_ar: cleanText(post.stage_ar || "", 80),
+                stage_ar: cleanText(presentation.stage, 80),
                 participant_names: Array.isArray(post.participant_names) ? post.participant_names.slice(0, 6) : [],
                 source_fact: cleanText(post.source_fact || "calculated_story_top_up", 180),
                 source_note_ids: Array.isArray(post.source_note_ids) ? post.source_note_ids.slice(0, 6) : [],
@@ -3404,7 +3742,9 @@ function rebuildSafeProfileRows(existingRows, factsPack) {
         const row = factsPack.contest.leaderboard.find((item) => item.name === participant.name);
         rowsWithoutProfiles.push({
             section_key: FINAL_PROFILE_SECTION,
-            title_ar: cleanText(row?.rank === 1 ? "لمحة البطل" : "لمحة شخصية", AI_POST_TITLE_MAX_CHARS),
+            title_ar: cleanText(row?.rank === 1
+                ? (factsPack.audit.finalDataReady ? "لمحة البطل" : "لمحة المتصدر")
+                : "لمحة شخصية", AI_POST_TITLE_MAX_CHARS),
             subtitle_ar: "بصمة المشارك",
             body_ar: cleanBodyText(buildFallbackProfileMessage(participant.name, factsPack), 950),
             icon: cleanText(row?.rank === 1 ? "👑" : "✨", 8),
@@ -3440,11 +3780,15 @@ function buildFallbackProfileMessage(participantName, factsPack) {
     let second = "";
 
     if (row.rank === 1) {
-        opening = `${row.name} لم يأخذ الصدارة بلقطة واحدة؛ ${lang.finishedTop} المسابقة كمن يجمع النقاط بصبر ويترك الباقين يطاردون الفارق.`;
-        second = `الأرقام تقول ${row.points} نقطة، ${row.correctPredictions} توقعاً جاب نقاط، و${row.exactScores} بالملّي. لكن اللقطة الأوضح أن القمة احتاجت نفساً طويلاً، و${row.name} عرف كيف يبقى قريباً منها حتى النهاية.`;
+        opening = factsPack.audit.finalDataReady
+            ? `${row.name} أنهى المسابقة في الصدارة بعد رحلة طويلة من النقاط والتوقعات.`
+            : `${row.name} يتصدر حالياً، لكن الطريق ما زال مفتوحاً مع كل نتيجة جديدة.`;
+        second = `الأرقام الحالية تقول ${row.points} نقطة، ${row.correctPredictions} توقعاً جاب نقاط، و${row.exactScores} بالملّي. هذه لمحة متحركة من السباق، وتتحدث بما وصل إليه الجدول الآن.`;
     } else if (topThree) {
-        opening = `${row.name} كان من الأسماء التي بقيت في دائرة الضوء. المركز ${row.rank} لا يأتي بالصدفة، خصوصاً في مسابقة تتحرك مع كل مباراة.`;
-        second = `جمع ${row.points} نقطة، ومع ${row.exactScores} بالملّي و${row.correctPredictions} توقعاً جاب نقاط، كانت الحكاية أقرب إلى حضور ثابت من ضربة حظ عابرة. ${badgeText}`;
+        opening = factsPack.audit.finalDataReady
+            ? `${row.name} أنهى المسابقة ضمن الثلاثة الأوائل، وهي نتيجة تعكس حضوراً واضحاً طوال الطريق.`
+            : `${row.name} موجود حالياً في المركز ${row.rank}، وما زال كل شيء قابلاً للتغير مع المباريات المتبقية.`;
+        second = `جمع ${row.points} نقطة، ومع ${row.exactScores} بالملّي و${row.correctPredictions} توقعاً جاب نقاط، يظهر حضوره الحالي بوضوح. ${badgeText}`;
     } else if ((row.exactScores || 0) >= Math.max(4, exactLeader - 2)) {
         opening = `${row.name} عنده علاقة واضحة مع لحظة "بالملّي". ليس ضرورياً أن تكون في القمة حتى تملك لقطة يتذكرها الجميع.`;
         second = `${row.exactScores} نتائج كاملة تعني أن أكثر من مباراة قالت له${lang.taMarbuta}: صح عليك. ومع ${row.points} نقطة، أصبحت بصمته${lang.taMarbuta} في المسابقة أوضح من مجرد رقم في الترتيب.`;
@@ -3580,7 +3924,94 @@ async function insertRows(rows) {
     }
 }
 
-main().catch((error) => {
-    console.error(error);
-    process.exit(1);
-});
+
+function runHighlightQualitySelfTest() {
+    const assert = (condition, message) => {
+        if (!condition) throw new Error(`Highlight quality self-test failed: ${message}`);
+    };
+
+    assert(
+        polishHighlightArabicText("دقة 55. 9% مع 4 نتيجة بالملّي وأهداف بالملّي") ===
+            "دقة 55.9% مع 4 نتائج بالملّي ونتائج بالملّي",
+        "Arabic numeric/football terminology normalization"
+    );
+
+    const sameMatchA = {
+        title_ar: "إسبانيا × بلجيكا: لقطة أولى",
+        body_ar: "قصة مختلفة شكلاً.",
+        category: "match",
+        source_match_id: "match-1",
+        source_key: "story:a"
+    };
+    const sameMatchB = {
+        title_ar: "ربع النهائي يرفع الضغط",
+        body_ar: "صياغة ثانية عن الحدث نفسه.",
+        category: "popular_trap",
+        source_match_id: "match-1",
+        source_key: "story:b"
+    };
+    assert(
+        getHighlightDuplicateReason(sameMatchA, sameMatchB, { contest: { matches: [] } }) === "same match match-1",
+        "one final highlight per match"
+    );
+
+    assert(
+        hasMalformedHighlightLanguage({
+            title_ar: "عنوان",
+            body_ar: "القراءة كانت جيدة، بينما غادر 87.",
+            cards_json: [{ participant_names: [] }],
+            source_completed_match_count: 98
+        }),
+        "broken bare-number sentence rejection"
+    );
+
+    const participantPresentation = resolveHighlightPresentation({
+        category: "participant_arc",
+        stage_ar: "دور المجموعات",
+        participant_names: ["تالين"]
+    }, { contest: { matches: [] } });
+    assert(participantPresentation.stage === "أضواء المشاركين", "participant stage label");
+
+    const syntheticMatches = Array.from({ length: 12 }, (_, index) => ({
+        id: `group-${index + 1}`,
+        title: `فريق ${index + 1} ضد خصم ${index + 1}`,
+        stage: "GROUP_STAGE",
+        stageLabel: "دور المجموعات"
+    }));
+    const syntheticGroupRows = syntheticMatches.map((match, index) => ({
+        section_key: FINAL_HIGHLIGHTS_SECTION,
+        title_ar: `${match.title.replace(" ضد ", " × ")}: اختبار الجولة`,
+        subtitle_ar: "دور المجموعات",
+        body_ar: `اللقطة في هذه المباراة كانت مرتبطة مباشرة بمسابقة التوقعات وباختيارات المشاركين قبل البداية. ${match.title} انتهت 1-0، وظهرت النقاط عند من قرأ الاتجاه الصحيح من دون مبالغة أو حشو.`,
+        icon: "⚽",
+        cards_json: [{
+            type: "match",
+            stage_ar: "دور المجموعات",
+            participant_names: [],
+            source_key: `story:${match.id}`,
+            source_match_id: match.id
+        }],
+        source_completed_match_count: 98,
+        display_order: 1000 - index
+    }));
+    const curatedSynthetic = curateHighlightRows(
+        syntheticGroupRows,
+        { contest: { matches: syntheticMatches } },
+        20
+    );
+    assert(
+        curatedSynthetic.filter((row) => row.section_key === FINAL_HIGHLIGHTS_SECTION).length <= AI_GROUP_STAGE_HIGHLIGHT_MAX,
+        "group-stage curation cap"
+    );
+
+    console.log("Highlight quality self-test passed.");
+}
+
+if (HIGHLIGHT_QUALITY_SELF_TEST) {
+    runHighlightQualitySelfTest();
+} else {
+    main().catch((error) => {
+        console.error(error);
+        process.exit(1);
+    });
+}
