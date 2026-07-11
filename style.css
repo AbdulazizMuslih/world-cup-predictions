@@ -8689,3 +8689,599 @@ body.site-stage-theme #availableMatches .available-stage-card.match-card-predict
     font-size: 34px;
   }
 }
+
+/* ===============================
+   V39.0 final stats badges: all badges by leaderboard rank
+   =============================== */
+#statisticsTab #statisticsBadges.recap-awards-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: clamp(16px, 2.2vw, 24px);
+  align-items: stretch;
+}
+
+#statisticsTab .participant-badge-group-card {
+  min-height: 0 !important;
+  display: grid;
+  gap: clamp(14px, 1.8vw, 20px);
+  padding: clamp(18px, 2.4vw, 28px);
+  border-radius: 30px;
+  background:
+    radial-gradient(circle at 96% 8%, rgba(241, 216, 154, 0.15), transparent 32%),
+    radial-gradient(circle at 6% 100%, rgba(52, 214, 189, 0.10), transparent 36%),
+    linear-gradient(145deg, rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0.045)),
+    rgba(5, 8, 23, 0.52);
+  border-color: rgba(241, 216, 154, 0.18);
+}
+
+#statisticsTab .participant-badge-group-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid rgba(241, 216, 154, 0.12);
+}
+
+#statisticsTab .participant-badge-group-head > div {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+#statisticsTab .participant-badge-group-head .participant-badge-person {
+  color: #fff7d7;
+  font-size: clamp(22px, 2.4vw, 32px);
+  line-height: 1.25;
+  letter-spacing: -0.02em;
+}
+
+#statisticsTab .participant-badge-group-head small {
+  color: rgba(247, 241, 227, 0.68);
+  font-size: clamp(12px, 1.1vw, 14px);
+  line-height: 1.65;
+  text-align: left;
+  direction: rtl;
+}
+
+#statisticsTab .participant-badge-chip-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: stretch;
+}
+
+#statisticsTab .participant-badge-chip {
+  flex: 1 1 245px;
+  min-width: min(100%, 245px);
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+  padding: 12px 13px;
+  border-radius: 22px;
+  background: rgba(255, 255, 255, 0.065);
+  border: 1px solid rgba(241, 216, 154, 0.13);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+#statisticsTab .participant-badge-chip-icon {
+  width: 38px;
+  height: 38px;
+  display: grid;
+  place-items: center;
+  border-radius: 15px;
+  font-size: 20px;
+  background:
+    radial-gradient(circle at 30% 20%, rgba(255, 255, 255, 0.30), transparent 32%),
+    linear-gradient(135deg, rgba(241, 216, 154, 0.22), rgba(232, 121, 249, 0.12));
+  border: 1px solid rgba(241, 216, 154, 0.14);
+}
+
+#statisticsTab .participant-badge-chip-body {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+#statisticsTab .participant-badge-chip strong {
+  color: #ffe991;
+  font-size: clamp(13.5px, 1.15vw, 16px);
+  line-height: 1.45;
+}
+
+#statisticsTab .participant-badge-chip em {
+  color: #fff7d7;
+  font-size: clamp(13px, 1.05vw, 15px);
+  line-height: 1.5;
+  font-style: normal;
+  font-weight: 950;
+}
+
+#statisticsTab .participant-badge-chip small {
+  color: rgba(247, 241, 227, 0.64);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+#profileTab .profile-closing-note strong {
+  color: #ffe991;
+}
+
+#profileTab .profile-closing-note p {
+  color: rgba(247, 241, 227, 0.78);
+  line-height: 1.9;
+}
+
+@media (max-width: 760px) {
+  #statisticsTab .participant-badge-group-head {
+    display: grid;
+    justify-content: stretch;
+  }
+
+  #statisticsTab .participant-badge-group-head small {
+    text-align: right;
+  }
+
+  #statisticsTab .participant-badge-chip {
+    flex-basis: 100%;
+  }
+}
+
+/* ===============================
+   V39.0 final live polish: compact participant badge rows
+   =============================== */
+#statisticsTab .participant-badge-group-card.recap-award-card,
+#statisticsTab .participant-badge-group-card {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) !important;
+  gap: clamp(10px, 1.25vw, 14px) !important;
+  min-height: 0 !important;
+  padding: clamp(14px, 1.8vw, 20px) !important;
+  border-radius: 26px !important;
+}
+
+#statisticsTab .participant-badge-group-head {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  gap: 12px !important;
+  padding-bottom: 8px !important;
+  border-bottom: 1px solid rgba(241, 216, 154, 0.12) !important;
+}
+
+#statisticsTab .participant-badge-group-head > div {
+  display: flex !important;
+  align-items: center !important;
+  gap: 10px !important;
+  min-width: 0 !important;
+}
+
+#statisticsTab .participant-badge-group-head .participant-badge-person {
+  font-size: clamp(21px, 2.1vw, 30px) !important;
+  line-height: 1.15 !important;
+}
+
+#statisticsTab .participant-badge-group-head small {
+  max-width: none !important;
+  white-space: nowrap !important;
+  color: rgba(247, 241, 227, 0.72) !important;
+  font-size: clamp(12px, 1vw, 13.5px) !important;
+  line-height: 1.4 !important;
+  text-align: end !important;
+}
+
+#statisticsTab .participant-badge-rank {
+  padding: 5px 10px !important;
+  font-size: 13px !important;
+}
+
+#statisticsTab .participant-badge-chip-grid {
+  display: grid !important;
+  grid-template-columns: repeat(auto-fit, minmax(185px, 1fr)) !important;
+  gap: 8px !important;
+  align-items: stretch !important;
+}
+
+#statisticsTab .participant-badge-chip {
+  min-width: 0 !important;
+  width: 100% !important;
+  display: grid !important;
+  grid-template-columns: auto minmax(0, 1fr) !important;
+  gap: 8px !important;
+  align-items: start !important;
+  padding: 9px 10px !important;
+  border-radius: 18px !important;
+}
+
+#statisticsTab .participant-badge-chip-icon {
+  width: 34px !important;
+  height: 34px !important;
+  border-radius: 13px !important;
+  font-size: 18px !important;
+}
+
+#statisticsTab .participant-badge-chip-body {
+  gap: 1px !important;
+}
+
+#statisticsTab .participant-badge-chip strong {
+  font-size: 13.5px !important;
+  line-height: 1.35 !important;
+}
+
+#statisticsTab .participant-badge-chip em {
+  font-size: 13px !important;
+  line-height: 1.35 !important;
+}
+
+#statisticsTab .participant-badge-chip small {
+  font-size: 11.5px !important;
+  line-height: 1.35 !important;
+}
+
+@media (min-width: 1100px) {
+  #statisticsTab .participant-badge-chip-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+  }
+}
+
+@media (max-width: 760px) {
+  #statisticsTab .participant-badge-group-head {
+    display: grid !important;
+    justify-items: start !important;
+  }
+
+  #statisticsTab .participant-badge-group-head small {
+    white-space: normal !important;
+    text-align: right !important;
+  }
+
+  #statisticsTab .participant-badge-chip-grid {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+/* ===============================
+   V39.0 go-live compact badges: no wasted participant panel space
+   =============================== */
+#statisticsTab #statisticsBadges.recap-awards-grid {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) !important;
+  gap: clamp(10px, 1.35vw, 16px) !important;
+}
+
+#statisticsTab article.participant-badge-group-card.recap-award-card,
+#statisticsTab article.participant-badge-group-card {
+  display: block !important;
+  min-height: 0 !important;
+  padding: clamp(12px, 1.55vw, 18px) !important;
+  border-radius: 24px !important;
+}
+
+#statisticsTab .participant-badge-group-head {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  gap: 12px !important;
+  margin: 0 0 10px !important;
+  padding: 0 0 9px !important;
+  border-bottom: 1px solid rgba(241, 216, 154, 0.12) !important;
+}
+
+#statisticsTab .participant-badge-group-head > div {
+  display: flex !important;
+  align-items: center !important;
+  gap: 10px !important;
+  min-width: 0 !important;
+  flex-wrap: wrap !important;
+}
+
+#statisticsTab .participant-badge-group-head .participant-badge-person {
+  font-size: clamp(20px, 1.9vw, 28px) !important;
+  line-height: 1.15 !important;
+}
+
+#statisticsTab .participant-badge-group-head small {
+  max-width: 50% !important;
+  margin: 0 !important;
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  text-align: end !important;
+  font-size: clamp(12px, 0.95vw, 13px) !important;
+  line-height: 1.35 !important;
+}
+
+#statisticsTab .participant-badge-chip-grid {
+  display: grid !important;
+  grid-template-columns: repeat(auto-fit, minmax(165px, 1fr)) !important;
+  gap: 7px !important;
+  align-items: stretch !important;
+}
+
+#statisticsTab .participant-badge-chip {
+  min-width: 0 !important;
+  display: grid !important;
+  grid-template-columns: 30px minmax(0, 1fr) !important;
+  gap: 7px !important;
+  align-items: start !important;
+  padding: 8px 9px !important;
+  border-radius: 17px !important;
+}
+
+#statisticsTab .participant-badge-chip-icon {
+  width: 30px !important;
+  height: 30px !important;
+  border-radius: 12px !important;
+  font-size: 16px !important;
+}
+
+#statisticsTab .participant-badge-chip-body {
+  gap: 0 !important;
+}
+
+#statisticsTab .participant-badge-chip strong {
+  font-size: 13px !important;
+  line-height: 1.25 !important;
+}
+
+#statisticsTab .participant-badge-chip em {
+  font-size: 12.5px !important;
+  line-height: 1.28 !important;
+}
+
+#statisticsTab .participant-badge-chip small {
+  font-size: 11px !important;
+  line-height: 1.3 !important;
+}
+
+@media (min-width: 1180px) {
+  #statisticsTab .participant-badge-chip-grid {
+    grid-template-columns: repeat(5, minmax(0, 1fr)) !important;
+  }
+}
+
+@media (max-width: 760px) {
+  #statisticsTab .participant-badge-group-head {
+    display: grid !important;
+    gap: 6px !important;
+    justify-items: start !important;
+  }
+
+  #statisticsTab .participant-badge-group-head small {
+    max-width: 100% !important;
+    white-space: normal !important;
+    text-align: right !important;
+  }
+
+  #statisticsTab .participant-badge-chip-grid {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+/* ===============================
+   V39.0 final section polish: profile, about, closing, highlights
+   =============================== */
+#profileTab .profile-hero-card-final {
+  padding: clamp(18px, 3vw, 28px) !important;
+  border-radius: 30px !important;
+  background:
+    radial-gradient(circle at 92% 12%, color-mix(in srgb, var(--participant-accent, #f1d89a) 24%, transparent), transparent 34%),
+    linear-gradient(135deg, rgba(5, 8, 23, 0.72), rgba(255, 255, 255, 0.08)) !important;
+}
+
+#profileTab .profile-hero-card-final h4 {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+#profileTab .profile-hero-card-final h4 span {
+  display: inline-flex;
+  align-items: center;
+  min-height: 34px;
+  padding: 4px 12px;
+  border-radius: 999px;
+  color: #fff7d7;
+  background: rgba(5, 8, 23, 0.48);
+  border: 1px solid rgba(241, 216, 154, 0.20);
+  font-size: 0.48em;
+}
+
+#profileTab .profile-stat-grid-final {
+  grid-template-columns: repeat(6, minmax(120px, 1fr));
+}
+
+#profileTab .profile-stat-grid-final .profile-stat-card {
+  min-height: 112px;
+  align-content: center;
+}
+
+#profileTab .profile-stat-grid-final .profile-stat-card-wide {
+  grid-column: span 2;
+}
+
+#profileTab .badge-grid {
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+}
+
+#profileTab .profile-badge-card-final {
+  min-height: 118px;
+  align-content: center;
+  text-align: center;
+}
+
+#profileTab .profile-closing-note-final {
+  margin-top: 16px;
+  padding: clamp(20px, 3vw, 30px) !important;
+  border-radius: 30px !important;
+  background:
+    radial-gradient(circle at 90% 10%, rgba(241, 216, 154, 0.18), transparent 30%),
+    radial-gradient(circle at 8% 92%, rgba(52, 214, 189, 0.13), transparent 34%),
+    linear-gradient(135deg, rgba(5, 8, 23, 0.72), rgba(255, 255, 255, 0.07)) !important;
+  border: 1px solid rgba(241, 216, 154, 0.22) !important;
+}
+
+#profileTab .profile-closing-note-head {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 14px;
+}
+
+#profileTab .profile-closing-note-head > span {
+  width: 54px;
+  height: 54px;
+  display: grid;
+  place-items: center;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(241, 216, 154, 0.18);
+  font-size: 28px;
+}
+
+#profileTab .profile-closing-note-head small {
+  display: block;
+  margin-top: 3px;
+  color: rgba(247, 241, 227, 0.62);
+  font-weight: 800;
+}
+
+#profileTab .profile-closing-note-final p {
+  max-width: 980px;
+  white-space: pre-line;
+  font-size: clamp(16px, 1.3vw, 19px);
+  line-height: 2;
+}
+
+#aboutTab .info-card:not(.rules-card) {
+  display: none;
+}
+
+#aboutTab .rules-summary-grid {
+  display: grid;
+  gap: 18px;
+}
+
+.about-hero-card {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 18px;
+  padding: clamp(22px, 4vw, 34px);
+  border-radius: 32px;
+  background:
+    radial-gradient(circle at 92% 12%, rgba(241, 216, 154, 0.18), transparent 30%),
+    linear-gradient(135deg, rgba(5, 8, 23, 0.72), rgba(255, 255, 255, 0.075));
+  border: 1px solid rgba(241, 216, 154, 0.20);
+}
+
+.about-hero-card > span {
+  width: 72px;
+  height: 72px;
+  display: grid;
+  place-items: center;
+  border-radius: 24px;
+  background: linear-gradient(135deg, rgba(241, 216, 154, 0.24), rgba(52, 214, 189, 0.14));
+  font-size: 38px;
+}
+
+.about-hero-card h4 {
+  margin: 0 0 8px;
+  color: #fff7d7;
+  font-size: clamp(26px, 4vw, 44px);
+  line-height: 1.15;
+}
+
+.about-hero-card p:not(.eyebrow) {
+  margin: 0;
+  color: rgba(247, 241, 227, 0.76);
+  line-height: 1.9;
+  font-weight: 750;
+}
+
+.about-rule-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 14px;
+}
+
+.about-rule-grid .rules-card {
+  min-height: 128px;
+  align-content: center;
+}
+
+.about-rule-grid .rules-card strong {
+  color: #fff4cf;
+  font-size: clamp(24px, 3vw, 34px);
+}
+
+.season-thanks-card-final {
+  min-height: min(62vh, 660px);
+  display: grid;
+  align-content: center;
+  padding: clamp(30px, 6vw, 74px) !important;
+  border-radius: clamp(34px, 5vw, 58px) !important;
+  background:
+    radial-gradient(circle at 90% 10%, rgba(255, 230, 165, 0.24), transparent 32%),
+    radial-gradient(circle at 10% 92%, rgba(52, 214, 189, 0.16), transparent 34%),
+    linear-gradient(135deg, rgba(5, 8, 23, 0.78), rgba(255, 255, 255, 0.09)) !important;
+}
+
+.season-thanks-card-final .season-thanks-icon {
+  width: clamp(74px, 8vw, 104px);
+  height: clamp(74px, 8vw, 104px);
+  font-size: clamp(38px, 5vw, 56px);
+}
+
+.season-thanks-card-final h2 {
+  max-width: 980px;
+  font-size: clamp(34px, 5.8vw, 72px) !important;
+}
+
+.season-thanks-card-final p {
+  max-width: 980px !important;
+  font-size: clamp(17px, 1.65vw, 22px);
+  color: rgba(247, 241, 227, 0.84) !important;
+}
+
+.season-thanks-mini-grid-final {
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+}
+
+#highlightsTab .season-highlight-card-ai .season-highlight-meta {
+  display: inline-flex;
+  width: fit-content;
+}
+
+#highlightsTab .season-highlight-card-ai h4 {
+  text-wrap: balance;
+}
+
+@media (max-width: 900px) {
+  #profileTab .profile-stat-grid-final {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  #profileTab .profile-stat-grid-final .profile-stat-card-wide {
+    grid-column: span 2;
+  }
+}
+
+@media (max-width: 640px) {
+  .about-hero-card,
+  #profileTab .profile-hero-card-final {
+    grid-template-columns: 1fr;
+    text-align: start;
+  }
+
+  #profileTab .profile-stat-grid-final,
+  #profileTab .profile-stat-grid-final .profile-stat-card-wide {
+    grid-template-columns: 1fr;
+    grid-column: auto;
+  }
+}

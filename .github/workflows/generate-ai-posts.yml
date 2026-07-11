@@ -72,11 +72,16 @@ jobs:
           AI_REQUIRE_CONTEST_SIGNAL: "true"
           AI_STORY_SEED_BATCH_SIZE: "6"
           AI_POST_BODY_MAX_CHARS: "1350"
+          AI_ENFORCE_UNIQUE_TITLES: "true"
+          AI_TITLE_MATCH_HINT: "true"
           AI_MAX_BATCHES_PER_RUN: "12"
           AI_INSERT_PARTIAL_ON_QUOTA: "true"
           AI_INSERT_PARTIAL_ON_BATCH_FAILURE: "true"
           AI_INSERT_PARTIAL_ON_MAX_BATCHES: "true"
-          AI_MIN_HIGHLIGHTS_FOR_PARTIAL_INSERT: "8"
+          AI_MIN_HIGHLIGHTS_FOR_PARTIAL_INSERT: "12"
+          AI_MIN_VALID_HIGHLIGHT_ROWS: "25"
+          AI_TOP_UP_WITH_CALCULATED_HIGHLIGHTS: "true"
+          AI_CALCULATED_HIGHLIGHT_TOP_UP_TO: "45"
           AI_CONTINUE_ON_BATCH_FAILURE: "true"
           AI_MAX_FAILED_BATCHES: "10"
           AI_ENABLE_CONTEST_MOMENT_BATCHES: "false"
@@ -84,9 +89,9 @@ jobs:
           EXPECTED_WORLD_CUP_MATCH_COUNT: "104"
           ALLOW_FINAL_PREVIEW: ${{ github.event_name == 'schedule' && 'true' || inputs.allow_preview_generation }}
           PUBLISH_VISIBLE: ${{ github.event_name == 'schedule' && 'true' || inputs.publish_visible }}
-          MAX_HIGHLIGHTS: ${{ github.event_name == 'schedule' && '70' || inputs.max_highlights }}
+          MAX_HIGHLIGHTS: ${{ github.event_name == 'schedule' && '60' || inputs.max_highlights }}
           RESET_EXISTING_FINAL_AI: ${{ github.event_name == 'schedule' && 'true' || inputs.reset_existing }}
-          GENERATE_PROFILES: "false"
+          GENERATE_PROFILES: "true"
           MIN_APPROVED_EVENT_NOTES: "0"
           REQUIRE_EVENT_NOTES_FOR_PUBLISH: "false"
           USE_TRUSTED_EVENT_NOTES: "true"

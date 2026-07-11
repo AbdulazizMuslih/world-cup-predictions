@@ -35,7 +35,7 @@ const AI_REQUEST_RETRIES = Math.max(1, Number(process.env.AI_REQUEST_RETRIES || 
 const AI_RETRY_BASE_DELAY_MS = Math.max(500, Number(process.env.AI_RETRY_BASE_DELAY_MS || 3500));
 const AI_FALLBACK_ON_FAILURE = String(process.env.AI_FALLBACK_ON_FAILURE || "false").toLowerCase() === "true";
 const AI_BATCH_GENERATION = String(process.env.AI_BATCH_GENERATION || "true").toLowerCase() !== "false";
-const AI_BATCH_HIGHLIGHT_TARGET = Math.max(4, Math.min(12, Number(process.env.AI_BATCH_HIGHLIGHT_TARGET || 8)));
+const AI_BATCH_HIGHLIGHT_TARGET = Math.max(2, Math.min(10, Number(process.env.AI_BATCH_HIGHLIGHT_TARGET || 3)));
 const AI_EVENT_NOTE_BATCH_SIZE = Math.max(8, Math.min(30, Number(process.env.AI_EVENT_NOTE_BATCH_SIZE || 18)));
 const AI_FACT_BATCH_SIZE = Math.max(10, Math.min(40, Number(process.env.AI_FACT_BATCH_SIZE || 24)));
 const AI_PROFILE_BATCH_SIZE = Math.max(3, Math.min(8, Number(process.env.AI_PROFILE_BATCH_SIZE || 6)));
@@ -58,16 +58,21 @@ const AI_ENABLE_FILL_MATCHES = String(process.env.AI_ENABLE_FILL_MATCHES || "fal
 const AI_REQUIRE_CONTEST_SIGNAL = String(process.env.AI_REQUIRE_CONTEST_SIGNAL || "true").toLowerCase() !== "false";
 const AI_ENABLE_CONTEST_MOMENT_BATCHES = String(process.env.AI_ENABLE_CONTEST_MOMENT_BATCHES || "false").toLowerCase() === "true";
 const AI_INSERT_PARTIAL_ANY_STORY_COUNT = String(process.env.AI_INSERT_PARTIAL_ANY_STORY_COUNT || "false").toLowerCase() === "true";
-const AI_STORY_SEED_BATCH_SIZE = Math.max(8, Math.min(28, Number(process.env.AI_STORY_SEED_BATCH_SIZE || 14)));
+const AI_STORY_SEED_BATCH_SIZE = Math.max(4, Math.min(28, Number(process.env.AI_STORY_SEED_BATCH_SIZE || 6)));
 const AI_POST_TITLE_MAX_CHARS = Math.max(90, Math.min(170, Number(process.env.AI_POST_TITLE_MAX_CHARS || 140)));
 const AI_POST_BODY_MAX_CHARS = Math.max(700, Math.min(1600, Number(process.env.AI_POST_BODY_MAX_CHARS || 1250)));
+const AI_MIN_VALID_HIGHLIGHT_ROWS = Math.max(1, Number(process.env.AI_MIN_VALID_HIGHLIGHT_ROWS || AI_MIN_HIGHLIGHTS_FOR_PARTIAL_INSERT));
+const MAX_HIGHLIGHTS = Math.min(90, Math.max(20, Number(process.env.MAX_HIGHLIGHTS || 60)));
+const AI_TOP_UP_WITH_CALCULATED_HIGHLIGHTS = String(process.env.AI_TOP_UP_WITH_CALCULATED_HIGHLIGHTS || "true").toLowerCase() !== "false";
+const AI_CALCULATED_HIGHLIGHT_TOP_UP_TO = Math.max(0, Number(process.env.AI_CALCULATED_HIGHLIGHT_TOP_UP_TO || Math.min(MAX_HIGHLIGHTS, Math.max(45, AI_MIN_VALID_HIGHLIGHT_ROWS))));
+const AI_ENFORCE_UNIQUE_TITLES = String(process.env.AI_ENFORCE_UNIQUE_TITLES || "true").toLowerCase() !== "false";
+const AI_TITLE_MATCH_HINT = String(process.env.AI_TITLE_MATCH_HINT || "true").toLowerCase() !== "false";
 
 const EXPECTED_WORLD_CUP_MATCH_COUNT = Number(process.env.EXPECTED_WORLD_CUP_MATCH_COUNT || 104);
 const ALLOW_FINAL_PREVIEW = String(process.env.ALLOW_FINAL_PREVIEW || "false").toLowerCase() === "true";
 const PUBLISH_VISIBLE = String(process.env.PUBLISH_VISIBLE || "false").toLowerCase() === "true";
 const RESET_EXISTING_FINAL_AI = String(process.env.RESET_EXISTING_FINAL_AI || "true").toLowerCase() !== "false";
-const GENERATE_PROFILES = String(process.env.GENERATE_PROFILES || "true").toLowerCase() !== "false";
-const MAX_HIGHLIGHTS = Math.min(90, Math.max(20, Number(process.env.MAX_HIGHLIGHTS || 60)));
+const GENERATE_PROFILES = String(process.env.GENERATE_PROFILES || "true").toLowerCase() === "true";
 const MIN_APPROVED_EVENT_NOTES = Math.max(0, Number(process.env.MIN_APPROVED_EVENT_NOTES || 0));
 const REQUIRE_EVENT_NOTES_FOR_PUBLISH = String(process.env.REQUIRE_EVENT_NOTES_FOR_PUBLISH || "false").toLowerCase() === "true";
 const USE_TRUSTED_EVENT_NOTES = String(process.env.USE_TRUSTED_EVENT_NOTES || "true").toLowerCase() !== "false";
@@ -81,7 +86,7 @@ const POSTS_TABLE = "ai_posts";
 const EVENT_NOTES_TABLE = "final_event_notes";
 const FINAL_HIGHLIGHTS_SECTION = "final_highlights";
 const FINAL_PROFILE_SECTION = "final_profile";
-const GENERATOR_VERSION = "wc-final-recap-story-seeds-v7-highlight-types";
+const GENERATOR_VERSION = "wc-final-recap-story-seeds-v9-final-profile-title-polish";
 
 const FEMALE_NAMES = new Set([
     "منار",
@@ -149,6 +154,9 @@ async function main() {
         aiContinueOnBatchFailure: AI_CONTINUE_ON_BATCH_FAILURE,
         aiMaxFailedBatches: AI_MAX_FAILED_BATCHES,
         aiMinHighlightsForPartialInsert: AI_MIN_HIGHLIGHTS_FOR_PARTIAL_INSERT,
+        aiMinValidHighlightRows: AI_MIN_VALID_HIGHLIGHT_ROWS,
+        aiTopUpWithCalculatedHighlights: AI_TOP_UP_WITH_CALCULATED_HIGHLIGHTS,
+        aiCalculatedHighlightTopUpTo: AI_CALCULATED_HIGHLIGHT_TOP_UP_TO,
         aiResumeFromCheckpoint: AI_RESUME_FROM_CHECKPOINT,
         aiBatchCheckpointFile: AI_BATCH_CHECKPOINT_FILE
     }, null, 2));
@@ -175,11 +183,46 @@ async function main() {
     }
 
     const aiOutput = await generateFinalContent(factsPack);
-    const rows = normalizeAiOutputToRows(aiOutput, factsPack);
+    let rows = normalizeAiOutputToRows(aiOutput, factsPack);
+    let highlightRows = rows.filter((row) => row.section_key === FINAL_HIGHLIGHTS_SECTION);
+    let profileRows = rows.filter((row) => row.section_key === FINAL_PROFILE_SECTION);
+
+    console.log(`Prepared rows for ${POSTS_TABLE}: ${highlightRows.length} final_highlights, ${profileRows.length} final_profile.`);
+
+    if (AI_TOP_UP_WITH_CALCULATED_HIGHLIGHTS && highlightRows.length < AI_MIN_VALID_HIGHLIGHT_ROWS) {
+        const before = highlightRows.length;
+        const topUpTarget = Math.min(
+            MAX_HIGHLIGHTS,
+            Math.max(AI_MIN_VALID_HIGHLIGHT_ROWS, AI_CALCULATED_HIGHLIGHT_TOP_UP_TO)
+        );
+        rows = addCalculatedHighlightRowsToRows(rows, factsPack, topUpTarget);
+        highlightRows = rows.filter((row) => row.section_key === FINAL_HIGHLIGHTS_SECTION);
+        profileRows = rows.filter((row) => row.section_key === FINAL_PROFILE_SECTION);
+        console.warn(`Final row guard top-up: final_highlights ${before} -> ${highlightRows.length}.`);
+    }
 
     if (rows.length === 0) {
-        throw new Error("AI returned no valid rows to save.");
+        throw new Error("AI returned no valid rows to save, and calculated top-up could not create safe rows.");
     }
+
+    if (highlightRows.length < AI_MIN_VALID_HIGHLIGHT_ROWS) {
+        throw new Error(
+            `Only ${highlightRows.length} valid final_highlights rows are available; minimum is ${AI_MIN_VALID_HIGHLIGHT_ROWS}. ` +
+            `Nothing was cleared or inserted. Use a paid/stable model or lower AI_MIN_VALID_HIGHLIGHT_ROWS only for emergency publishing.`
+        );
+    }
+
+    if (GENERATE_PROFILES && profileRows.length < factsPack.audit.activeParticipants) {
+        console.warn(`Profile rows are ${profileRows.length}/${factsPack.audit.activeParticipants}; rebuilding safe calculated profile rows.`);
+        rows = rebuildSafeProfileRows(rows, factsPack);
+        highlightRows = rows.filter((row) => row.section_key === FINAL_HIGHLIGHTS_SECTION);
+        profileRows = rows.filter((row) => row.section_key === FINAL_PROFILE_SECTION);
+    }
+
+    rows = sortAndRenumberAiRows(rows, factsPack);
+    highlightRows = rows.filter((row) => row.section_key === FINAL_HIGHLIGHTS_SECTION);
+    profileRows = rows.filter((row) => row.section_key === FINAL_PROFILE_SECTION);
+    console.log(`Sorted final AI rows: ${highlightRows.length} final_highlights, ${profileRows.length} final_profile.`);
 
     if (RESET_EXISTING_FINAL_AI) {
         await clearExistingFinalAiRows();
@@ -188,7 +231,7 @@ async function main() {
     await insertRows(rows);
     clearBatchCheckpointAfterInsert();
 
-    console.log(`Inserted ${rows.length} row(s) into ${POSTS_TABLE}.`);
+    console.log(`Inserted ${rows.length} row(s) into ${POSTS_TABLE}: ${highlightRows.length} final_highlights, ${profileRows.length} final_profile.`);
     console.log(PUBLISH_VISIBLE
         ? "Rows were inserted as visible=true. They can appear on the site."
         : "Rows were inserted as visible=false. Review/correct them in Supabase, then publish by setting visible=true."
@@ -1370,16 +1413,12 @@ async function generateFinalContentInBatches(factsPack) {
                 markStoppedEarly(`${providerLabel} quota stopped generation during ${batchName}; partial insert is enabled`);
                 return false;
             }
-            if (AI_INSERT_PARTIAL_ON_BATCH_FAILURE && hasEnoughPartialHighlights()) {
-                markStoppedEarly(`${providerLabel} batch failure during ${batchName}; partial insert is enabled (${error.message})`);
-                return false;
-            }
             if (AI_CONTINUE_ON_BATCH_FAILURE && failedBatchesThisRun <= AI_MAX_FAILED_BATCHES) {
                 console.warn(`${providerLabel} batch ${batchName} failed, skipping it and continuing because AI_CONTINUE_ON_BATCH_FAILURE=true: ${error.message}`);
                 saveCheckpoint();
                 return false;
             }
-            if (AI_INSERT_PARTIAL_ON_BATCH_FAILURE && output.highlights.length > 0) {
+            if (AI_INSERT_PARTIAL_ON_BATCH_FAILURE && hasEnoughPartialHighlights()) {
                 markStoppedEarly(`${providerLabel} batch failure limit reached during ${batchName}; partial insert is enabled (${error.message})`);
                 return false;
             }
@@ -1475,7 +1514,7 @@ async function generateFinalContentInBatches(factsPack) {
         const batchPrompt = buildBatchPrompt({
             batchName,
             instruction: GENERATE_PROFILES
-                ? "اكتب لقطة highlight واحدة لكل مشارك في هذه الدفعة، واكتب رسالة profile قصيرة لكل مشارك. اجعلها إنسانية وممتعة وليست badge. لا تذكر قلة المشاركة ولا الغياب. استخدم الضمائر الصحيحة."
+                ? "اكتب لقطة highlight واحدة لكل مشارك في هذه الدفعة. لا تعتمد على AI لرسائل profile؛ اترك profile_messages فارغة لأن السكربت سيبنيها بشكل آمن ومحسوب. لا تذكر قلة المشاركة ولا الغياب. استخدم الضمائر الصحيحة."
                 : "اكتب لقطة highlight واحدة لكل مشارك في هذه الدفعة. اجعلها إنسانية وممتعة وليست badge. لا تكتب profile_messages. لا تذكر قلة المشاركة ولا الغياب. استخدم الضمائر الصحيحة.",
             highlightTarget,
             profileTarget,
@@ -1529,8 +1568,13 @@ async function generateFinalContentInBatches(factsPack) {
         }
     }
 
+    if (AI_TOP_UP_WITH_CALCULATED_HIGHLIGHTS) {
+        const topUpTarget = Math.min(MAX_HIGHLIGHTS, Math.max(AI_MIN_VALID_HIGHLIGHT_ROWS, AI_CALCULATED_HIGHLIGHT_TOP_UP_TO));
+        topUpHighlightsWithCalculatedStories(output, factsPack, topUpTarget, usedHighlightKeys);
+    }
+
     if (!output.highlights.length) {
-        throw new Error("Gemini batch generation returned no highlights.");
+        throw new Error("AI generation returned no highlights and calculated top-up could not build safe story highlights.");
     }
 
     if (stoppedEarly) {
@@ -1540,11 +1584,101 @@ async function generateFinalContentInBatches(factsPack) {
         if (!partialAllowed || (!hasEnoughPartialHighlights() && !AI_INSERT_PARTIAL_ANY_STORY_COUNT)) {
             throw new Error(`${stoppedEarlyReason}. Not inserting partial output. Rerun later to resume from ${AI_BATCH_CHECKPOINT_FILE}.`);
         }
-        console.warn(`Inserting partial Gemini output: ${output.highlights.length} highlights and ${output.profile_messages.length} profiles.`);
+        console.warn(`Inserting partial AI output: ${output.highlights.length} highlights and ${output.profile_messages.length} profiles.`);
     }
 
     writeAiDebugFile("ai-posts-batch-output.json", JSON.stringify(output, null, 2));
     return output;
+}
+
+
+function topUpHighlightsWithCalculatedStories(output, factsPack, targetCount, usedHighlightKeys = new Set()) {
+    if (!AI_TOP_UP_WITH_CALCULATED_HIGHLIGHTS) return;
+    if (!Array.isArray(output.highlights)) output.highlights = [];
+    if (output.highlights.length >= targetCount) return;
+
+    const seeds = factsPack.contest.integratedStorySeeds || [];
+    const rankedSeeds = [...seeds]
+        .filter((seed) => seed && seed.type !== "participant_arc")
+        .sort((a, b) => (b.priority || 0) - (a.priority || 0) || storyTypeOrder(a.type) - storyTypeOrder(b.type));
+
+    let added = 0;
+    for (const seed of rankedSeeds) {
+        if (output.highlights.length >= targetCount) break;
+        const post = buildCalculatedHighlightPost(seed, output.highlights.length + 1);
+        if (!post) continue;
+        const title = cleanText(post.title_ar || "", AI_POST_TITLE_MAX_CHARS);
+        const body = cleanText(post.body_ar || "", AI_POST_BODY_MAX_CHARS);
+        if (!title || !body || isLowQualityHighlightPost({ ...post, title_ar: title, body_ar: body })) continue;
+        const key = `${title}|${body}`.toLowerCase();
+        if (usedHighlightKeys.has(key)) continue;
+        usedHighlightKeys.add(key);
+        output.highlights.push({ ...post, title_ar: title, body_ar: body, generated_by: "calculated_top_up" });
+        added += 1;
+    }
+
+    if (added > 0) {
+        console.warn(`Added ${added} calculated safe highlight top-up row(s). AI highlights now=${output.highlights.length}.`);
+    }
+}
+
+function buildCalculatedHighlightPost(seed, index) {
+    const match = seed.match || {};
+    const stage = match.stageLabel || seed.stage?.label_ar || "أضواء المسابقة";
+    const names = Array.isArray(seed.required_participant_names) ? seed.required_participant_names.filter(Boolean).slice(0, 5) : [];
+    const nameText = names.length ? names.join("، ") : "بعض المشاركين";
+    const common = match.mostCommonPrediction;
+    const exactNames = Array.isArray(match.exactNames) ? match.exactNames.slice(0, 5) : [];
+    const correctNames = Array.isArray(match.correctNames) ? match.correctNames.slice(0, 5) : [];
+    const context = Array.isArray(seed.verified_event_context) ? seed.verified_event_context : [];
+    const contextText = context.map((item) => item.details_ar || item.title_ar).filter(Boolean)[0] || "";
+    const matchTitle = match.title || "إحدى مباريات البطولة";
+    const scoreText = match.score ? `وانتهت ${match.score}` : "";
+
+    const category = seed.type || "timeline";
+    let title = "لقطة من قلب المسابقة";
+    let body = "";
+
+    if (category === "real_event_plus_contest") {
+        title = buildMatchHintTitle(match, contextText ? "كرة القدم دخلت دفتر التوقعات" : "أكثر من نتيجة في الجدول");
+        body = `${contextText ? `${contextText} ` : "كانت المباراة تحمل ثقلاً أكبر من رقم في الجدول. "}داخل المسابقة، لم تكن اللقطة في النتيجة وحدها، بل في طريقة انعكاسها على توقعات المشاركين.\n\n${matchTitle} ${scoreText}، لكنها صارت مادة للأضواء لأنها جمعت بين سياق كروي واضح وأثر مباشر في التوقعات. ${names.length ? `${nameText} كانوا من الأسماء الأقرب للقصة، بين قراءة صحيحة ونقاط ظهرت في وقت مهم.` : `القصة هنا أن أرقام المسابقة التقطت لحظة كروية حقيقية وحولتها إلى ذاكرة داخل التنافس.`}`;
+    } else if (category === "knockout_pressure") {
+        title = buildMatchHintTitle(match, "ضغط الإقصائيات ما يرحم");
+        body = `في الأدوار الإقصائية، كل توقع يدخل بثقل مختلف. المباراة لا تعطي نقاطاً فقط؛ تعطي إحساساً أن الخطأ صار أغلى، وأن القراءة الهادئة قد تساوي قفزة كاملة في الجدول.\n\n${matchTitle} ${scoreText}، وكانت من اللحظات التي جعلت ${nameText} يظهرون في الصورة. ${match.exactCount ? `${match.exactCount} نتيجة بالملّي منحت أصحابها 50 نقطة.` : "حتى التوقع الصحيح للاتجاه كان له وزن واضح."} الأهم أن القصة هنا لم تكن نتيجة فقط، بل اختبار أعصاب في مرحلة لا ترحم.`;
+    } else if (category === "popular_trap") {
+        title = buildMatchHintTitle(match, "الفخ الذي مشى معه كثيرون");
+        body = `أحياناً يكون التوقع الأكثر راحة هو أكثر واحد يخدع الناس. في هذه اللقطة، بدا الطريق الشائع واضحاً، لكن المباراة أخذت زاوية مختلفة وتركت جزءاً كبيراً من الجدول بلا مكسب.\n\n${matchTitle} ${scoreText}. ${common ? `التوقع الأكثر تكراراً كان ${common.score} عند ${common.count} مشاركين، لكنه لم يطابق الواقع.` : "التوقعات تكدست في اتجاه لم يكسب في النهاية."} وسط هذا الفخ، ${nameText} خرجوا بصورة مختلفة؛ ليس لأنهم أكثر حظاً فقط، بل لأنهم لم يسيروا مع الطريق المزدحم.`;
+    } else if (category === "lone_reader") {
+        title = buildMatchHintTitle(match, "قراءة مختلفة وسط الزحمة");
+        body = `هذه من اللقطات التي لا تحتاج ضجيجاً. أغلب التوقعات كانت تمشي في اتجاه مألوف، لكن اسماً أو اسمين قرأوا المباراة من زاوية ثانية وخرجوا منها بما يستحق الأضواء.\n\n${matchTitle} ${scoreText}. ${exactNames.length ? `${exactNames.join("، ")} أخذوا النتيجة بالملّي وخرجوا بـ50 نقطة لكل واحد.` : `${nameText} كانوا الأقرب لقراءة اللحظة.`} ومع ${match.zeroOrMissingPercent || 0}% بلا نقاط أو بلا توقع، صارت اللقطة أوضح: أحياناً القراءة الهادئة تكسب أكثر من التوقع الشعبي.`;
+    } else if (category === "exact_circle") {
+        title = buildMatchHintTitle(match, "ليلة بالملّي لم تمر بهدوء");
+        body = `في بعض المباريات، الفرحة لا تكون لشخص واحد. النتيجة الدقيقة فتحت باباً صغيراً لمجموعة أسماء دخلوا منه معاً، وكأن المباراة وزعت عليهم لقطة خاصة في نفس الليلة.\n\n${matchTitle} ${scoreText}. ${exactNames.length ? `${exactNames.join("، ")} ضربوا النتيجة كاملة، و50 نقطة لكل قراءة بالملّي.` : `${nameText} كانوا في قلب اللقطة.`} جمال هذه اللحظة أنها لم تكن مجرد رقم؛ كانت تذكيراً أن المسابقة تحفظ التفاصيل الصغيرة حين يقرأها أكثر من شخص بالطريقة الصحيحة.`;
+    } else if (category === "points_swing") {
+        title = buildMatchHintTitle(match, "خزنة النقاط انفتحت");
+        body = `هناك مباريات تمر بهدوء، وهناك مباريات تفتح الجدول كأنها خزنة. هذه كانت من النوع الثاني: نقاط كثيرة خرجت دفعة واحدة، وخلت المطاردة تبدو أكثر جدية بعد صافرة النهاية.\n\n${matchTitle} ${scoreText}. ${match.awardedPoints ? `المباراة وزعت ${match.awardedPoints} نقطة على المشاركين،` : "النقاط تحركت بشكل واضح،"} وظهرت معها أسماء مثل ${nameText}. ليست الأضواء هنا لأن النتيجة كبيرة، بل لأن أثرها على المسابقة كان محسوساً: بعض الأسماء اقتربت، وبعض الفوارق بدأت تضيق.`;
+    } else if (category === "hard_stop") {
+        title = buildMatchHintTitle(match, "ليلة أوقفت الجدول للحظة");
+        body = `ليست كل لقطة مضيئة لأنها منحت نقاطاً كثيرة. أحياناً تدخل الأضواء لأنها كانت قاسية على الجميع تقريباً، وتترك الجدول كأنه أخذ نفساً طويلاً قبل أن يتحرك من جديد.\n\n${matchTitle} ${scoreText}. ${match.zeroOrMissingPercent ? `${match.zeroOrMissingPercent}% خرجوا بلا نقاط أو بلا توقع،` : "عدد كبير من المشاركين لم يستفيدوا منها،"} لذلك كانت قيمة الناجين أكبر. ${names.length ? `${nameText} خرجوا من الليلة بصورة أفضل.` : "القصة هنا في ندرة من قرأها، لا في النتيجة نفسها."} هذه لحظة تذكّر أن الصفر الجماعي يصنع دراما أيضاً.`;
+    } else if (category === "stage_mood") {
+        const stageLabel = seed.stage?.label_ar || stage;
+        title = `${stageLabel}: صفحة من مزاج المسابقة`;
+        body = `${stageLabel} لم يكن مجرد مجموعة مباريات. كان مرحلة صنعت إيقاع المسابقة: لحظات سخية، لقطات قاسية، وأسماء بدأت تظهر أكثر مع كل نتيجة.\n\nفي هذه المرحلة جاءت ${seed.stage?.exactCount ?? "عدة"} نتيجة بالملّي، وتوزعت ${seed.stage?.awardedPoints ?? "الكثير من"} نقطة بين المشاركين. الصورة العامة كانت أهم من مباراة واحدة: من يثبت حضوره؟ من يستفيد من الهدايا؟ ومن ينتظر فرصة يرجع بها للسباق؟`;
+    } else {
+        title = buildMatchHintTitle(match, seed.title || "لقطة تستحق مكانها في الأضواء");
+        body = `${matchTitle} لم تكن مجرد نتيجة عابرة في الجدول. داخل المسابقة، صارت لقطة لأنها أظهرت فرقاً واضحاً بين من قرأ التفاصيل ومن مر على المباراة كأنها سهلة.\n\n${match.score ? `النتيجة كانت ${match.score}،` : "بعد النهاية،"} لكن الأهم كان أثرها على المشاركين. ${names.length ? `${nameText} كانوا أقرب للأضواء في هذه القصة.` : "الأرقام المحسوبة من التوقعات هي التي أعطتها مكانها هنا."}`;
+    }
+
+    return {
+        title_ar: title,
+        body_ar: body,
+        icon: "✨",
+        category: category === "real_event_plus_contest" ? "match" : "timeline",
+        stage_ar: stage,
+        participant_names: names,
+        source_fact: seed.title || matchTitle,
+        source_note_ids: context.map((item) => item.source_note_id || item.id).filter(Boolean).slice(0, 4)
+    };
 }
 
 function buildBatchPrompt({ batchName, instruction, highlightTarget, profileTarget, facts }) {
@@ -1558,7 +1692,7 @@ function buildBatchPrompt({ batchName, instruction, highlightTarget, profileTarg
 {
   "highlights": [
     {
-      "title_ar": "عنوان قصصي جذاب 6 إلى 12 كلمة، لا يبدأ باسم مباراة ولا بنتيجة",
+      "title_ar": "عنوان قصصي جذاب ومحدد 7 إلى 14 كلمة، يفضل أن يلمح للمباراة أو النتيجة بدون أن يكون تقريراً",
       "body_ar": "منشور ممتع من فقرتين قصيرتين مفصولتين بسطر فارغ، 95 إلى 150 كلمة تقريباً",
       "icon": "✨",
       "category": "timeline|match|participant|emotional|fun|stage",
@@ -1585,7 +1719,7 @@ function buildBatchPrompt({ batchName, instruction, highlightTarget, profileTarg
 - اقرأ post_blueprint في كل story_seed: kind, hook_style, story_question, mood, must_include_facts, real_world_cup_context.
 - اكتب من نوع القصة، وليس من نتيجة المباراة.
 - الفقرة الأولى: hook ممتع أو إحساس اللحظة. لا تبدأ بـ "عندما انتهت" ولا "في مباراة" ولا باسم الفريقين.
-- الفقرة الثانية: اربط القصة بالأسماء والنقاط والتوقعات. اذكر النتيجة مرة واحدة فقط إذا احتجتها.
+- الفقرة الثانية: اربط القصة بالأسماء والنقاط والتوقعات. اذكر المباراة ونتيجتها مرة واحدة بشكل طبيعي إذا كانت seed تحتوي مباراة.
 - استخدم real_world_cup_context فقط إذا كان موجوداً. إذا لم يوجد، لا تخترع VAR أو طرد أو إصابة أو جمهور أو تصريح.
 - إذا كانت المباراة إقصائية أو فيها ركلات ترجيح/وقت إضافي من real_world_cup_context، استعملها كخلفية تزيد الضغط، ثم ارجع لأثرها في المسابقة.
 - كل منشور يجب أن يشعر القارئ أنه يقرأ لقطة من مسابقة أصدقاء/عائلة، وليس خبر مباراة.
@@ -1603,7 +1737,12 @@ function buildBatchPrompt({ batchName, instruction, highlightTarget, profileTarg
 - لا تسخر من أي مشارك ولا تذكر الغياب أو قلة المشاركة.
 - استخدم ضمائر صحيحة للبنات حسب participantLanguage.
 - لا تكتب أقل من 90 كلمة تقريباً. لا تكتب منشوراً من جملة واحدة.
-- الأسلوب: عربي سعودي/خليجي خفيف أو عربي فصيح بسيط، ودود، فيه لمعة، بدون صحافة ثقيلة.
+- الأسلوب اللغوي مهم جداً: عربي واضح وسليم أولاً، وفقط لمسات سعودية خفيفة عند الحاجة مثل: مو، لقطة، يا ساتر، اللي، بدون تكسير grammar.
+- لا تستخدم لهجات مصرية أو شامية أو مغاربية أو خليط عاميات. ممنوع: مش، دي، ده، زي، كده، بتوقع، خلات، ما فيهاش، شافوا بمعنى غريب.
+- لا تخترع اقتباسات أو كلام على لسان مشارك. ممنوع: قال/قالت بين علامات تنصيص إلا إذا كانت موجودة في البيانات.
+- لا تكتب جملة لا معنى لها أو استعارات غريبة مثل: السحابة اللي فاتت الفرصة، حكرت الوقت، من اليد إلى الخلف.
+- اجعل كل جملة مفهومة ومباشرة؛ المتعة تأتي من زاوية القصة، لا من كلمات غريبة.
+- الأسلوب: عربي فصيح بسيط مع لمسة سعودية خفيفة جداً، ودود، فيه لمعة، بدون صحافة ثقيلة.
 
 أمثلة سيئة ممنوعة:
 - "عندما انتهت بنما ضد إنجلترا بنتيجة 0-2..."
@@ -1625,7 +1764,7 @@ async function runAiJsonBatch(prompt, batchName) {
     const messages = [
         {
             role: "system",
-            content: "أنت كاتب عربي سعودي/خليجي خفيف الظل لمسابقة توقعات عائلية/أصدقاء. اكتب الأضواء كمنشورات قصصية ممتعة: hook، إحساس، أسماء، نقاط، نتائج بالملّي، صدمة أغلبية، ولقطة حقيقية من كرة القدم إذا كانت موثقة. لا تكتب match report ولا تبدأ بالنتيجة. لا تخترع أحداثاً. أعد JSON فقط."
+            content: "أنت كاتب عربي سعودي/خليجي خفيف الظل لمسابقة توقعات عائلية/أصدقاء. اكتب الأضواء بلغة عربية سليمة وممتعة: عنوان متنوع ومحدد، hook واضح، أسماء، نقاط، نتائج بالملّي، صدمة أغلبية، ولقطة كروية موثقة إذا وجدت. لا تكتب match report ولا تخلط لهجات. ممنوع المصرية والشامية والمغاربية. لا تخترع أحداثاً أو اقتباسات. أعد JSON فقط."
         },
         { role: "user", content: prompt }
     ];
@@ -1666,6 +1805,72 @@ async function runAiJsonBatch(prompt, batchName) {
 }
 
 
+
+function buildDisplayHighlightTitle(post = {}, index = 0) {
+    const rawTitle = cleanText(post.title_ar || "", AI_POST_TITLE_MAX_CHARS);
+    if (!AI_TITLE_MATCH_HINT) return rawTitle;
+
+    const source = String(post.source_fact || "");
+    const body = String(post.body_ar || "");
+    const stage = String(post.stage_ar || "");
+    const matchFromSource = extractMatchAndScoreHint(source) || extractMatchAndScoreHint(body);
+    const generic = isGenericHighlightTitle(rawTitle);
+
+    if (matchFromSource && (generic || /^(الفخ|حين دخلت|ضغط الإقصائيات|ليلة|خزنة|قراءة مختلفة|لقطة من)/.test(rawTitle))) {
+        return cleanText(`${matchFromSource}: ${stripGenericTitle(rawTitle)}`, AI_POST_TITLE_MAX_CHARS);
+    }
+
+    if (generic) {
+        const alternatives = [
+            "لقطة ما كانت على البال",
+            "هنا بان الفرق في القراءة",
+            "توقع واحد غيّر نبرة الجولة",
+            "مو كل طريق مزدحم يوصل",
+            "الهدوء أحياناً يكسب أكثر",
+            "نقاط صغيرة صنعت حكاية كبيرة"
+        ];
+        return alternatives[index % alternatives.length];
+    }
+
+    return rawTitle;
+}
+
+function buildMatchHintTitle(match = {}, baseTitle = "لقطة من المسابقة") {
+    const title = cleanText(baseTitle, 90);
+    const matchTitle = cleanText(match.title || "", 70);
+    const score = cleanText(match.score || "", 20);
+    if (!matchTitle || !score) return title;
+    const shortMatch = matchTitle.replace(/\s+ضد\s+/g, " × ");
+    return cleanText(`${shortMatch} ${score}: ${stripGenericTitle(title)}`, AI_POST_TITLE_MAX_CHARS);
+}
+
+function extractMatchAndScoreHint(value = "") {
+    const text = String(value || "").replace(/\s+/g, " ");
+    const match = text.match(/([؀-ۿA-Za-z ]{2,24})\s+(?:ضد|×)\s+([؀-ۿA-Za-z ]{2,24})\s*(?:\(|،|,|\s|:)*(?:النتيجة|انتهت|وانتهت|كانت)?\s*([0-9٠-٩]+\s*[-–]\s*[0-9٠-٩]+)/);
+    if (!match) return "";
+    const t1 = cleanText(match[1], 18);
+    const t2 = cleanText(match[2], 18);
+    const score = cleanText(match[3], 10);
+    if (!t1 || !t2 || !score) return "";
+    return `${t1} × ${t2} ${score}`;
+}
+
+function isGenericHighlightTitle(title = "") {
+    return /^(الفخ الذي مشى معه كثيرون|حين دخلت أجواء الملعب|ضغط الإقصائيات|قراءة مختلفة وسط الزحمة|ليلة بالملّي|خزنة النقاط|المباراة التي|لقطة من يوميات|أين يخلق المشاركون|قصة البطولة|لقطة تستحق|صفحة من مزاج|مباراة فتحت|بالملّي في وقتها|لخبطة على الورق)/.test(String(title || ""));
+}
+
+function stripGenericTitle(title = "") {
+    return String(title || "")
+        .replace(/^حين دخلت أجواء الملعب في دفتر التوقعات$/, "كرة القدم دخلت دفتر التوقعات")
+        .replace(/^الفخ الذي مشى معه كثيرون$/, "الطريق المزدحم ما نفع")
+        .replace(/^ضغط الإقصائيات لا يترك مساحة للتوقع السهل$/, "ضغط الإقصائيات ما يرحم")
+        .replace(/^المباراة التي فتحت خزنة النقاط$/, "خزنة النقاط انفتحت")
+        .replace(/^الليلة التي أوقفت الجدول للحظة$/, "الجدول وقف للحظة")
+        .replace(/^قراءة مختلفة وسط الزحمة$/, "قراءة خارج الزحمة")
+        .replace(/^ليلة بالملّي لم تمر بهدوء$/, "بالملّي وسط الزحمة")
+        .trim() || "لقطة تستحق الأضواء";
+}
+
 function isLowQualityHighlightPost(post = {}) {
     const title = String(post.title_ar || "").trim();
     const body = String(post.body_ar || "").trim();
@@ -1675,11 +1880,15 @@ function isLowQualityHighlightPost(post = {}) {
     const bodyStart = body.trim().slice(0, 90);
     const paragraphs = body.split(/\n\s*\n/).filter((part) => part.trim().length > 0);
 
-    const bannedTitle = /^(مباراة أهدافها كثيرة|حسم ضيق|شباك نظيفة|نتيجة موثقة|المتأهل|الفائز تم حسمه|مباراة حماسية|مباراة متقاربة|النجوم تتألق|الطاقة تتفجر|التحول المفاجئ|فارق هدف واحد|ليلة\s*\d+\s*توقعات|\d+\s*توقعات بالملّي|ثلاثية بالملّي)/i.test(title);
-    const bannedPhrases = /(الجمهور كان|الجمهور|تداولت الأحاديث|أصبح الحديث يدور|الكل كان يتكلم|نقاط إضافية|حصل كل منهم على \d+ نقاط|حصلت على \d+ نتائج بالملّي موزعة|فرقة|النجاحة|البمثيلة|أعادت تشكيل المزاج|أعادت تشكيل ملامح|كشفت القراء الهادئين|الثقة العمياء|استثمروا الوقت في تحليل|مع توزيع \d+ نقطة|هذه اللحظة كشفت|كان الجميع يتوقعون|ما فيهاش|كده|بيقرأوا|فارغين|ما كانش|دارتت|واجتهد)/i.test(full);
+    const bannedTitle = /^(مباراة أهدافها كثيرة|حسم ضيق|شباك نظيفة|نتيجة موثقة|المتأهل|الفائز تم حسمه|مباراة حماسية|مباراة متقاربة|النجوم تتألق|الطاقة تتفجر|التحول المفاجئ|فارق هدف واحد|ليلة\s*\d+\s*توقعات|\d+\s*توقعات بالملّي|ثلاثية بالملّي|الفخ الذي مشى معه كثيرون$|حين دخلت أجواء الملعب في دفتر التوقعات$|ضغط الإقصائيات لا يترك مساحة للتوقع السهل$)/i.test(title);
+    const bannedPhrases = /(الجمهور كان|الجمهور|تداولت الأحاديث|أصبح الحديث يدور|الكل كان يتكلم|نقاط إضافية|حصل كل منهم على \d+ نقاط|حصلت على \d+ نتائج بالملّي موزعة|فرقة|النجاحة|البمثيلة|أعادت تشكيل المزاج|أعادت تشكيل ملامح|كشفت القراء الهادئين|الثقة العمياء|استثمروا الوقت في تحليل|مع توزيع \d+ نقطة|هذه اللحظة كشفت|كان الجميع يتوقعون|ما فيهاش|كده|بيقرأوا|فارغين|ما كانش|دارتت|واجتهد|\bمش\b|\bدي\b|\bده\b|\bزي\b|بتوقع|خلات|حكرت|السحابة اللي فاتت|من اليد إلى الخلف|انفجرت بضحكة|اللي ما ينجح ما يصير|✨\s*(emotional|timeline|fun|match|stage)|\[\s*\"|source_note|participant_names)/i.test(full);
     const titleLooksLikeResultTile = /\d+\s*[-–]\s*\d+/.test(title) || (/ضد/.test(title) && /^(مباراة|حسم|شباك|نتيجة|فوز|تعادل|ليلة|صدمة|ثلاثية)/.test(title));
     const startsWithResult = /^(عندما انتهت|لما انتهت|في مباراة|مباراة|انتهت|فاز|فازت|سجلت|سجل|أحرز|أحرزت|عندما التقت|حين التقت)/.test(bodyStart);
     const resultReportPattern = /(انتهت|فازت|فاز|تعادل).{0,45}(حصل|حصلت|حصد|حصدت|خرج|خرجت).{0,80}(نقطة|نقاط|توقع)/i.test(full);
+    const metadataLeak = /(✨\s*(emotional|timeline|fun|match|stage)|\[[^\]]*\]|source_note|source_fact|participant_names|دور المجموعات \[|دور الـ32 \[)/i.test(full);
+    const inventedQuote = /(قال|قالت|يقول|تقول)[:：]?\s*[«"][^»"]+[»"]/i.test(full);
+    const repeatedSameSentence = body.split(/[.؟!]/).map((part) => part.trim()).filter(Boolean).some((part, index, arr) => part.length > 25 && arr.indexOf(part) !== index);
+    const tooMuchMatchReport = ((full.match(/المباراة/g) || []).length >= 5) && ((full.match(/النتيجة/g) || []).length >= 2);
 
     const hasContestSignal = participantNames.length > 0
         || /توقع|توقعات|المسابقة|مشارك|مشاركة|نقطة|نقاط|بالملّي|صحيح|صحيحة|المركز|الترتيب|فارق|أغلب|أغلبية|ناس|قرأ|قرأت|شاف|شافت|قاسية|وزعت|قفز|قفزت|تقدم|تقدمت|منصة|سلسلة|غيّرت|غيرت|قلبت|رجّعت|رجعت|صدمة|مفاجأة|exact/i.test(full);
@@ -1689,7 +1898,7 @@ function isLowQualityHighlightPost(post = {}) {
     const tooFewSentences = (body.match(/[.؟!]/g) || []).length < 3;
     const tooManyScores = (body.match(/\d+\s*[-–]\s*\d+/g) || []).length > 2;
 
-    if (bannedTitle || bannedPhrases || titleLooksLikeResultTile || rawResultOnly || tooShort || tooFewSentences || tooManyScores) return true;
+    if (bannedTitle || bannedPhrases || metadataLeak || inventedQuote || repeatedSameSentence || tooMuchMatchReport || titleLooksLikeResultTile || rawResultOnly || tooShort || tooFewSentences || tooManyScores) return true;
     if (startsWithResult) return true;
     if (resultReportPattern && !/لكن|وهنا|اللقطة|فخ|زحمة|جرأة|ضغط|أضواء/.test(full)) return true;
     if (AI_REQUIRE_CONTEST_SIGNAL && !hasContestSignal) return true;
@@ -2161,7 +2370,7 @@ function buildLocalFallbackAiOutput(factsPack, error) {
         .sort((a, b) => b.awardedPoints - a.awardedPoints)
         .slice(0, 10)
         .forEach((match) => add({
-            title_ar: "مباراة فتحت الخزنة",
+            title_ar: buildMatchHintTitle(match, "خزنة النقاط انفتحت"),
             body_ar: `${match.title} انتهت ${match.score} ووزعت ${match.awardedPoints} نقطة بين المشاركين.`,
             icon: "💰",
             category: "match",
@@ -2175,7 +2384,7 @@ function buildLocalFallbackAiOutput(factsPack, error) {
         .sort((a, b) => b.exactCount - a.exactCount)
         .slice(0, 10)
         .forEach((match) => add({
-            title_ar: "بالملّي في وقتها",
+            title_ar: buildMatchHintTitle(match, "بالملّي في وقتها"),
             body_ar: `${match.title} كانت ${match.score}، و${match.exactCount} من المشاركين جابوها بالضبط.`,
             icon: "🎯",
             category: "match",
@@ -2188,7 +2397,7 @@ function buildLocalFallbackAiOutput(factsPack, error) {
         .sort((a, b) => b.zeroOrMissingPercent - a.zeroOrMissingPercent)
         .slice(0, 8)
         .forEach((match) => add({
-            title_ar: "مباراة لخبطت الحسابات",
+            title_ar: buildMatchHintTitle(match, "لخبطة على الورق"),
             body_ar: `${match.title} انتهت ${match.score} وكانت من أكثر المباريات قسوة على التوقعات.`,
             icon: "🌀",
             category: "fun",
@@ -2366,9 +2575,9 @@ function normalizeAiOutputToRows(output, factsPack) {
 
     const highlights = Array.isArray(output?.highlights) ? output.highlights : [];
     highlights.slice(0, MAX_HIGHLIGHTS).forEach((post, index) => {
-        const title = cleanText(post.title_ar, AI_POST_TITLE_MAX_CHARS);
-        const body = cleanText(post.body_ar, AI_POST_BODY_MAX_CHARS);
-        if (!title || !body || isLowQualityHighlightPost(post)) return;
+        const body = cleanBodyText(post.body_ar, AI_POST_BODY_MAX_CHARS);
+        const title = cleanText(buildDisplayHighlightTitle(post, index), AI_POST_TITLE_MAX_CHARS);
+        if (!title || !body || isLowQualityHighlightPost({ ...post, title_ar: title, body_ar: body })) return;
 
         rows.push({
             section_key: FINAL_HIGHLIGHTS_SECTION,
@@ -2395,16 +2604,16 @@ function normalizeAiOutputToRows(output, factsPack) {
     if (GENERATE_PROFILES) {
         const profileMessages = Array.isArray(output?.profile_messages) ? output.profile_messages : [];
         for (const participant of activeParticipants) {
-            const message = profileMessages.find((item) => String(item.participant_name || "").trim() === participant.name);
-            const title = cleanText(message?.title_ar || "رسالة ختام", AI_POST_TITLE_MAX_CHARS);
-            const body = cleanText(message?.body_ar || buildFallbackProfileMessage(participant.name, factsPack), 320);
+            const row = factsPack.contest.leaderboard.find((item) => item.name === participant.name);
+            const title = cleanText(row?.rank === 1 ? "لمحة البطل" : "لمحة شخصية", AI_POST_TITLE_MAX_CHARS);
+            const body = cleanBodyText(buildFallbackProfileMessage(participant.name, factsPack), 950);
 
             rows.push({
                 section_key: FINAL_PROFILE_SECTION,
                 title_ar: title,
-                subtitle_ar: "رسالة شخصية قصيرة",
+                subtitle_ar: "بصمة المشارك",
                 body_ar: body,
-                icon: cleanText(message?.icon || "✨", 8),
+                icon: cleanText(row?.rank === 1 ? "👑" : "✨", 8),
                 cards_json: [{ type: "profile_final", participant_name: participant.name }],
                 participant_id: participant.id,
                 source_completed_match_count: sourceCompletedMatchCount,
@@ -2419,10 +2628,266 @@ function normalizeAiOutputToRows(output, factsPack) {
     return rows;
 }
 
+function buildRowsSourceContext(factsPack) {
+    const sourceCompletedMatchCount = factsPack.audit.completedMatches;
+    const sourceMatchIds = (factsPack.contest.matches || []).map((match) => match.id);
+    const sourceHashBase = hashObject({
+        generator: GENERATOR_VERSION,
+        completed: sourceCompletedMatchCount,
+        leaderboard: factsPack.contest.leaderboard,
+        stages: factsPack.contest.stages,
+        matches: factsPack.contest.matches,
+        eventNotes: factsPack.contest.eventNotes
+    });
+    return { sourceCompletedMatchCount, sourceMatchIds, sourceHashBase };
+}
+
+function addCalculatedHighlightRowsToRows(existingRows, factsPack, targetCount) {
+    const rows = [...existingRows];
+    const { sourceCompletedMatchCount, sourceMatchIds, sourceHashBase } = buildRowsSourceContext(factsPack);
+    const existingHighlightRows = rows.filter((row) => row.section_key === FINAL_HIGHLIGHTS_SECTION);
+    const used = new Set(existingHighlightRows.map((row) => `${row.title_ar}|${row.body_ar}`.toLowerCase()));
+
+    const seeds = [...(factsPack.contest.integratedStorySeeds || [])]
+        .filter((seed) => seed && seed.type !== "participant_arc")
+        .sort((a, b) => (b.priority || 0) - (a.priority || 0) || storyTypeOrder(a.type) - storyTypeOrder(b.type));
+
+    let added = 0;
+    for (const seed of seeds) {
+        const currentCount = rows.filter((row) => row.section_key === FINAL_HIGHLIGHTS_SECTION).length;
+        if (currentCount >= targetCount || currentCount >= MAX_HIGHLIGHTS) break;
+
+        const post = buildCalculatedHighlightPost(seed, currentCount + 1);
+        if (!post) continue;
+
+        const title = cleanText(buildDisplayHighlightTitle(post, currentCount), AI_POST_TITLE_MAX_CHARS);
+        const body = cleanBodyText(post.body_ar, AI_POST_BODY_MAX_CHARS);
+        const key = `${title}|${body}`.toLowerCase();
+        if (!title || !body || used.has(key) || isUnsafeCalculatedHighlightPost({ ...post, title_ar: title, body_ar: body })) continue;
+        used.add(key);
+
+        rows.push({
+            section_key: FINAL_HIGHLIGHTS_SECTION,
+            title_ar: title,
+            subtitle_ar: cleanText(post.stage_ar || "أضواء المسابقة", 80),
+            body_ar: body,
+            icon: cleanText(post.icon || "✨", 8),
+            cards_json: [{
+                type: cleanText(post.category || "timeline", 40),
+                stage_ar: cleanText(post.stage_ar || "", 80),
+                participant_names: Array.isArray(post.participant_names) ? post.participant_names.slice(0, 6) : [],
+                source_fact: cleanText(post.source_fact || "calculated_story_top_up", 180),
+                source_note_ids: Array.isArray(post.source_note_ids) ? post.source_note_ids.slice(0, 6) : []
+            }],
+            participant_id: null,
+            source_completed_match_count: sourceCompletedMatchCount,
+            source_match_ids: sourceMatchIds,
+            source_hash: `${GENERATOR_VERSION}:${sourceHashBase}:calculated-highlight:${String(currentCount + 1).padStart(2, "0")}`,
+            display_order: 900 - currentCount,
+            visible: PUBLISH_VISIBLE
+        });
+        added += 1;
+    }
+
+    if (added > 0) {
+        console.warn(`Added ${added} calculated final_highlights row(s) after AI quality filtering.`);
+    }
+
+    return rows
+        .sort((a, b) => {
+            if (a.section_key !== b.section_key) return a.section_key.localeCompare(b.section_key);
+            return (b.display_order || 0) - (a.display_order || 0);
+        })
+        .slice(0, MAX_HIGHLIGHTS + (GENERATE_PROFILES ? (factsPack.audit.activeParticipants || 0) : 0));
+}
+
+
+function sortAndRenumberAiRows(rows, factsPack) {
+    const highlightRows = rows
+        .filter((row) => row.section_key === FINAL_HIGHLIGHTS_SECTION)
+        .sort((a, b) => compareHighlightRows(a, b));
+
+    const profileRankById = new Map((factsPack.contest.leaderboard || []).map((row) => [String(row.participant_id || row.id || row.participantId || ""), row.rank || 999]));
+    const profileRankByName = new Map((factsPack.contest.leaderboard || []).map((row) => [row.name, row.rank || 999]));
+
+    const profileRows = rows
+        .filter((row) => row.section_key === FINAL_PROFILE_SECTION)
+        .sort((a, b) => {
+            const aName = a.cards_json?.[0]?.participant_name || "";
+            const bName = b.cards_json?.[0]?.participant_name || "";
+            const aRank = profileRankById.get(String(a.participant_id || "")) || profileRankByName.get(aName) || 999;
+            const bRank = profileRankById.get(String(b.participant_id || "")) || profileRankByName.get(bName) || 999;
+            return aRank - bRank || String(aName).localeCompare(String(bName), "ar");
+        });
+
+    highlightRows.forEach((row, index) => {
+        row.display_order = 2000 - index;
+    });
+
+    profileRows.forEach((row, index) => {
+        row.display_order = 1000 - index;
+    });
+
+    return [...highlightRows, ...profileRows];
+}
+
+function compareHighlightRows(a, b) {
+    return (highlightRowScore(b) - highlightRowScore(a))
+        || ((b.display_order || 0) - (a.display_order || 0))
+        || String(b.created_at || "").localeCompare(String(a.created_at || ""))
+        || String(a.title_ar || "").localeCompare(String(b.title_ar || ""), "ar");
+}
+
+function highlightRowScore(row) {
+    const card = Array.isArray(row.cards_json) ? row.cards_json[0] || {} : {};
+    const type = String(card.type || row.category || "").toLowerCase();
+    const stageText = `${row.subtitle_ar || ""} ${card.stage_ar || ""} ${card.stage || ""}`;
+
+    const typeScores = {
+        match: 95,
+        real_event_plus_contest: 95,
+        emotional: 90,
+        fun: 86,
+        knockout_pressure: 84,
+        popular_trap: 78,
+        lone_reader: 74,
+        exact_circle: 70,
+        points_swing: 66,
+        hard_stop: 62,
+        participant: 58,
+        timeline: 54,
+        stage: 44,
+        stage_mood: 44
+    };
+
+    return stageDisplayScore(stageText) + (typeScores[type] || 50);
+}
+
+function stageDisplayScore(value = "") {
+    const text = String(value || "").toLowerCase();
+    if (/final|النهائي/.test(text)) return 700;
+    if (/third|المركز الثالث/.test(text)) return 650;
+    if (/semi|نصف/.test(text)) return 600;
+    if (/quarter|ربع/.test(text)) return 500;
+    if (/last_16|round of 16|دور الـ?16|دور 16/.test(text)) return 400;
+    if (/last_32|round of 32|دور الـ?32|دور 32/.test(text)) return 300;
+    if (/group|المجموعات/.test(text)) return 200;
+    return 100;
+}
+
+function isUnsafeCalculatedHighlightPost(post = {}) {
+    const title = String(post.title_ar || "").trim();
+    const body = String(post.body_ar || "").trim();
+    const full = `${title} ${body}`;
+    const compactLength = body.replace(/[\s.،,!؟:؛\-–—]/g, "").length;
+
+    if (compactLength < 220) return true;
+    if (/ما فيهاش|كده|بيقرأوا|فارغين|ما كانش|دارتت|النجاحة|البمثيلة|واجتهد/i.test(full)) return true;
+    if (/^(مباراة أهدافها كثيرة|حسم ضيق|شباك نظيفة|نتيجة موثقة|مباراة حماسية|مباراة متقاربة)/i.test(title)) return true;
+    if (/^\d+\s*[-–]\s*\d+/.test(title)) return true;
+    if (/الجمهور كان|تداولت الأحاديث|أصبح الحديث يدور/i.test(full)) return true;
+    return false;
+}
+
+function rebuildSafeProfileRows(existingRows, factsPack) {
+    const rowsWithoutProfiles = existingRows.filter((row) => row.section_key !== FINAL_PROFILE_SECTION);
+    const { sourceCompletedMatchCount, sourceMatchIds, sourceHashBase } = buildRowsSourceContext(factsPack);
+    const activeParticipants = factsPack.contest.activeParticipants || [];
+
+    for (const participant of activeParticipants) {
+        const row = factsPack.contest.leaderboard.find((item) => item.name === participant.name);
+        rowsWithoutProfiles.push({
+            section_key: FINAL_PROFILE_SECTION,
+            title_ar: cleanText(row?.rank === 1 ? "لمحة البطل" : "لمحة شخصية", AI_POST_TITLE_MAX_CHARS),
+            subtitle_ar: "بصمة المشارك",
+            body_ar: cleanBodyText(buildFallbackProfileMessage(participant.name, factsPack), 950),
+            icon: cleanText(row?.rank === 1 ? "👑" : "✨", 8),
+            cards_json: [{ type: "profile_final", participant_name: participant.name }],
+            participant_id: participant.id,
+            source_completed_match_count: sourceCompletedMatchCount,
+            source_match_ids: sourceMatchIds,
+            source_hash: `${GENERATOR_VERSION}:${sourceHashBase}:profile:${participant.id}`,
+            display_order: 500,
+            visible: PUBLISH_VISIBLE
+        });
+    }
+
+    return rowsWithoutProfiles;
+}
+
 function buildFallbackProfileMessage(participantName, factsPack) {
     const row = factsPack.contest.leaderboard.find((item) => item.name === participantName);
-    if (!row) return `${participantName} كان جزءاً من جو المسابقة، وهذا أهم من أي رقم.`;
-    return `${participantName} ختم المسابقة بـ${row.points} نقطة و${row.correctPredictions} توقع صحيح. مشاركة تستاهل الذكر.`;
+    if (!row) return `${participantName}: الاسم كان جزءاً من جو المسابقة، وهذا وحده يستحق لمحة في الختام.`;
+
+    const lang = participantLanguageWords(row.name, row.gender);
+    const leaderboard = factsPack.contest.leaderboard || [];
+    const exactLeader = Math.max(...leaderboard.map((item) => item.exactScores || 0), 0);
+    const accuracyLeader = Math.max(...leaderboard.map((item) => item.accuracyPercent || 0), 0);
+    const streakLeader = Math.max(...leaderboard.map((item) => item.bestCorrectStreak || 0), 0);
+    const topThree = row.rank <= 3;
+    const bestStageLabel = row.bestStage?.label_ar || "مرحلة من البطولة";
+    const bestStagePoints = row.bestStage?.points || 0;
+    const badges = buildProfileBadgeLabels(row).slice(0, 3);
+    const badgeText = badges.length ? `أبرز شاراته${lang.taMarbuta}: ${badges.join("، ")}.` : "له حضور بسيط لكنه جزء من الحكاية.";
+
+    let opening = "";
+    let second = "";
+
+    if (row.rank === 1) {
+        opening = `${row.name} لم يأخذ الصدارة بلقطة واحدة؛ ${lang.finishedTop} المسابقة كمن يجمع النقاط بصبر ويترك الباقين يطاردون الفارق.`;
+        second = `الأرقام تقول ${row.points} نقطة، ${row.correctPredictions} توقعاً جاب نقاط، و${row.exactScores} بالملّي. لكن اللقطة الأوضح أن القمة احتاجت نفساً طويلاً، و${row.name} عرف كيف يبقى قريباً منها حتى النهاية.`;
+    } else if (topThree) {
+        opening = `${row.name} كان من الأسماء التي بقيت في دائرة الضوء. المركز ${row.rank} لا يأتي بالصدفة، خصوصاً في مسابقة تتحرك مع كل مباراة.`;
+        second = `جمع ${row.points} نقطة، ومع ${row.exactScores} بالملّي و${row.correctPredictions} توقعاً جاب نقاط، كانت الحكاية أقرب إلى حضور ثابت من ضربة حظ عابرة. ${badgeText}`;
+    } else if ((row.exactScores || 0) >= Math.max(4, exactLeader - 2)) {
+        opening = `${row.name} عنده علاقة واضحة مع لحظة "بالملّي". ليس ضرورياً أن تكون في القمة حتى تملك لقطة يتذكرها الجميع.`;
+        second = `${row.exactScores} نتائج كاملة تعني أن أكثر من مباراة قالت له${lang.taMarbuta}: صح عليك. ومع ${row.points} نقطة، أصبحت بصمته${lang.taMarbuta} في المسابقة أوضح من مجرد رقم في الترتيب.`;
+    } else if ((row.uniqueCorrect || 0) > 0 || (row.againstCrowdPoints || 0) > 0) {
+        opening = `${row.name} لم يكن دائماً مع الطريق المزدحم. بعض أجمل لقطاته${lang.taMarbuta} جاءت من قراءة مختلفة، وهذا النوع من التوقعات يعطي المسابقة نكهتها.`;
+        second = `${row.uniqueCorrect || 0} قراءة منفردة و${row.againstCrowdPoints || 0} نقطة ضد الموجة تقول إن ${row.name} كان يملك لحظات خاصة؛ لحظات لا تشبه توقع الأغلبية ولا تمشي معها دائماً.`;
+    } else if ((row.accuracyPercent || 0) >= Math.max(50, accuracyLeader - 8)) {
+        opening = `${row.name} كان يميل إلى القراءة الهادئة: لا ضجيج كثير، لكن نسبة الدقة كانت تتكلم بهدوء.`;
+        second = `دقة ${row.accuracyPercent}% مع ${row.correctPredictions} توقعاً جاب نقاط تجعل الملف الشخصي هنا أقرب إلى لاعب يعرف متى يختار الطريق الآمن ومتى ينتظر الفرصة.`;
+    } else if ((row.bestCorrectStreak || 0) >= Math.max(4, streakLeader - 1)) {
+        opening = `${row.name} صنع سلسلة جميلة، والسلاسل في مسابقة التوقعات لها طعم خاص؛ لأنها تقول إن التركيز استمر أكثر من مباراة.`;
+        second = `${row.bestCorrectStreak} توقعات صحيحة متتالية ليست مجرد رقم. هي فترة كان فيها ${row.name} قريباً من الإيقاع الصحيح، وكأنه دخل الجولة وهو فاهم المزاج.`;
+    } else if (bestStagePoints > 0) {
+        opening = `${row.name} ظهرت بصمته${lang.taMarbuta} أكثر في ${bestStageLabel}. أحياناً لا تحتاج كل البطولة؛ مرحلة واحدة كافية لتعطي الاسم لقطة واضحة.`;
+        second = `المحصلة ${row.points} نقطة، و${row.correctPredictions} توقعاً جاب نقاط. ${badgeText} هذه لمحة تقول إن لكل مشارك زاويته، حتى لو لم تكن في أعلى الجدول.`;
+    } else {
+        opening = `${row.name} كان ضمن أسماء المسابقة، والحضور نفسه جزء من الجو. ليست كل اللمحات عن الكأس؛ بعضها عن المشاركة والضحكة وانتظار النتيجة.`;
+        second = `الأرقام الحالية تقول ${row.points} نقطة و${row.correctPredictions} توقعاً جاب نقاط. الخلاصة: صفحة الختام تسع الجميع، والذكريات ليست للمتصدر فقط.`;
+    }
+
+    return `${opening}\n\n${second}`;
+}
+
+function buildProfileBadgeLabels(row) {
+    const labels = [];
+    if (row.finalRank === 1 || row.rank === 1) labels.push("بطل المسابقة");
+    else if ((row.finalRank || row.rank) <= 3) labels.push("على المنصة");
+    if ((row.exactScores || 0) > 0) labels.push(`${row.exactScores} بالملّي`);
+    if ((row.bestCorrectStreak || 0) > 1) labels.push(`سلسلة ${row.bestCorrectStreak}`);
+    if ((row.uniqueCorrect || 0) > 0) labels.push("قراءة منفردة");
+    if ((row.againstCrowdPoints || 0) > 0) labels.push("ضد الموجة");
+    if ((row.cleanSheetsExact || 0) > 0) labels.push("صفر في مكانه");
+    if ((row.appearancesInFirst || 0) > 0) labels.push("لمس الصدارة");
+    return labels;
+}
+
+function arabicCountWord(count, one, two, many) {
+    if (count === 1) return one;
+    if (count === 2) return two;
+    return many;
+}
+
+function cleanBodyText(value, maxLength) {
+    return String(value || "")
+        .replace(/\r\n/g, "\n")
+        .replace(/[ \t]+/g, " ")
+        .replace(/\n{3,}/g, "\n\n")
+        .trim()
+        .slice(0, maxLength);
 }
 
 function cleanText(value, maxLength) {

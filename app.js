@@ -147,6 +147,33 @@ async function playCurrentMusicTrack() {
     updateMusicButtonLabel(true);
 }
 
+function getHeartTrackIndex() {
+    return MUSIC_TRACKS.findIndex((track) => String(track.title || "").includes("❤️"));
+}
+
+async function playHeartTrackForSeasonRecap() {
+    if (!daiDaiAudio) return;
+
+    const heartIndex = getHeartTrackIndex();
+    if (heartIndex < 0) return;
+
+    const heartAlreadyLoaded = currentMusicTrackIndex === heartIndex;
+    const alreadyPlaying = !daiDaiAudio.paused;
+
+    if (heartAlreadyLoaded && alreadyPlaying) return;
+
+    if (!heartAlreadyLoaded) {
+        currentMusicTrackIndex = heartIndex;
+        loadCurrentMusicTrack();
+    }
+
+    try {
+        await playCurrentMusicTrack();
+    } catch (error) {
+        console.warn("Could not autoplay closing song:", error?.message || error);
+    }
+}
+
 async function switchMusicTrack(direction) {
     if (!daiDaiAudio) return;
 
@@ -736,26 +763,32 @@ async function renderProfilePageShell() {
     if (profileAiStory) profileAiStory.innerHTML = "";
 
     try {
-        const [profileStats, finalProfilePosts] = await Promise.all([
+        const [profileStats, recap, profilePosts] = await Promise.all([
             loadParticipantProfileStats(currentParticipant.id),
-            loadAiPosts(FINAL_AI_PROFILE_SECTION, {
-                participantId: currentParticipant.id,
-                limit: 1,
-                useCache: false
+            loadFinalRecapModel().catch((error) => {
+                console.warn("Profile final recap model unavailable:", error?.message || error);
+                return null;
+            }),
+            loadAiPosts(FINAL_AI_PROFILE_SECTION, { participantId: currentParticipant.id, limit: 1, useCache: false }).catch((error) => {
+                console.warn("Profile AI post unavailable:", error?.message || error);
+                return [];
             })
         ]);
         const visual = getParticipantVisual(currentParticipant.name);
+        const finalRow = (recap?.finalRows || []).find((row) => String(row.id) === String(currentParticipant.id) || row.name === currentParticipant.name);
+        const profilePost = profilePosts?.[0] || null;
+        const finalBadges = finalRow ? buildCalculatedParticipantBadges(finalRow) : [];
 
-        profileSummary.innerHTML = renderProfileSummary(currentParticipant, visual, profileStats);
+        profileSummary.innerHTML = renderProfileSummary(currentParticipant, visual, profileStats, finalRow);
 
         if (profileBadges) {
-            profileBadges.innerHTML = renderProfileBadges(profileStats);
+            profileBadges.innerHTML = finalRow
+                ? renderProfileBadgesFromFinalRow(finalRow, finalBadges)
+                : renderProfileBadges(profileStats);
         }
 
         if (profileAiStory) {
-            profileAiStory.innerHTML = finalProfilePosts.length > 0
-                ? renderAiPostCard(finalProfilePosts[0], { compact: true })
-                : renderProfileClosingNote(currentParticipant, profileStats);
+            profileAiStory.innerHTML = renderProfileClosingNote(currentParticipant, profileStats, profilePost, finalRow, finalBadges);
         }
     } catch (error) {
         console.error("Profile page load failed:", error);
@@ -781,6 +814,7 @@ async function renderMenuPageContent(tabName) {
 
     if (tabName === "seasonRecap") {
         await renderSeasonRecapPage();
+        await playHeartTrackForSeasonRecap();
         return;
     }
 
@@ -855,21 +889,21 @@ function renderAboutPage() {
 
     rulesSummary.dataset.rendered = "true";
     rulesSummary.innerHTML = `
-        <div class="info-card rules-card">
-            <strong>٥٠ نقطة</strong>
-            <span>إذا كان التوقع مطابقاً للنتيجة بالضبط.</span>
-        </div>
-        <div class="info-card rules-card">
-            <strong>١٠ نقاط</strong>
-            <span>إذا كان الفائز أو التعادل صحيحاً، حتى لو اختلفت النتيجة.</span>
-        </div>
-        <div class="info-card rules-card">
-            <strong>إغلاق التوقع</strong>
-            <span>يمكن تعديل التوقع حتى بداية المباراة فقط.</span>
-        </div>
-        <div class="info-card rules-card">
-            <strong>ملاحظة الترجيح</strong>
-            <span>ركلات الترجيح لا تدخل في النتيجة المعتمدة للتوقع.</span>
+        <section class="about-hero-card">
+            <span aria-hidden="true">🏆</span>
+            <div>
+                <p class="eyebrow">عن المسابقة</p>
+                <h4>توقعات، ضحك، وأعصاب قبل كل صافرة</h4>
+                <p>هذه صفحة صغيرة لمسابقة خاصة بين المشاركين: تختار النتيجة، تتابع النقاط، وبعدها تشوف الأضواء والشارات التي طلعت من كل لقطة.</p>
+            </div>
+        </section>
+        <div class="about-rule-grid">
+            <div class="info-card rules-card"><strong>50 نقطة</strong><span>إذا كان التوقع مطابقاً للنتيجة بالضبط.</span></div>
+            <div class="info-card rules-card"><strong>10 نقاط</strong><span>إذا كان الفائز أو التعادل صحيحاً، حتى لو اختلفت النتيجة.</span></div>
+            <div class="info-card rules-card"><strong>72 ساعة</strong><span>تفتح نافذة التوقع قبل المباراة بثلاثة أيام.</span></div>
+            <div class="info-card rules-card"><strong>قبل البداية</strong><span>يمكن تعديل التوقع حتى لحظة بداية المباراة فقط.</span></div>
+            <div class="info-card rules-card"><strong>الترجيح</strong><span>ركلات الترجيح لا تدخل في نتيجة التوقع؛ تعتمد نتيجة المباراة قبل الترجيح.</span></div>
+            <div class="info-card rules-card"><strong>الأضواء</strong><span>المنشورات مبنية على أرقام المسابقة، مع صياغة ممتعة للّقطات المميزة فقط.</span></div>
         </div>
     `;
 }
@@ -1154,40 +1188,85 @@ async function loadParticipantProfileStats(participantId) {
     return stats;
 }
 
-function renderProfileSummary(participant, visual, stats) {
+function renderProfileSummary(participant, visual, stats, finalRow = null) {
+    const rankText = finalRow?.finalRank ? `#${finalRow.finalRank}` : "";
+    const accuracyText = finalRow?.accuracyPercent ? `${finalRow.accuracyPercent}% دقة` : `${stats.scoringPredictions} توقع صحيح`;
+    const streakText = finalRow?.bestCorrectStreak ? `${finalRow.bestCorrectStreak} سلسلة` : `${stats.exactScores} بالملّي`;
+
     return `
-        <div class="profile-hero-card" style="--participant-accent: ${visual.color}">
+        <div class="profile-hero-card profile-hero-card-final" style="--participant-accent: ${visual.color}">
             <div class="profile-hero-avatar" aria-hidden="true">${visual.icon}</div>
             <div>
                 <p class="eyebrow">الملف الشخصي</p>
-                <h4>${escapeHtml(participant.name)}</h4>
-                <p>ملخص سريع من بياناتك الحالية في المسابقة.</p>
+                <h4>${escapeHtml(participant.name)} ${rankText ? `<span>${escapeHtml(rankText)}</span>` : ""}</h4>
+                <p>بطاقة ختامية خفيفة: أرقامك، شاراتك، ولمحة عن أسلوبك في التوقع.</p>
             </div>
         </div>
 
-        <div class="profile-stat-grid">
-            <div class="profile-stat-card"><strong>${stats.totalPoints}</strong><span>نقطة</span></div>
-            <div class="profile-stat-card"><strong>${stats.totalPredictions}</strong><span>توقع</span></div>
-            <div class="profile-stat-card"><strong>${stats.exactScores}</strong><span>بالملّي</span></div>
-            <div class="profile-stat-card"><strong>${stats.scoringPredictions}</strong><span>توقع صحيح</span></div>
-            <div class="profile-stat-card profile-stat-card-wide"><strong>${escapeHtml(stats.bestStage)}</strong><span>أفضل مرحلة</span></div>
+        <div class="profile-stat-grid profile-stat-grid-final">
+            <div class="profile-stat-card"><strong>${finalRow?.points ?? stats.totalPoints}</strong><span>نقطة</span></div>
+            <div class="profile-stat-card"><strong>${finalRow?.predictions ?? stats.totalPredictions}</strong><span>توقع</span></div>
+            <div class="profile-stat-card"><strong>${finalRow?.exactScores ?? stats.exactScores}</strong><span>بالملّي</span></div>
+            <div class="profile-stat-card"><strong>${escapeHtml(accuracyText)}</strong><span>قراءة ناجحة</span></div>
+            <div class="profile-stat-card"><strong>${escapeHtml(streakText)}</strong><span>لقطة مميزة</span></div>
+            <div class="profile-stat-card profile-stat-card-wide"><strong>${escapeHtml(finalRow?.bestStage?.label_ar || stats.bestStage)}</strong><span>أفضل مرحلة</span></div>
         </div>
     `;
 }
 
-function renderProfileClosingNote(participant, stats) {
-    const name = participant?.name || "المشارك";
-    const bestStage = stats.bestStage || "بانتظار النتائج";
-    const exactText = stats.exactScores > 0
-        ? `${stats.exactScores} بالملّي`
-        : "لسه البالملّي ينتظر لحظته";
+function renderProfileClosingNote(participant, stats, profilePost = null, finalRow = null, finalBadges = []) {
+    const title = profilePost?.title_ar || (finalRow?.finalRank === 1 ? "لمحة البطل" : "لمحة الختام");
+    const subtitle = profilePost?.subtitle_ar || "رسالة شخصية خفيفة";
+    const body = profilePost?.body_ar || buildLocalProfileClosingText(participant, stats, finalRow, finalBadges);
 
     return `
-        <div class="profile-closing-note">
-            <strong>لمحة سريعة</strong>
-            <p>${escapeHtml(name)} ${participantPhrase(name, "جمع", "جمعت")} ${stats.totalPoints} نقطة حتى الآن، وأفضل مرحلة ${participantPhrase(name, "له", "لها")}: ${escapeHtml(bestStage)}. ${escapeHtml(exactText)}.</p>
+        <div class="profile-closing-note profile-closing-note-final">
+            <div class="profile-closing-note-head">
+                <span aria-hidden="true">${escapeHtml(profilePost?.icon || (finalRow?.finalRank === 1 ? "👑" : "✨"))}</span>
+                <div>
+                    <strong>${escapeHtml(title)}</strong>
+                    <small>${escapeHtml(subtitle)}</small>
+                </div>
+            </div>
+            <p>${escapeHtml(body)}</p>
         </div>
     `;
+}
+
+function buildLocalProfileClosingText(participant, stats, finalRow = null, finalBadges = []) {
+    const name = participant?.name || "المشارك";
+    if (!finalRow) {
+        const exactText = stats.exactScores > 0 ? `${stats.exactScores} بالملّي` : "بانتظار ضربة بالملّي";
+        return `${name} ${participantPhrase(name, "جمع", "جمعت")} ${stats.totalPoints} نقطة حتى الآن. ${exactText}، وأفضل مرحلة ${participantPhrase(name, "له", "لها")}: ${stats.bestStage}.`;
+    }
+
+    const badgeTitles = finalBadges.slice(0, 3).map((badge) => badge.title).join("، ");
+    if (finalRow.finalRank === 1) {
+        return `${name} دخل صفحة الختام كبطل المسابقة. ${finalRow.points} نقطة، ${finalRow.exactScores} بالملّي، و${finalRow.correctPredictions} توقع جاب نقاط؛ أرقام تقول إن الصدارة ما كانت ضربة حظ، كانت نَفَس طويل حتى آخر لقطة.`;
+    }
+    if (finalRow.finalRank && finalRow.finalRank <= 3) {
+        return `${name} ختمها بين الثلاثة الأوائل، وهذا وحده كفاية يعطي الملف لمعة خاصة. ${finalRow.points} نقطة و${finalRow.exactScores} بالملّي، ومع شارات مثل ${badgeTitles || "على المنصة"} صار الحضور واضحاً في أكثر من زاوية.`;
+    }
+    if ((finalRow.uniqueCorrect || 0) > 0 || (finalRow.againstCrowdPoints || 0) > 0) {
+        return `${name} عنده لحظات ما مشت مع الزحمة. ${finalRow.uniqueCorrect || 0} قراءة منفردة و${finalRow.againstCrowdPoints || 0} نقطة ضد الموجة تقول إن أجمل ما في ملفه ليس الرقم فقط، بل الجرأة الهادئة وقت ما الأغلبية راحت اتجاه ثاني.`;
+    }
+    if ((finalRow.exactScores || 0) > 0) {
+        return `${name} ترك بصمته في لحظات بالملّي. ${finalRow.exactScores} نتيجة كاملة ليست مجرد رقم؛ كل واحدة منها كانت لقطة صغيرة تقول: هنا كانت القراءة مضبوطة.`;
+    }
+    return `${name} كان جزءاً من جو المسابقة، ومع ${finalRow.points} نقطة و${finalRow.correctPredictions} توقع جاب نقاط، يبقى له مكانه في الختام. الشارات هنا تقول: ${badgeTitles || "الحضور نفسه جزء من الحكاية"}.`;
+}
+
+function renderProfileBadgesFromFinalRow(finalRow, badges = []) {
+    const visibleBadges = (badges || []).slice(0, 10);
+    if (!visibleBadges.length) return `<div class="placeholder-card">الشارات ستظهر هنا مع اكتمال بيانات المسابقة.</div>`;
+
+    return visibleBadges.map((badge) => `
+        <div class="badge-card profile-badge-card-final">
+            <span aria-hidden="true">${escapeHtml(badge.icon)}</span>
+            <strong>${escapeHtml(badge.title)}</strong>
+            <small>${escapeHtml(badge.value || badge.note || "شارة محسوبة")}</small>
+        </div>
+    `).join("");
 }
 
 function renderProfileBadges(stats) {
@@ -3436,7 +3515,7 @@ function renderFinalHighlightsNotGeneratedMessage(recap) {
 }
 
 function renderFinalAiHighlights(posts, recap) {
-    const visiblePosts = posts.slice(0, FINAL_RECAP_MAX_HIGHLIGHTS);
+    const visiblePosts = sortFinalAiHighlightPosts(posts).slice(0, FINAL_RECAP_MAX_HIGHLIGHTS);
 
     return `
         <section class="season-highlight-hero season-highlight-hero-ai">
@@ -3449,6 +3528,51 @@ function renderFinalAiHighlights(posts, recap) {
             ${visiblePosts.map(renderFinalAiHighlightPost).join("")}
         </div>
     `;
+}
+
+
+function sortFinalAiHighlightPosts(posts = []) {
+    return [...posts].sort((a, b) => {
+        return (finalAiHighlightSortScore(b) - finalAiHighlightSortScore(a))
+            || ((b.display_order || 0) - (a.display_order || 0))
+            || String(b.created_at || "").localeCompare(String(a.created_at || ""))
+            || String(a.title_ar || "").localeCompare(String(b.title_ar || ""), "ar");
+    });
+}
+
+function finalAiHighlightSortScore(post = {}) {
+    const card = Array.isArray(post.cards) ? post.cards[0] || {} : {};
+    const type = String(card.type || post.category || "").toLowerCase();
+    const stageText = `${post.subtitle_ar || ""} ${card.stage_ar || ""} ${card.stage || ""}`;
+    const typeScores = {
+        match: 95,
+        real_event_plus_contest: 95,
+        emotional: 90,
+        fun: 86,
+        knockout_pressure: 84,
+        popular_trap: 78,
+        lone_reader: 74,
+        exact_circle: 70,
+        points_swing: 66,
+        hard_stop: 62,
+        participant: 58,
+        timeline: 54,
+        stage: 44,
+        stage_mood: 44
+    };
+    return finalAiStageSortScore(stageText) + (typeScores[type] || 50);
+}
+
+function finalAiStageSortScore(value = "") {
+    const text = String(value || "").toLowerCase();
+    if (/final|النهائي/.test(text)) return 700;
+    if (/third|المركز الثالث/.test(text)) return 650;
+    if (/semi|نصف/.test(text)) return 600;
+    if (/quarter|ربع/.test(text)) return 500;
+    if (/last_16|round of 16|دور الـ?16|دور 16/.test(text)) return 400;
+    if (/last_32|round of 32|دور الـ?32|دور 32/.test(text)) return 300;
+    if (/group|المجموعات/.test(text)) return 200;
+    return 100;
 }
 
 function renderFinalAiHighlightPost(post) {
@@ -3734,38 +3858,46 @@ function renderStatisticsSnapshot(seasonStats) {
 }
 
 function renderBadgeCards(awards = [], finalRows = [], participants = []) {
-    const cards = buildParticipantBadgeCards(awards, finalRows, participants);
+    const groups = buildParticipantBadgeGroups(awards, finalRows, participants);
 
-    if (!cards.length) {
+    if (!groups.length) {
         return `<div class="placeholder-card">لا توجد شارات كافية حتى الآن.</div>`;
     }
 
-    return cards.map((card) => `
-        <article class="recap-award-card badge-story-card participant-badge-card">
-            <div class="recap-award-icon participant-badge-icon" aria-hidden="true">${escapeHtml(card.icon)}</div>
-            <div class="participant-badge-content">
-                <div class="participant-badge-head">
-                    <strong class="participant-badge-person">${escapeHtml(card.name)}</strong>
-                    <span class="participant-badge-rank">#${escapeHtml(card.rank)}</span>
+    return groups.map((group) => `
+        <article class="recap-award-card participant-badge-group-card">
+            <header class="participant-badge-group-head">
+                <div>
+                    <span class="participant-badge-rank">#${escapeHtml(group.rank)}</span>
+                    <strong class="participant-badge-person">${escapeHtml(group.name)}</strong>
                 </div>
-                <h4>${escapeHtml(card.title)}</h4>
-                <p>${escapeHtml(card.value)}</p>
-                <small>${escapeHtml(card.note)}</small>
-                ${card.extra ? `<em class="participant-badge-extra">${escapeHtml(card.extra)}</em>` : ""}
+                <small>${escapeHtml(group.summary)}</small>
+            </header>
+            <div class="participant-badge-chip-grid">
+                ${group.badges.map((badge) => `
+                    <div class="participant-badge-chip">
+                        <span class="participant-badge-chip-icon" aria-hidden="true">${escapeHtml(badge.icon)}</span>
+                        <span class="participant-badge-chip-body">
+                            <strong>${escapeHtml(badge.title)}</strong>
+                            <em>${escapeHtml(badge.value)}</em>
+                            ${badge.note ? `<small>${escapeHtml(badge.note)}</small>` : ""}
+                        </span>
+                    </div>
+                `).join("")}
             </div>
         </article>
     `).join("");
 }
 
-function buildParticipantBadgeCards(awards = [], finalRows = [], participants = []) {
+function buildParticipantBadgeGroups(awards = [], finalRows = [], participants = []) {
     const rowsById = new Map((finalRows || []).map((row) => [String(row.id), row]));
     const rowsByName = new Map((finalRows || []).map((row) => [row.name, row]));
     const awardsByWinner = new Map();
 
-    (awards || []).forEach((award) => {
+    (awards || []).forEach((award, index) => {
         if (!award?.winner) return;
         if (!awardsByWinner.has(award.winner)) awardsByWinner.set(award.winner, []);
-        awardsByWinner.get(award.winner).push(award);
+        awardsByWinner.get(award.winner).push({ ...award, sourcePriority: index });
     });
 
     const orderedRows = (participants || []).length
@@ -3778,25 +3910,80 @@ function buildParticipantBadgeCards(awards = [], finalRows = [], participants = 
         : [...(finalRows || [])].map((row, index) => ({ ...row, participantOrder: Number(row.sortOrder || index + 1) }));
 
     return orderedRows
-        .sort((a, b) => a.participantOrder - b.participantOrder || a.name.localeCompare(b.name, "ar"))
+        .sort((a, b) => (a.finalRank || 999) - (b.finalRank || 999) || a.participantOrder - b.participantOrder || a.name.localeCompare(b.name, "ar"))
         .map((row) => {
-            const participantAwards = awardsByWinner.get(row.name) || [];
-            const primaryAward = participantAwards[0];
-            const fallback = buildParticipantDefaultBadge(row);
-            const badge = primaryAward ? {
-                icon: primaryAward.icon || fallback.icon,
-                title: primaryAward.title,
-                value: primaryAward.value,
-                note: primaryAward.note,
-                extra: participantAwards.length > 1 ? `وله أيضاً ${participantAwards.length - 1} شارة أخرى` : ""
-            } : fallback;
+            const awardBadges = (awardsByWinner.get(row.name) || []).map((award) => ({
+                icon: award.icon || "🏅",
+                title: award.title || "شارة خاصة",
+                value: award.value || "إنجاز محسوب",
+                note: award.note || "",
+                priority: 10 + Number(award.sourcePriority || 0)
+            }));
+
+            const calculatedBadges = buildCalculatedParticipantBadges(row);
+            const badges = dedupeParticipantBadges([...awardBadges, ...calculatedBadges])
+                .sort((a, b) => (a.priority || 999) - (b.priority || 999) || a.title.localeCompare(b.title, "ar"));
 
             return {
                 name: row.name,
                 rank: row.finalRank || "-",
-                ...badge
+                summary: buildParticipantBadgeSummary(row, badges.length),
+                badges: badges.length ? badges : [buildParticipantDefaultBadge(row)]
             };
         });
+}
+
+function buildCalculatedParticipantBadges(row) {
+    if (!row) return [buildParticipantDefaultBadge(row)];
+
+    const badges = [];
+    const add = (icon, title, value, note, priority) => {
+        if (!value && value !== 0) return;
+        badges.push({ icon, title, value: String(value), note, priority });
+    };
+
+    if (row.finalRank === 1) {
+        add("🏆", "بطل المسابقة", `${row.points} نقطة`, "المركز الأول في الترتيب العام.", 1);
+    } else if (row.finalRank && row.finalRank <= 3) {
+        add("🥇", "على المنصة", `المركز ${row.finalRank}`, `${row.points} نقطة في الختام.`, 2);
+    } else if (row.finalRank) {
+        add("📍", "موقعه في الجدول", `المركز ${row.finalRank}`, `${row.points} نقطة.`, 3);
+    }
+
+    if (row.exactScores > 0) add("🎯", "بالملّي", `${row.exactScores} نتيجة كاملة`, "50 نقطة لكل ضربة كاملة.", 20);
+    if (row.correctPredictions > 0) add("✅", "جاب نقاط", `${row.correctPredictions} توقع صحيح`, "تشمل 10 و50 نقطة.", 30);
+    if (row.accuracyPercent > 0) add("🧭", "نسبة الدقة", `${row.accuracyPercent}%`, "نسبة التوقعات التي جابت نقاط.", 35);
+    if (row.bestCorrectStreak > 1) add("🔥", "سلسلة صحيحة", `${row.bestCorrectStreak} متتالية`, "نَفَس طويل في أكثر من مباراة.", 40);
+    if (row.bestFiveMatchSpan > 0) add("🚀", "أفضل فورة", `${row.bestFiveMatchSpan} نقطة`, "أفضل خمس مباريات متتالية.", 45);
+    if (row.uniqueCorrect > 0) add("🐺", "قراءة منفردة", `${row.uniqueCorrect} توقعات`, "صح وما أحد شاركه بنفس القراءة.", 50);
+    if (row.againstCrowdPoints > 0) add("⚡", "ضد الموجة", `${row.againstCrowdPoints} نقطة`, "كسب من توقعات خالفت الأغلبية.", 55);
+    if (row.cleanSheetsExact > 0) add("🧤", "صفر في مكانه", `${row.cleanSheetsExact} شباك نظيفة`, "توقع الصفر في النتيجة الصحيحة.", 60);
+    if (row.individualTeamScoresExact > 0) add("🥅", "أهداف مضبوطة", `${row.individualTeamScoresExact} هدف`, "ضبط أهداف أحد الفريقين.", 65);
+    if (row.drawHits > 0) add("🤝", "شمّ التعادل", `${row.drawHits} تعادلات`, "قرأ مباريات انتهت بلا فائز.", 70);
+    if (row.oneGoalAway > 0) add("😮‍💨", "قريب جداً", `${row.oneGoalAway} مرة`, "كان على بعد هدف واحد من لقطة أكبر.", 75);
+    if (row.appearancesInFirst > 0) add("👑", "لمس الصدارة", `${row.appearancesInFirst} مرة`, "ظهر في المركز الأول خلال الرحلة.", 80);
+    if (row.appearancesInTop3 > 0) add("🌟", "داخل الثلاثة", `${row.appearancesInTop3} مرة`, "تكرر حضوره في منطقة المنافسة.", 85);
+    if (row.predictions > 0) add("⚽", "حاضر في اللعبة", `${row.predictions} توقع`, "شارك في صناعة جو المسابقة.", 95);
+
+    if (!badges.length) badges.push(buildParticipantDefaultBadge(row));
+    return badges;
+}
+
+function dedupeParticipantBadges(badges = []) {
+    const seen = new Set();
+    return badges.filter((badge) => {
+        const key = `${badge.title}::${badge.value}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+    });
+}
+
+function buildParticipantBadgeSummary(row, count) {
+    const rank = row?.finalRank ? `المركز ${row.finalRank}` : "بدون ترتيب نهائي";
+    const points = Number.isFinite(Number(row?.points)) ? `${row.points} نقطة` : "نقاط غير مكتملة";
+    const badgeText = count === 1 ? "شارة واحدة" : `${count} شارات`;
+    return `${rank} • ${points} • ${badgeText}`;
 }
 
 function buildParticipantDefaultBadge(row) {
@@ -3841,23 +4028,24 @@ function buildParticipantDefaultBadge(row) {
 
 function renderSeasonThankYouPage() {
     return `
-        <section class="season-thanks-card">
-            <div class="season-thanks-icon" aria-hidden="true">🏆</div>
+        <section class="season-thanks-card season-thanks-card-final">
+            <div class="season-thanks-icon" aria-hidden="true">❤️</div>
             <p class="eyebrow">ختام المسابقة</p>
-            <h2>شكراً لكل واحد خلّى البطولة أحلى</h2>
+            <h2>شكراً… هذه كانت أحلى من مجرد توقعات</h2>
             <p>
-                هذه المسابقة ما كانت بس نقاط وترتيب. كانت توقعات، ضحك، ترقب، ورسائل بعد كل مباراة.
-                شكراً لكل المشاركين على الحماس الجميل اللي خلّى كأس العالم أمتع.
+                كل مباراة كان لها جوها: واحد واثق، واحد متردد، واحد يقول النتيجة سهلة… وبالأخير الجدول يضحك علينا كلنا.
+                شكراً لكل المشاركين؛ أنتم اللي خليتوا المتابعة ألطف، والانتظار قبل كل مباراة له طعم خاص.
             </p>
             <p>
-                وبإذن الله، كل المشاركين لهم تقدير وجوائز لأنكم أنتم اللي خليتوا التجربة ممتعة وتستاهل الذكرى.
+                الجوائز والتقدير للجميع بإذن الله. الفائز له تصفيق، واللي جابها بالملّي له لقطة، واللي شارك معنا له مكان في الذكرى.
             </p>
         </section>
 
-        <div class="season-thanks-mini-grid">
-            <div class="season-thanks-mini-card"><strong>❤️</strong><span>شكراً على الحماس</span></div>
-            <div class="season-thanks-mini-card"><strong>🎁</strong><span>جوائز لكل المشاركين</span></div>
-            <div class="season-thanks-mini-card"><strong>⚽</strong><span>ذكرى حلوة من كأس العالم</span></div>
+        <div class="season-thanks-mini-grid season-thanks-mini-grid-final">
+            <div class="season-thanks-mini-card"><strong>❤️</strong><span>الأغنية تبدأ هنا تلقائياً</span></div>
+            <div class="season-thanks-mini-card"><strong>🏆</strong><span>مبروك للبطل</span></div>
+            <div class="season-thanks-mini-card"><strong>🎁</strong><span>كل المشاركين لهم تقدير</span></div>
+            <div class="season-thanks-mini-card"><strong>✨</strong><span>الأضواء حفظت أجمل اللقطات</span></div>
         </div>
     `;
 }
