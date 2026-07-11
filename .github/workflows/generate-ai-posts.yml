@@ -94,7 +94,7 @@ jobs:
           AI_TEMPERATURE: "0.55"
           AI_MAX_TOKENS: "7000"
           AI_BATCH_GENERATION: "true"
-          AI_BATCH_HIGHLIGHT_TARGET: "3"
+          AI_BATCH_HIGHLIGHT_TARGET: "6"
           AI_EVENT_NOTE_BATCH_SIZE: "30"
           AI_FACT_BATCH_SIZE: "40"
           AI_USE_EVENT_ONLY_BATCHES: "false"
@@ -110,9 +110,9 @@ jobs:
           AI_INSERT_PARTIAL_ON_BATCH_FAILURE: "true"
           AI_INSERT_PARTIAL_ON_MAX_BATCHES: "true"
           AI_MIN_HIGHLIGHTS_FOR_PARTIAL_INSERT: "12"
-          AI_MIN_VALID_HIGHLIGHT_ROWS: "25"
+          AI_MIN_VALID_HIGHLIGHT_ROWS: "24"
           AI_TOP_UP_WITH_CALCULATED_HIGHLIGHTS: "true"
-          AI_CALCULATED_HIGHLIGHT_TOP_UP_TO: "38"
+          AI_CALCULATED_HIGHLIGHT_TOP_UP_TO: "28"
           AI_CONTINUE_ON_BATCH_FAILURE: "true"
           AI_MAX_FAILED_BATCHES: "10"
           AI_ENABLE_CONTEST_MOMENT_BATCHES: "false"
@@ -121,10 +121,12 @@ jobs:
           ALLOW_FINAL_PREVIEW: ${{ github.event_name == 'schedule' && 'true' || inputs.allow_preview_generation }}
           PUBLISH_VISIBLE: ${{ github.event_name == 'schedule' && 'true' || inputs.publish_visible }}
           MAX_HIGHLIGHTS: ${{ github.event_name == 'schedule' && '40' || inputs.max_highlights }}
-          AI_PUBLIC_HIGHLIGHT_TARGET: "38"
+          AI_PUBLIC_HIGHLIGHT_TARGET: "32"
           AI_GROUP_STAGE_HIGHLIGHT_MAX: "10"
           AI_PARTICIPANT_HIGHLIGHT_MAX: "6"
           AI_STAGE_SUMMARY_MAX: "2"
+          AI_STYLE_FAMILY_MAX: "3"
+          AI_MAX_CALCULATED_TOP_UP: "4"
           RESET_EXISTING_FINAL_AI: ${{ github.event_name == 'schedule' && 'true' || inputs.reset_existing }}
           GENERATE_PROFILES: "auto"
           AI_AUTO_STAGE_MODE: ${{ github.event_name == 'schedule' && 'true' || 'false' }}

@@ -66,11 +66,13 @@ const AI_MIN_VALID_HIGHLIGHT_ROWS = Math.max(1, Number(process.env.AI_MIN_VALID_
 const MAX_HIGHLIGHTS = Math.min(70, Math.max(20, Number(process.env.MAX_HIGHLIGHTS || 40)));
 const AI_PUBLIC_HIGHLIGHT_TARGET = Math.max(
     AI_MIN_VALID_HIGHLIGHT_ROWS,
-    Math.min(MAX_HIGHLIGHTS, Number(process.env.AI_PUBLIC_HIGHLIGHT_TARGET || 38))
+    Math.min(MAX_HIGHLIGHTS, Number(process.env.AI_PUBLIC_HIGHLIGHT_TARGET || 32))
 );
 const AI_GROUP_STAGE_HIGHLIGHT_MAX = Math.max(4, Number(process.env.AI_GROUP_STAGE_HIGHLIGHT_MAX || 10));
 const AI_PARTICIPANT_HIGHLIGHT_MAX = Math.max(2, Number(process.env.AI_PARTICIPANT_HIGHLIGHT_MAX || 6));
 const AI_STAGE_SUMMARY_MAX = Math.max(0, Number(process.env.AI_STAGE_SUMMARY_MAX || 2));
+const AI_STYLE_FAMILY_MAX = Math.max(2, Number(process.env.AI_STYLE_FAMILY_MAX || 3));
+const AI_MAX_CALCULATED_TOP_UP = Math.max(0, Number(process.env.AI_MAX_CALCULATED_TOP_UP || 4));
 const AI_TOP_UP_WITH_CALCULATED_HIGHLIGHTS = String(process.env.AI_TOP_UP_WITH_CALCULATED_HIGHLIGHTS || "true").toLowerCase() !== "false";
 const AI_CALCULATED_HIGHLIGHT_TOP_UP_TO = Math.max(0, Number(process.env.AI_CALCULATED_HIGHLIGHT_TOP_UP_TO || Math.min(MAX_HIGHLIGHTS, Math.max(45, AI_MIN_VALID_HIGHLIGHT_ROWS))));
 const AI_ENFORCE_UNIQUE_TITLES = String(process.env.AI_ENFORCE_UNIQUE_TITLES || "true").toLowerCase() !== "false";
@@ -268,6 +270,8 @@ async function main() {
         groupStageHighlightMax: AI_GROUP_STAGE_HIGHLIGHT_MAX,
         participantHighlightMax: AI_PARTICIPANT_HIGHLIGHT_MAX,
         stageSummaryMax: AI_STAGE_SUMMARY_MAX,
+        styleFamilyMax: AI_STYLE_FAMILY_MAX,
+        maxCalculatedTopUp: AI_MAX_CALCULATED_TOP_UP,
         autoMinMatchAgeHours: AI_AUTO_MIN_MATCH_AGE_HOURS,
         latestCompletedMatchKickoff: factsPack.audit.latestCompletedMatchKickoff
     }, null, 2));
@@ -2033,8 +2037,8 @@ async function generateFinalContentInBatches(factsPack) {
         const batchName = `story-seeds-${index + 1}`;
         const batchPrompt = buildBatchPrompt({
             batchName,
-            instruction: "اكتب منشورات أضواء من story_seeds فقط. كل seed فيه نوع قصة واضح: فخ الأغلبية، قراءة مختلفة، ضغط إقصائي، خزنة نقاط، أو حدث كروي موثق. لا تكتب تقرير مباراة. ابدأ من hook_style والسؤال القصصي، واجعل النتيجة مجرد تفصيل داخل النص.",
-            highlightTarget: Math.min(AI_BATCH_HIGHLIGHT_TARGET, targetHighlights - output.highlights.length),
+            instruction: "اكتب منشوراً واحداً لكل story_seed في هذه الدفعة، لأن هذه البذور اختيرت مسبقاً لوجود أثر حقيقي وممتع داخل المسابقة. لا تخترع منشوراً لبذرة ضعيفة، لكن لا تتجاهل بذرة قوية لمجرد الاختصار. كل seed فيه نوع قصة واضح: فخ الأغلبية، قراءة مختلفة، ضغط إقصائي، خزنة نقاط، أو حدث كروي موثق. لا تكتب تقرير مباراة. ابدأ من hook_style والسؤال القصصي، واجعل النتيجة مجرد تفصيل داخل النص.",
+            highlightTarget: Math.min(storyBatches[index].length, targetHighlights - output.highlights.length),
             profileTarget: 0,
             facts: {
                 ...contextBase,
@@ -2171,6 +2175,29 @@ async function generateFinalContentInBatches(factsPack) {
 }
 
 
+function isHighSignalStorySeed(seed = {}) {
+    if (!seed) return false;
+    if (seed.type === "participant_arc") return false;
+    if (seed.type === "stage_mood") return true;
+
+    const match = seed.match || {};
+    const notes = Array.isArray(seed.verified_event_context)
+        ? seed.verified_event_context.filter((item) => item?.source_note_id || item?.id)
+        : [];
+    const popular = match.mostCommonPrediction || null;
+    const uniqueCorrect = Array.isArray(match.uniqueCorrectNames) ? match.uniqueCorrectNames : [];
+
+    return (
+        notes.length > 0 ||
+        (match.stage && match.stage !== "GROUP_STAGE") ||
+        Number(match.exactCount || 0) >= 1 ||
+        Number(match.awardedPoints || 0) >= 140 ||
+        Number(match.zeroOrMissingPercent || 0) >= 75 ||
+        Boolean(popular && !popular.wasActual && Number(popular.count || 0) >= 3) ||
+        uniqueCorrect.length > 0
+    );
+}
+
 function topUpHighlightsWithCalculatedStories(output, factsPack, targetCount, usedHighlightKeys = new Set()) {
     if (!AI_TOP_UP_WITH_CALCULATED_HIGHLIGHTS) return;
     if (!Array.isArray(output.highlights)) output.highlights = [];
@@ -2178,12 +2205,12 @@ function topUpHighlightsWithCalculatedStories(output, factsPack, targetCount, us
 
     const seeds = factsPack.contest.integratedStorySeeds || [];
     const rankedSeeds = [...seeds]
-        .filter((seed) => seed && seed.type !== "participant_arc")
+        .filter(isHighSignalStorySeed)
         .sort((a, b) => (b.priority || 0) - (a.priority || 0) || storyTypeOrder(a.type) - storyTypeOrder(b.type));
 
     let added = 0;
     for (const seed of rankedSeeds) {
-        if (output.highlights.length >= targetCount) break;
+        if (output.highlights.length >= targetCount || added >= AI_MAX_CALCULATED_TOP_UP) break;
         const post = buildCalculatedHighlightPost(seed, output.highlights.length + 1);
         if (!post) continue;
         const title = cleanText(post.title_ar || "", AI_POST_TITLE_MAX_CHARS);
@@ -3442,7 +3469,7 @@ function curateHighlightRows(rows = [], factsPack = {}, targetCount = AI_PUBLIC_
         }
 
         const families = highlightStyleFamilies(row);
-        if (families.some((family) => (styleCounts.get(family) || 0) >= 2)) continue;
+        if (families.some((family) => (styleCounts.get(family) || 0) >= AI_STYLE_FAMILY_MAX)) continue;
 
         kept.push(row);
         stageCounts.set(stageKey, stageCount + 1);
@@ -3581,13 +3608,13 @@ function addCalculatedHighlightRowsToRows(existingRows, factsPack, targetCount) 
     const used = new Set(existingHighlightRows.map((row) => `${row.title_ar}|${row.body_ar}`.toLowerCase()));
 
     const seeds = [...(factsPack.contest.integratedStorySeeds || [])]
-        .filter((seed) => seed && seed.type !== "participant_arc")
+        .filter(isHighSignalStorySeed)
         .sort((a, b) => (b.priority || 0) - (a.priority || 0) || storyTypeOrder(a.type) - storyTypeOrder(b.type));
 
     let added = 0;
     for (const seed of seeds) {
         const currentCount = rows.filter((row) => row.section_key === FINAL_HIGHLIGHTS_SECTION).length;
-        if (currentCount >= targetCount || currentCount >= MAX_HIGHLIGHTS) break;
+        if (currentCount >= targetCount || currentCount >= MAX_HIGHLIGHTS || added >= AI_MAX_CALCULATED_TOP_UP) break;
 
         const post = buildCalculatedHighlightPost(seed, currentCount + 1);
         if (!post) continue;
