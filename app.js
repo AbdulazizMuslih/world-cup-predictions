@@ -1625,6 +1625,14 @@ async function saveChampionPrediction() {
         return;
     }
 
+    const existing = await loadChampionPredictionForParticipant(currentParticipant.id);
+    if (existing?.predicted_team) {
+        alert("تم حفظ توقع بطل كأس العالم سابقاً ولا يمكن تعديله.");
+        await loadAvailableMatches();
+        await loadMyPredictions();
+        return;
+    }
+
     const { error } = await db
         .from(CHAMPION_PREDICTIONS_TABLE)
         .upsert({
@@ -1666,16 +1674,54 @@ async function recalculateChampionPredictionPoints() {
     }
 }
 
+function renderChampionPredictionTeamCards(teams = [], selectedTeam = "", locked = false) {
+    const normalizedSelected = normalizeTeamName(selectedTeam || "");
+
+    return `
+        <div class="champion-team-card-grid" role="radiogroup" aria-label="اختيار بطل كأس العالم">
+            ${(teams || []).map((team) => {
+                const isSelected = normalizeTeamName(team) === normalizedSelected;
+                return `
+                    <button
+                        type="button"
+                        class="champion-team-card ${isSelected ? "champion-team-card-selected" : ""} ${locked ? "champion-team-card-locked" : ""}"
+                        data-champion-team-card
+                        data-team="${escapeHtml(team)}"
+                        aria-pressed="${isSelected ? "true" : "false"}"
+                        ${locked ? "disabled" : `onclick="selectChampionPredictionTeam(this.dataset.team)"`}
+                    >
+                        <span class="champion-team-flag" aria-hidden="true">${formatTeamFlag(team)}</span>
+                        <strong>${escapeHtml(team)}</strong>
+                        <span class="champion-team-check" aria-hidden="true">✓</span>
+                    </button>
+                `;
+            }).join("")}
+        </div>
+    `;
+}
+
+function selectChampionPredictionTeam(team) {
+    const input = document.getElementById("championPredictionSelect");
+    if (!input || input.dataset.locked === "true") return;
+
+    input.value = team || "";
+    document.querySelectorAll("[data-champion-team-card]").forEach((card) => {
+        const isSelected = normalizeTeamName(card.dataset.team || "") === normalizeTeamName(team || "");
+        card.classList.toggle("champion-team-card-selected", isSelected);
+        card.setAttribute("aria-pressed", isSelected ? "true" : "false");
+    });
+}
+
 async function renderChampionPredictionAvailableBlock(matches) {
     if (!currentParticipant) return "";
     const windowState = getChampionPredictionWindow(matches);
     if (!windowState.isOpen) return "";
     const existing = await loadChampionPredictionForParticipant(currentParticipant.id);
-    const options = windowState.teams.map((team) => `
-        <option value="${escapeHtml(team)}" ${existing?.predicted_team === team ? "selected" : ""}>${escapeHtml(team)}</option>
-    `).join("");
-    const saved = existing?.predicted_team
-        ? `<div class="champion-saved-note">✅ اختيارك الحالي: <strong>${escapeHtml(existing.predicted_team)}</strong></div>`
+    const selectedTeam = existing?.predicted_team || "";
+    const isLocked = Boolean(selectedTeam);
+    const teamCards = renderChampionPredictionTeamCards(windowState.teams, selectedTeam, isLocked);
+    const saved = isLocked
+        ? `<div class="champion-saved-note champion-saved-note-locked">✅ تم حفظ اختيارك: <strong>${escapeHtml(selectedTeam)}</strong><span>لا يمكن تعديل هذا التوقع بعد الحفظ.</span></div>`
         : "";
 
     return `
@@ -1683,21 +1729,17 @@ async function renderChampionPredictionAvailableBlock(matches) {
             <div class="champion-prediction-copy">
                 <p class="eyebrow">توقع خاص</p>
                 <h4>توقع بطل كأس العالم</h4>
-                <p>بعد نهاية ربع النهائي وقبل أول نصف نهائي، اختر من تتوقع أن يرفع الكأس من بين الأربعة المتأهلين.</p>
+                <p>اختر المنتخب الذي تتوقع أن يرفع الكأس من بين الأربعة المتأهلين.</p>
                 <div class="champion-rules-row">
                     <span>🏆 البطل الصحيح: ${CHAMPION_WINNER_POINTS} نقطة</span>
                     <span>🥈 إذا صار وصيفاً: ${CHAMPION_RUNNER_UP_POINTS} نقاط</span>
-                    <span>⚽ نصف النهائي والمركز الثالث: 100 نقطة بالملّي</span>
-                    <span>🔥 النهائي: 200 نقطة بالملّي</span>
                 </div>
                 ${saved}
             </div>
             <div class="champion-prediction-action">
-                <select id="championPredictionSelect" class="champion-prediction-select">
-                    <option value="">اختر البطل</option>
-                    ${options}
-                </select>
-                <button onclick="saveChampionPrediction()">حفظ توقع البطل</button>
+                <input id="championPredictionSelect" type="hidden" value="${escapeHtml(selectedTeam)}" data-locked="${isLocked ? "true" : "false"}" />
+                ${teamCards}
+                ${isLocked ? "" : `<button class="champion-save-btn" onclick="saveChampionPrediction()">حفظ توقع البطل</button>`}
             </div>
         </section>
     `;
@@ -2266,6 +2308,24 @@ function renderAvailableStageHeader(stage, matchCount) {
     `;
 }
 
+function renderAvailableMatchScoringRule(stage) {
+    const exactPoints = getExactScorePointsForStage(stage);
+    if (exactPoints <= 50) return "";
+
+    const label = stage === "FINAL"
+        ? "بالملّي في النهائي"
+        : stage === "THIRD_PLACE"
+            ? "بالملّي في المركز الثالث"
+            : "بالملّي في نصف النهائي";
+
+    return `
+        <div class="available-match-scoring-rule">
+            <span>${stage === "FINAL" ? "🔥" : "⚽"} ${label}: <strong>${exactPoints}</strong> نقطة</span>
+            <span>✅ الاتجاه الصحيح: <strong>10</strong> نقاط</span>
+        </div>
+    `;
+}
+
 function renderAvailableMatchCard(match, existingPrediction) {
     const stage = getPredictionStage(match);
     const meta = getStageThemeMeta(stage);
@@ -2307,6 +2367,8 @@ function renderAvailableMatchCard(match, existingPrediction) {
             <p class="kickoff">
                 وقت المباراة: ${new Date(match.kickoff_at).toLocaleString("ar-SA")}
             </p>
+
+            ${renderAvailableMatchScoringRule(stage)}
 
             ${savedPredictionHtml}
 
@@ -4352,16 +4414,12 @@ async function renderSeasonRecapPage() {
 }
 
 function renderClosingLockedUntilFinal(recap = null) {
-    const completed = recap?.seasonStats?.completedMatches || 0;
-    const total = recap?.seasonStats?.expectedMatches || EXPECTED_WORLD_CUP_MATCH_COUNT;
-    const remaining = Math.max(0, total - completed);
     return `
         <section class="season-thanks-card season-thanks-card-final season-thanks-card-locked season-thanks-card-pending">
             <div class="season-thanks-icon" aria-hidden="true">🔒</div>
             <p class="eyebrow">صفحة مؤجلة</p>
-            <h2>تفتح بعد نهاية البطولة</h2>
-            <p>هذه الصفحة محفوظة إلى أن تكتمل آخر نتيجة. حتى ذلك الوقت، تابعوا التوقعات، الترتيب، والأضواء.</p>
-            <p>${remaining > 0 ? `المتبقي: ${remaining} مباريات.` : "ننتظر تثبيت النتائج النهائية."}</p>
+            <h2>قريباً</h2>
+            <p>هذه الصفحة غير متاحة حالياً. سنفتحها في وقتها.</p>
         </section>
     `;
 }

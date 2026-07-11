@@ -9716,3 +9716,178 @@ body.site-stage-theme #availableMatches .available-stage-card.match-card-predict
         border-radius: 18px !important;
     }
 }
+
+/* ===============================
+   V39.0 champion card visual choice + match scoring rules
+   =============================== */
+.champion-prediction-card {
+    grid-template-columns: minmax(0, 0.9fr) minmax(320px, 1.1fr) !important;
+    align-items: stretch !important;
+}
+
+.champion-prediction-action {
+    align-self: stretch !important;
+    display: grid !important;
+    gap: 14px !important;
+}
+
+.champion-team-card-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+}
+
+.champion-team-card {
+    position: relative;
+    min-height: 74px;
+    display: grid;
+    grid-template-columns: 42px minmax(0, 1fr) 26px;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 14px;
+    border-radius: 22px;
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    background:
+        linear-gradient(135deg, rgba(255, 255, 255, 0.13), rgba(255, 255, 255, 0.055));
+    color: #fff7df;
+    text-align: start;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+    cursor: pointer;
+    transition: transform 0.16s ease, border-color 0.16s ease, background 0.16s ease, box-shadow 0.16s ease;
+}
+
+.champion-team-card:hover,
+.champion-team-card:focus-visible {
+    transform: translateY(-2px);
+    border-color: rgba(246, 211, 122, 0.62);
+    background:
+        radial-gradient(circle at top left, rgba(246, 211, 122, 0.20), transparent 45%),
+        linear-gradient(135deg, rgba(255, 255, 255, 0.17), rgba(255, 255, 255, 0.07));
+    box-shadow: 0 14px 32px rgba(0, 0, 0, 0.22);
+}
+
+.champion-team-card-selected {
+    border-color: rgba(246, 211, 122, 0.92) !important;
+    background:
+        radial-gradient(circle at top right, rgba(255, 224, 134, 0.28), transparent 45%),
+        linear-gradient(135deg, rgba(246, 211, 122, 0.22), rgba(255, 255, 255, 0.075)) !important;
+    box-shadow: 0 16px 36px rgba(0, 0, 0, 0.26), inset 0 0 0 1px rgba(255, 255, 255, 0.12) !important;
+}
+
+.champion-team-card-locked {
+    cursor: default;
+    opacity: 0.72;
+}
+
+.champion-team-card-locked.champion-team-card-selected {
+    opacity: 1;
+}
+
+.champion-team-flag {
+    width: 42px;
+    height: 42px;
+    display: grid;
+    place-items: center;
+    border-radius: 16px;
+    background: rgba(255, 255, 255, 0.13);
+    font-size: 1.35rem;
+    overflow: hidden;
+}
+
+.champion-team-flag .team-flag,
+.champion-team-flag img {
+    max-width: 30px;
+    max-height: 30px;
+}
+
+.champion-team-card strong {
+    min-width: 0;
+    font-size: clamp(15px, 1.25vw, 18px);
+    line-height: 1.35;
+    color: #fff2bf;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.champion-team-check {
+    width: 26px;
+    height: 26px;
+    display: grid;
+    place-items: center;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.12);
+    color: transparent;
+    font-weight: 900;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.champion-team-card-selected .champion-team-check {
+    color: #1b2e34;
+    background: #ffe28a;
+    border-color: rgba(255, 255, 255, 0.34);
+}
+
+.champion-save-btn {
+    min-height: 48px;
+    border-radius: 18px;
+    font-weight: 900;
+}
+
+.champion-saved-note-locked {
+    display: inline-grid;
+    gap: 3px;
+    padding: 10px 13px;
+    border-radius: 18px;
+    background: rgba(255, 255, 255, 0.10);
+    border: 1px solid rgba(255, 255, 255, 0.14);
+}
+
+.champion-saved-note-locked span {
+    font-size: 0.82rem;
+    color: rgba(247, 241, 227, 0.78);
+}
+
+.available-match-scoring-rule {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    justify-content: center;
+    margin: 12px 0 4px;
+}
+
+.available-match-scoring-rule span {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    min-height: 32px;
+    padding: 7px 11px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.105);
+    border: 1px solid rgba(246, 211, 122, 0.18);
+    color: rgba(255, 249, 232, 0.92);
+    font-size: 0.82rem;
+    line-height: 1.35;
+}
+
+.available-match-scoring-rule strong {
+    color: #fff2bf;
+    font-weight: 950;
+}
+
+@media (max-width: 900px) {
+    .champion-prediction-card {
+        grid-template-columns: 1fr !important;
+    }
+}
+
+@media (max-width: 560px) {
+    .champion-team-card-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .champion-team-card {
+        min-height: 66px;
+    }
+}
