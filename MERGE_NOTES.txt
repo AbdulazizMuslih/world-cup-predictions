@@ -4,9 +4,26 @@ Included:
 - v39 final UI sections: highlights, statistics/badges, profile, closing, about/contact
 - v39 final AI generator + event notes scripts/workflows
 - latest available v38 sync-results/workflows from uploaded files
-- release version set to 38.10.0 in app.js and version.json
+- release version set to 39.0 in app.js and version.json
 
 Important:
 - This package is built from the latest files available in this chat/container.
 - Apply it on branch before-merging, then run node --check commands and test locally.
 - Next patch should handle final-extra-points and scheduled backend AI/event-notes automation.
+
+
+V39.0 champion prediction correction:
+- The uploaded v39.0 files are the source of truth.
+- The champion card always shows a clear save action while the prediction window is open.
+- A participant selects one semifinalist, then explicitly clicks "حفظ توقع البطل".
+- The save button is disabled until a team is selected.
+- After saving, the card shows an inline saved confirmation and a disabled saved-state button.
+- The prediction is locked after saving.
+- The save function re-checks the first semifinal kickoff before inserting.
+- The entire champion prediction card disappears for everyone at the exact kickoff of the first semifinal.
+
+Additional correction:
+- loadAvailableMatches now reads all fixture rows so completed quarterfinal winners can populate the champion choices.
+- Normal score-prediction cards remain restricted to scheduled matches.
+- An exact kickoff timer refreshes the participant view when the first semifinal starts.
+- Run champion-prediction-cutoff.sql once in Supabase to enforce the deadline and one-time lock at the database layer.

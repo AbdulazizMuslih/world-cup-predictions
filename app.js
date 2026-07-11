@@ -76,6 +76,7 @@ let currentTabName = "available";
 let tabHistory = [];
 let allowLeavingPage = false;
 let dashboardRefreshTimer = null;
+let championPredictionCutoffTimer = null;
 
 const APP_VERSION = "39.0";
 const PREDICTION_OPEN_HOURS = 72;
@@ -537,6 +538,7 @@ logoutBtn.addEventListener("click", () => {
     isAdminMode = false;
     updateMenuProfileCard();
     stopDashboardAutoRefresh();
+    clearChampionPredictionCutoffTimer();
 
     localStorage.removeItem("wcParticipant");
     localStorage.removeItem("wcAdminMode");
@@ -1565,6 +1567,38 @@ function calculateChampionPredictionPoints(predictedTeam, championResult) {
     return 0;
 }
 
+function clearChampionPredictionCutoffTimer() {
+    if (championPredictionCutoffTimer) {
+        clearTimeout(championPredictionCutoffTimer);
+        championPredictionCutoffTimer = null;
+    }
+}
+
+function scheduleChampionPredictionCutoff(firstSemiKickoff) {
+    clearChampionPredictionCutoffTimer();
+
+    if (!firstSemiKickoff) return;
+
+    const cutoffTime = new Date(firstSemiKickoff).getTime();
+    const delay = cutoffTime - Date.now();
+
+    if (!Number.isFinite(delay) || delay <= 0) return;
+
+    championPredictionCutoffTimer = setTimeout(async () => {
+        championPredictionCutoffTimer = null;
+
+        try {
+            await loadAvailableMatches();
+
+            if (currentParticipant) {
+                await loadMyPredictions();
+            }
+        } catch (error) {
+            console.error("Champion prediction cutoff refresh failed:", error);
+        }
+    }, Math.min(delay + 250, 2_147_000_000));
+}
+
 function getChampionPredictionResult(matches = []) {
     const finalMatch = [...matches]
         .filter((match) => getPredictionStage(match) === "FINAL" && hasActualScore(match))
@@ -1619,15 +1653,69 @@ async function loadChampionPredictionForParticipant(participantId) {
 
 async function saveChampionPrediction() {
     if (!currentParticipant) return;
+
     const select = document.getElementById("championPredictionSelect");
-    if (!select || !select.value) {
-        alert("اختر المنتخب المرشح للفوز بكأس العالم.");
+    const saveButton = document.getElementById("championPredictionSaveBtn");
+    const message = document.getElementById("championPredictionMessage");
+    const selectedTeam = String(select?.value || "").trim();
+
+    if (!selectedTeam) {
+        if (message) {
+            message.textContent = "اختر منتخباً أولاً، ثم اضغط حفظ التوقع.";
+            message.className = "champion-prediction-message champion-prediction-message-warning";
+        }
+        return;
+    }
+
+    if (saveButton) {
+        saveButton.disabled = true;
+        saveButton.textContent = "جاري الحفظ...";
+    }
+
+    if (message) {
+        message.textContent = "جاري التحقق من وقت الإغلاق وحفظ توقعك...";
+        message.className = "champion-prediction-message champion-prediction-message-pending";
+    }
+
+    const { data: windowMatches, error: matchesError } = await db
+        .from("matches")
+        .select("id, team1, team2, kickoff_at, stage, winner_side, actual_team1_goals, actual_team2_goals")
+        .in("stage", ["QUARTER_FINALS", "SEMI_FINALS"])
+        .order("kickoff_at", { ascending: true });
+
+    if (matchesError) {
+        console.error(matchesError);
+        if (message) {
+            message.textContent = "تعذر التحقق من وقت الإغلاق. حاول مرة أخرى.";
+            message.className = "champion-prediction-message champion-prediction-message-error";
+        }
+        if (saveButton) {
+            saveButton.disabled = false;
+            saveButton.textContent = "حفظ توقع البطل";
+        }
+        return;
+    }
+
+    const windowState = getChampionPredictionWindow(windowMatches || []);
+    const selectedTeamIsEligible = windowState.teams.some(
+        (team) => normalizeTeamName(team) === normalizeTeamName(selectedTeam)
+    );
+
+    if (!windowState.isOpen || !selectedTeamIsEligible) {
+        if (message) {
+            message.textContent = "انتهى وقت توقع البطل مع بداية أول مباراة في نصف النهائي.";
+            message.className = "champion-prediction-message champion-prediction-message-error";
+        }
+        await loadAvailableMatches();
         return;
     }
 
     const existing = await loadChampionPredictionForParticipant(currentParticipant.id);
     if (existing?.predicted_team) {
-        alert("تم حفظ توقع بطل كأس العالم سابقاً ولا يمكن تعديله.");
+        if (message) {
+            message.textContent = `تم حفظ اختيارك سابقاً: ${existing.predicted_team}`;
+            message.className = "champion-prediction-message champion-prediction-message-success";
+        }
         await loadAvailableMatches();
         await loadMyPredictions();
         return;
@@ -1635,19 +1723,39 @@ async function saveChampionPrediction() {
 
     const { error } = await db
         .from(CHAMPION_PREDICTIONS_TABLE)
-        .upsert({
+        .insert({
             participant_id: currentParticipant.id,
-            predicted_team: select.value,
+            predicted_team: selectedTeam,
             updated_at: new Date().toISOString()
-        }, { onConflict: "participant_id" });
+        });
 
     if (error) {
         console.error(error);
-        alert("تعذر حفظ توقع بطل كأس العالم. تأكد من تشغيل ملف SQL الخاص بتوقع البطل.");
+
+        const savedAfterError = await loadChampionPredictionForParticipant(currentParticipant.id);
+        if (savedAfterError?.predicted_team) {
+            await loadAvailableMatches();
+            await loadMyPredictions();
+            return;
+        }
+
+        if (message) {
+            message.textContent = "تعذر حفظ توقع بطل كأس العالم. حاول مرة أخرى.";
+            message.className = "champion-prediction-message champion-prediction-message-error";
+        }
+
+        if (saveButton) {
+            saveButton.disabled = false;
+            saveButton.textContent = "حفظ توقع البطل";
+        }
         return;
     }
 
-    alert("تم حفظ توقع بطل كأس العالم!");
+    if (message) {
+        message.textContent = `✅ تم حفظ توقعك: ${selectedTeam}`;
+        message.className = "champion-prediction-message champion-prediction-message-success";
+    }
+
     await loadAvailableMatches();
     await loadMyPredictions();
 }
@@ -1705,17 +1813,43 @@ function selectChampionPredictionTeam(team) {
     if (!input || input.dataset.locked === "true") return;
 
     input.value = team || "";
+
     document.querySelectorAll("[data-champion-team-card]").forEach((card) => {
         const isSelected = normalizeTeamName(card.dataset.team || "") === normalizeTeamName(team || "");
         card.classList.toggle("champion-team-card-selected", isSelected);
         card.setAttribute("aria-pressed", isSelected ? "true" : "false");
     });
+
+    const saveButton = document.getElementById("championPredictionSaveBtn");
+    const message = document.getElementById("championPredictionMessage");
+
+    if (saveButton) {
+        saveButton.disabled = !team;
+        saveButton.textContent = "حفظ توقع البطل";
+    }
+
+    if (message) {
+        message.textContent = team
+            ? `اختيارك: ${team}. اضغط حفظ التوقع لتأكيده.`
+            : "اختر منتخباً أولاً، ثم اضغط حفظ التوقع.";
+        message.className = "champion-prediction-message";
+    }
 }
 
 async function renderChampionPredictionAvailableBlock(matches) {
     if (!currentParticipant) return "";
+
     const windowState = getChampionPredictionWindow(matches);
-    if (!windowState.isOpen) return "";
+
+    // The entire special card disappears for everyone at the exact kickoff
+    // of the first semifinal, whether they predicted or not.
+    if (!windowState.isOpen) {
+        clearChampionPredictionCutoffTimer();
+        return "";
+    }
+
+    scheduleChampionPredictionCutoff(windowState.firstSemiKickoff);
+
     const existing = await loadChampionPredictionForParticipant(currentParticipant.id);
     const selectedTeam = existing?.predicted_team || "";
     const isLocked = Boolean(selectedTeam);
@@ -1723,6 +1857,9 @@ async function renderChampionPredictionAvailableBlock(matches) {
     const saved = isLocked
         ? `<div class="champion-saved-note champion-saved-note-locked">✅ تم حفظ اختيارك: <strong>${escapeHtml(selectedTeam)}</strong><span>لا يمكن تعديل هذا التوقع بعد الحفظ.</span></div>`
         : "";
+    const messageText = isLocked
+        ? `✅ تم حفظ توقعك: ${selectedTeam}`
+        : "اختر منتخباً أولاً، ثم اضغط حفظ التوقع.";
 
     return `
         <section class="champion-prediction-card champion-prediction-card-live">
@@ -1736,10 +1873,32 @@ async function renderChampionPredictionAvailableBlock(matches) {
                 </div>
                 ${saved}
             </div>
+
             <div class="champion-prediction-action">
-                <input id="championPredictionSelect" type="hidden" value="${escapeHtml(selectedTeam)}" data-locked="${isLocked ? "true" : "false"}" />
+                <input
+                    id="championPredictionSelect"
+                    type="hidden"
+                    value="${escapeHtml(selectedTeam)}"
+                    data-locked="${isLocked ? "true" : "false"}"
+                />
+
                 ${teamCards}
-                ${isLocked ? "" : `<button class="champion-save-btn" onclick="saveChampionPrediction()">حفظ توقع البطل</button>`}
+
+                <p
+                    id="championPredictionMessage"
+                    class="champion-prediction-message ${isLocked ? "champion-prediction-message-success" : ""}"
+                    aria-live="polite"
+                >${escapeHtml(messageText)}</p>
+
+                <button
+                    id="championPredictionSaveBtn"
+                    class="champion-save-btn ${isLocked ? "champion-save-btn-saved" : ""}"
+                    type="button"
+                    onclick="saveChampionPrediction()"
+                    ${isLocked || !selectedTeam ? "disabled" : ""}
+                >
+                    ${isLocked ? "✓ تم حفظ توقع البطل" : "حفظ توقع البطل"}
+                </button>
             </div>
         </section>
     `;
@@ -1776,7 +1935,6 @@ async function loadAvailableMatches() {
     const { data: matches, error } = await db
         .from("matches")
         .select("*")
-        .eq("status", "scheduled")
         .order("kickoff_at");
 
     if (error) {
@@ -1786,7 +1944,7 @@ async function loadAvailableMatches() {
     }
 
     const openMatches = matches
-        .filter((match) => isAvailable(match.kickoff_at))
+        .filter((match) => match.status === "scheduled" && isAvailable(match.kickoff_at))
         .sort((a, b) => new Date(a.kickoff_at).getTime() - new Date(b.kickoff_at).getTime());
 
     await loadSiteStageThemeFromTournamentProgress();

@@ -9891,3 +9891,74 @@ body.site-stage-theme #availableMatches .available-stage-card.match-card-predict
         min-height: 66px;
     }
 }
+
+
+/* ===============================
+   V39.0 champion prediction save action correction
+   =============================== */
+.champion-save-btn {
+    width: 100%;
+    min-height: 54px !important;
+    margin-top: 2px;
+    border-radius: 18px !important;
+    font-size: 1rem;
+    font-weight: 1000 !important;
+    box-shadow: 0 14px 30px rgba(246, 211, 122, 0.20);
+}
+
+.champion-save-btn:not(:disabled) {
+    background: linear-gradient(135deg, #ffe7a4, #d8a94d) !important;
+    color: #121827 !important;
+}
+
+.champion-save-btn:disabled {
+    cursor: not-allowed;
+    transform: none !important;
+    filter: none !important;
+    opacity: 0.58;
+    background: rgba(255, 255, 255, 0.10) !important;
+    color: rgba(255, 249, 232, 0.68) !important;
+    box-shadow: none;
+}
+
+.champion-save-btn-saved:disabled {
+    opacity: 1;
+    background: linear-gradient(135deg, rgba(52, 214, 189, 0.92), rgba(24, 154, 132, 0.94)) !important;
+    color: #071a1b !important;
+    border: 1px solid rgba(255, 255, 255, 0.20);
+}
+
+.champion-prediction-message {
+    min-height: 24px;
+    margin: 0;
+    padding: 0 4px;
+    color: rgba(247, 241, 227, 0.76);
+    font-size: 0.88rem;
+    line-height: 1.55;
+    text-align: center;
+}
+
+.champion-prediction-message-pending {
+    color: #ffe7a4;
+}
+
+.champion-prediction-message-warning {
+    color: #ffd27d;
+}
+
+.champion-prediction-message-error {
+    color: #ffb4b4;
+}
+
+.champion-prediction-message-success {
+    color: #8ff1df;
+    font-weight: 900;
+}
+
+@media (max-width: 760px) {
+    .champion-save-btn {
+        position: sticky;
+        bottom: 10px;
+        z-index: 3;
+    }
+}
