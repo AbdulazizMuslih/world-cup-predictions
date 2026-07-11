@@ -28,8 +28,8 @@ const OPENROUTER_FALLBACK_MODELS = (process.env.OPENROUTER_FALLBACK_MODELS || ""
 const OPENROUTER_USE_FALLBACK_MODELS = String(process.env.OPENROUTER_USE_FALLBACK_MODELS || "false").toLowerCase() === "true";
 const OPENROUTER_HTTP_REFERER = process.env.OPENROUTER_HTTP_REFERER || process.env.SITE_URL || "";
 const OPENROUTER_APP_TITLE = process.env.OPENROUTER_APP_TITLE || "World Cup 2026 Predictions";
-const AI_RESPONSE_FORMAT = String(process.env.AI_RESPONSE_FORMAT || "true").toLowerCase() !== "false";
-const AI_TEMPERATURE = Number(process.env.AI_TEMPERATURE || 0.35);
+const AI_RESPONSE_FORMAT = String(process.env.AI_RESPONSE_FORMAT || (USING_OPENROUTER ? "false" : "true")).toLowerCase() !== "false";
+const AI_TEMPERATURE = Number(process.env.AI_TEMPERATURE || 0.62);
 const AI_MAX_TOKENS = Number(process.env.AI_MAX_TOKENS || 9000);
 const AI_REQUEST_RETRIES = Math.max(1, Number(process.env.AI_REQUEST_RETRIES || 4));
 const AI_RETRY_BASE_DELAY_MS = Math.max(500, Number(process.env.AI_RETRY_BASE_DELAY_MS || 3500));
@@ -53,6 +53,14 @@ const AI_CONTINUE_ON_BATCH_FAILURE = String(process.env.AI_CONTINUE_ON_BATCH_FAI
 const AI_MAX_FAILED_BATCHES = Math.max(0, Number(process.env.AI_MAX_FAILED_BATCHES || 2));
 const AI_MIN_HIGHLIGHTS_FOR_PARTIAL_INSERT = Math.max(1, Number(process.env.AI_MIN_HIGHLIGHTS_FOR_PARTIAL_INSERT || 20));
 const AI_DISABLE_REPAIR_CALL = String(process.env.AI_DISABLE_REPAIR_CALL || (USING_OPENROUTER ? "true" : "false")).toLowerCase() === "true";
+const AI_USE_EVENT_ONLY_BATCHES = String(process.env.AI_USE_EVENT_ONLY_BATCHES || "false").toLowerCase() === "true";
+const AI_ENABLE_FILL_MATCHES = String(process.env.AI_ENABLE_FILL_MATCHES || "false").toLowerCase() === "true";
+const AI_REQUIRE_CONTEST_SIGNAL = String(process.env.AI_REQUIRE_CONTEST_SIGNAL || "true").toLowerCase() !== "false";
+const AI_ENABLE_CONTEST_MOMENT_BATCHES = String(process.env.AI_ENABLE_CONTEST_MOMENT_BATCHES || "false").toLowerCase() === "true";
+const AI_INSERT_PARTIAL_ANY_STORY_COUNT = String(process.env.AI_INSERT_PARTIAL_ANY_STORY_COUNT || "false").toLowerCase() === "true";
+const AI_STORY_SEED_BATCH_SIZE = Math.max(8, Math.min(28, Number(process.env.AI_STORY_SEED_BATCH_SIZE || 14)));
+const AI_POST_TITLE_MAX_CHARS = Math.max(90, Math.min(170, Number(process.env.AI_POST_TITLE_MAX_CHARS || 140)));
+const AI_POST_BODY_MAX_CHARS = Math.max(700, Math.min(1600, Number(process.env.AI_POST_BODY_MAX_CHARS || 1250)));
 
 const EXPECTED_WORLD_CUP_MATCH_COUNT = Number(process.env.EXPECTED_WORLD_CUP_MATCH_COUNT || 104);
 const ALLOW_FINAL_PREVIEW = String(process.env.ALLOW_FINAL_PREVIEW || "false").toLowerCase() === "true";
@@ -73,7 +81,7 @@ const POSTS_TABLE = "ai_posts";
 const EVENT_NOTES_TABLE = "final_event_notes";
 const FINAL_HIGHLIGHTS_SECTION = "final_highlights";
 const FINAL_PROFILE_SECTION = "final_profile";
-const GENERATOR_VERSION = "wc-final-recap-gemini-v2-event-notes";
+const GENERATOR_VERSION = "wc-final-recap-story-seeds-v7-highlight-types";
 
 const FEMALE_NAMES = new Set([
     "منار",
@@ -117,6 +125,13 @@ async function main() {
         maxEventNotesForAi: MAX_EVENT_NOTES_FOR_AI,
         aiFallbackOnFailure: AI_FALLBACK_ON_FAILURE,
         aiBatchGeneration: AI_BATCH_GENERATION,
+        aiUseEventOnlyBatches: AI_USE_EVENT_ONLY_BATCHES,
+        aiEnableFillMatches: AI_ENABLE_FILL_MATCHES,
+        aiRequireContestSignal: AI_REQUIRE_CONTEST_SIGNAL,
+        aiEnableContestMomentBatches: AI_ENABLE_CONTEST_MOMENT_BATCHES,
+        aiInsertPartialAnyStoryCount: AI_INSERT_PARTIAL_ANY_STORY_COUNT,
+        aiStorySeedBatchSize: AI_STORY_SEED_BATCH_SIZE,
+        aiPostBodyMaxChars: AI_POST_BODY_MAX_CHARS,
         aiProvider: AI_PROVIDER,
         aiBaseUrl: AI_BASE_URL,
         aiModel: AI_MODEL,
@@ -450,19 +465,30 @@ async function buildFactsPack() {
             stages: stageFacts,
             matches: matchFacts.map(publicMatchFact),
             eventNotes: approvedEventNotes.map((note) => publicEventNote(note, allMatches)),
-            candidateHighlights: factHighlights
+            candidateHighlights: factHighlights,
+            integratedStorySeeds: buildIntegratedStorySeeds({
+                rankedParticipants,
+                matchFacts,
+                stageFacts,
+                activeParticipants,
+                approvedEventNotes,
+                allMatches
+            })
         },
         strictRules: [
             "اكتب بالعربية فقط.",
             "لا تخترع نتائج أو بطاقات حمراء أو هوشات أو أحداث كرة قدم غير موجودة حرفياً في eventNotes أو match facts.",
             "أي منشور عن حدث كروي حقيقي يجب أن يعتمد على eventNotes فقط، ويفضل ذكر source_note_id في source_fact.",
             "eventNotes قد تكون approved=true أو من مصدر موثوق مثل Football-Data/API-Football/GDELT حسب إعدادات السكربت، فلا تستخدم شيئاً خارجها.",
-            "الأضواء ليست شارات. اكتبها كمنشورات/لقطات timeline ممتعة، حزينة، فخورة، مثيرة للجدل، حماسية، أو مفاجئة.",
+            "الأضواء ليست شارات وليست نتائج مباريات. اكتبها كمنشورات timeline ممتعة تربط المباراة بأثرها داخل مسابقة التوقعات.",
+            "ابدأ من القصة: من قرأها؟ من استفاد؟ من انصدم؟ ما الذي تغير في الجو؟ ثم اذكر نتيجة المباراة كخلفية فقط.",
             "لا تجعل القصة عن البطل فقط. كل مشارك نشط يجب أن يظهر مرة واحدة على الأقل في الأضواء.",
             "لا تفضح قلة المشاركة ولا تسخر من أحد.",
             "استخدم ضمائر صحيحة للأسماء النسائية المذكورة في participantLanguage.",
-            "كل منشور: عنوان قصير جداً + وصف قصير. لا مقالات.",
-            "إذا لم توجد معلومة كافية عن حدث كروي خارجي، تجاهله ولا تخترعه."
+            "لا تستخدم عبارات صحفية عامة مثل الجمهور كان متحمساً أو تداولت الأحاديث، ولا تتكلم عن جمهور غير موجود في البيانات.",
+            "نتيجة بالملّي = 50 نقطة، والاتجاه الصحيح فقط = 10 نقاط. لا تخترع نقاطاً إضافية.",
+            "كل منشور: عنوان قصصي واضح + وصف فيه 3 إلى 6 جمل قصيرة. لا مقالات طويلة ولا كروت صغيرة.",
+            "إذا لم توجد معلومة كافية عن حدث كروي خارجي، تجاهله ولا تخترعه وركز على قصة المسابقة."
         ]
     };
 }
@@ -581,6 +607,12 @@ function buildMatchFacts(matches, predictionsByMatch, participantMap, participan
             stage: match.stage || "GROUP_STAGE",
             kickoff_at: match.kickoff_at,
             score,
+            score_duration: match.score_duration || null,
+            winner_side: match.winner_side || null,
+            totalGoals: Number(match.actual_team1_goals) + Number(match.actual_team2_goals),
+            goalDifference: Math.abs(Number(match.actual_team1_goals) - Number(match.actual_team2_goals)),
+            isDrawScore: Number(match.actual_team1_goals) === Number(match.actual_team2_goals),
+            isKnockout: (match.stage || "GROUP_STAGE") !== "GROUP_STAGE",
             predictions: rows.length,
             missing: Math.max(0, participantCount - rows.length),
             coveragePercent: percent(rows.length, participantCount),
@@ -616,6 +648,442 @@ function buildStageFacts(matches, matchFacts, participantCount) {
             hardestMatch: rows.sort((a, b) => b.zeroOrMissingPercent - a.zeroOrMissingPercent)[0]?.title || null
         };
     }).sort((a, b) => stageOrder(a.stage) - stageOrder(b.stage));
+}
+
+
+function buildIntegratedStorySeeds({ rankedParticipants, matchFacts, stageFacts, activeParticipants, approvedEventNotes, allMatches }) {
+    const notesByMatch = groupBy(approvedEventNotes.filter((note) => note.match_id), "match_id");
+    const candidates = [];
+    const seen = new Set();
+
+    const usefulNotesForMatch = (match) => (notesByMatch.get(match.id) || [])
+        .filter(isNarrativeEventNote)
+        .sort((a, b) => eventNotePriority(b) - eventNotePriority(a))
+        .slice(0, 3)
+        .map((note) => publicEventNote(note, allMatches));
+
+    const addCandidate = (seed) => {
+        const key = [seed.type, seed.match?.id || seed.participant?.name || seed.stage?.stage || seed.title].join("|");
+        if (seen.has(key)) return;
+        if (seed.match && !isStoryWorthyMatch(seed.match, seed.verified_event_context || [])) return;
+        seen.add(key);
+        candidates.push(seed);
+    };
+
+    const leaderboardContext = rankedParticipants.slice(0, 6).map((row) => `${row.rank}. ${row.name} (${row.points} نقطة)`).join("، ");
+
+    for (const stage of stageFacts) {
+        const isMajorStage = ["GROUP_STAGE", "LAST_32", "LAST_16", "QUARTER_FINALS", "SEMI_FINALS", "FINAL"].includes(stage.stage);
+        if (!isMajorStage) continue;
+        addCandidate({
+            type: "stage_mood",
+            priority: 88 - stageOrder(stage.stage),
+            title: `${stage.label_ar}: مزاج المرحلة`,
+            stage,
+            post_blueprint: {
+                kind: "stage_mood",
+                hook_style: "افتحها كصفحة من يوميات المسابقة، لا كملخص أرقام.",
+                mood: buildStageEmotion(stage),
+                story_question: "كيف كان شعور المرحلة على المشاركين: سخية، قاسية، مخادعة، أم فاتحة للشهية؟",
+                must_include_facts: compactFacts([
+                    `${stage.matches} مباراة في ${stage.label_ar}`,
+                    `${stage.exactCount} نتيجة بالملّي في المرحلة`,
+                    `${stage.awardedPoints} نقطة موزعة في المرحلة`,
+                    stage.bestMatch ? `مباراة فتحت نقاطاً كثيرة: ${stage.bestMatch}` : null,
+                    stage.hardestMatch ? `مباراة قاسية على التوقعات: ${stage.hardestMatch}` : null,
+                    leaderboardContext ? `صورة الصدارة وقت الكتابة: ${leaderboardContext}` : null
+                ]),
+                avoid: COMMON_STORY_AVOID_LIST
+            },
+            required_participant_names: rankedParticipants.slice(0, 3).map((row) => row.name),
+            verified_event_context: [],
+            writing_angle: "اكتب منشور مرحلة ممتع؛ الأرقام تظهر كتوابل للقصة فقط."
+        });
+    }
+
+    const sortedMatches = [...matchFacts].sort((a, b) => scoreStoryCandidate(b, usefulNotesForMatch(b)) - scoreStoryCandidate(a, usefulNotesForMatch(a)));
+
+    for (const match of sortedMatches.slice(0, 104)) {
+        const notes = usefulNotesForMatch(match);
+        const worldCupContext = buildWorldCupContext(match, notes);
+        const storyTypes = classifyMatchStoryTypes(match, notes, worldCupContext);
+        if (!storyTypes.length) continue;
+
+        for (const storyType of storyTypes.slice(0, 2)) {
+            const names = namesForStoryType(match, storyType).slice(0, 5);
+            const story = buildStoryTypeBlueprint(match, storyType, names, worldCupContext);
+
+            addCandidate({
+                type: storyType,
+                priority: scoreStoryCandidate(match, notes) + story.priorityBoost,
+                title: story.seedTitle,
+                match: publicMatchFact(match),
+                verified_event_context: [...worldCupContext, ...notes].slice(0, 4),
+                post_blueprint: {
+                    kind: storyType,
+                    hook_style: story.hookStyle,
+                    mood: story.mood,
+                    story_question: story.question,
+                    why_it_matters: story.reasons,
+                    must_include_facts: compactFacts([
+                        `المباراة: ${match.title} (${getStageLabel(match.stage)})، النتيجة ${match.score}. اذكرها مرة واحدة فقط داخل النص ولا تبدأ بها.`,
+                        match.exactCount > 0 ? `${match.exactCount} نتيجة بالملّي = 50 نقطة لكل نتيجة بالملّي` : null,
+                        match.exactNames.length ? `أسماء بالملّي: ${match.exactNames.slice(0, 5).join("، ")}` : null,
+                        match.correctCount > 0 ? `${match.correctCount} توقع صحيح للاتجاه = 10 نقاط لكل توقع صحيح` : null,
+                        names.length ? `أسماء محورية للقصة: ${names.join("، ")}` : null,
+                        match.awardedPoints >= 90 ? `${match.awardedPoints} نقطة وزعتها المباراة على المشاركين` : null,
+                        match.zeroOrMissingPercent >= 65 ? `${match.zeroOrMissingPercent}% خرجوا بلا نقاط أو بلا توقع؛ لا تسمّ أحداً منهم` : null,
+                        match.mostCommonPrediction && !match.mostCommonPrediction.wasActual ? `التوقع الأكثر تكراراً كان ${match.mostCommonPrediction.score} عند ${match.mostCommonPrediction.count} مشاركين، لكنه لم يطابق النتيجة` : null,
+                        story.specialFact
+                    ]),
+                    real_world_cup_context: worldCupContext,
+                    real_event_notes: notes,
+                    avoid: COMMON_STORY_AVOID_LIST
+                },
+                required_participant_names: names,
+                writing_angle: story.writingAngle
+            });
+        }
+    }
+
+    for (const participant of rankedParticipants) {
+        const lang = participantLanguageWords(participant.name, participant.gender);
+        const highlightBits = [];
+        if (participant.rank <= 3) highlightBits.push(participant.gender === "female" ? `ختمت في المركز ${participant.rank}` : `ختم في المركز ${participant.rank}`);
+        if (participant.points > 0) highlightBits.push(`${participant.points} نقطة`);
+        if (participant.exactScores > 0) highlightBits.push(`${participant.exactScores} نتيجة بالملّي`);
+        if (participant.correctPredictions > 0) highlightBits.push(`${participant.correctPredictions} توقع صحيح`);
+        if (participant.bestCorrectStreak > 1) highlightBits.push(`سلسلة صحيحة وصلت ${participant.bestCorrectStreak}`);
+        if (participant.bestStage) highlightBits.push(`أفضل مرحلة: ${participant.bestStage.label_ar} بـ${participant.bestStage.points} نقطة`);
+
+        addCandidate({
+            type: "participant_arc",
+            priority: 76 - Math.min(45, participant.rank),
+            participant,
+            title: `لقطة ${participant.name}`,
+            post_blueprint: {
+                kind: "participant_arc",
+                hook_style: `اكتب لقطة شخصية محترمة عن ${participant.name} كجزء من قصة المسابقة، لا كجائزة ولا ترتيب فقط.`,
+                mood: "لقطة شخصية خفيفة",
+                story_question: `ما الشيء الذي يميز حضور ${participant.name} في المسابقة؟`,
+                must_include_facts: [`${participant.name}: ${highlightBits.join("، ") || `${lang.wasPart} من القصة`}.`],
+                avoid: [...COMMON_STORY_AVOID_LIST, "لا تذكر الغياب", "لا تقل مشاركة قليلة", "لا تسخر"]
+            },
+            required_participant_names: [participant.name],
+            verified_event_context: [],
+            writing_angle: "اكتب لقطة إنسانية خفيفة، بالضمير الصحيح، وتجنب أسلوب بطاقة إنجاز."
+        });
+    }
+
+    const caps = {
+        real_event_plus_contest: 10,
+        knockout_pressure: 9,
+        popular_trap: 10,
+        lone_reader: 8,
+        exact_circle: 8,
+        points_swing: 8,
+        hard_stop: 8,
+        stage_mood: 5,
+        participant_arc: Math.max(8, Math.min(18, activeParticipants.length))
+    };
+    const typeCounts = new Map();
+
+    return candidates
+        .sort((a, b) => b.priority - a.priority || storyTypeOrder(a.type) - storyTypeOrder(b.type))
+        .filter((seed) => {
+            const count = typeCounts.get(seed.type) || 0;
+            const cap = caps[seed.type] || 6;
+            if (count >= cap) return false;
+            typeCounts.set(seed.type, count + 1);
+            return true;
+        })
+        .slice(0, 90);
+}
+
+const COMMON_STORY_AVOID_LIST = [
+    "لا تبدأ بالنتيجة ولا بجملة: عندما انتهت المباراة",
+    "لا تكتب: في مباراة كذا ضد كذا، حصل كذا",
+    "لا تكرر قالب: النتيجة + من حصل على نقاط + تغير الترتيب",
+    "لا تستخدم لهجة مصرية: كده، ما فيهاش، بيقرأوا، فارغين",
+    "لا تستخدم عبارات عامة: أعادت تشكيل المزاج، كشفت القراء الهادئين، الثقة العمياء، الجمهور كان متحمساً، تداولت الأحاديث",
+    "لا تجعلها خبر رياضي. اجعلها لقطة من مسابقة توقعات فيها روح وشخصيات",
+    "لا تخترع VAR أو طرد أو إصابة أو مشاجرة أو تصريحات إذا لم توجد في real_event_notes"
+];
+
+function compactFacts(items = []) {
+    return items.filter(Boolean).slice(0, 8);
+}
+
+function storyTypeOrder(type) {
+    const order = {
+        real_event_plus_contest: 1,
+        knockout_pressure: 2,
+        popular_trap: 3,
+        lone_reader: 4,
+        exact_circle: 5,
+        points_swing: 6,
+        hard_stop: 7,
+        stage_mood: 8,
+        participant_arc: 9
+    };
+    return order[type] || 99;
+}
+
+function isStoryWorthyMatch(match, notes = []) {
+    const hasNarrativeContext = notes.length > 0 || buildWorldCupContext(match, []).length > 0;
+    return hasNarrativeContext
+        || match.stage !== "GROUP_STAGE"
+        || match.exactCount >= 1
+        || match.awardedPoints >= 120
+        || match.zeroOrMissingPercent >= 70
+        || (match.mostCommonPrediction && !match.mostCommonPrediction.wasActual && match.mostCommonPrediction.count >= 3);
+}
+
+function scoreStoryCandidate(match, notes = []) {
+    const worldCupContext = buildWorldCupContext(match, notes);
+    return (
+        (worldCupContext.length ? 38 : 0) +
+        (notes.length ? 30 : 0) +
+        (match.stage !== "GROUP_STAGE" ? 24 : 0) +
+        (match.exactCount === 1 ? 26 : 0) +
+        (match.exactCount >= 2 ? Math.min(70, match.exactCount * 18) : 0) +
+        Math.min(55, match.awardedPoints / 6) +
+        (match.zeroOrMissingPercent >= 70 ? 24 : 0) +
+        (match.zeroOrMissingPercent >= 85 ? 22 : 0) +
+        (match.mostCommonPrediction && !match.mostCommonPrediction.wasActual ? 26 : 0) +
+        (match.uniqueCorrectNames.length > 0 ? 18 : 0) +
+        Math.max(0, 12 - stageOrder(match.stage))
+    );
+}
+
+function classifyMatchStoryTypes(match, notes = [], worldCupContext = []) {
+    const types = [];
+    if (worldCupContext.length || notes.length) types.push("real_event_plus_contest");
+    if (match.stage !== "GROUP_STAGE" && (match.exactCount > 0 || match.correctCount > 0 || match.zeroOrMissingPercent >= 65)) types.push("knockout_pressure");
+    if (match.mostCommonPrediction && !match.mostCommonPrediction.wasActual && match.mostCommonPrediction.count >= 3) types.push("popular_trap");
+    if (match.exactCount === 1 || (match.uniqueCorrectNames.length > 0 && match.zeroOrMissingPercent >= 72)) types.push("lone_reader");
+    if (match.exactCount >= 3) types.push("exact_circle");
+    if (match.awardedPoints >= 170) types.push("points_swing");
+    if (match.zeroOrMissingPercent >= 84) types.push("hard_stop");
+    return [...new Set(types)].slice(0, 3);
+}
+
+function namesForStoryType(match, type) {
+    if (type === "popular_trap" || type === "hard_stop") {
+        return [...new Set([...match.exactNames, ...match.uniqueCorrectNames, ...match.correctNames])].slice(0, 5);
+    }
+    if (type === "lone_reader") {
+        return [...new Set([...match.exactNames, ...match.uniqueCorrectNames])].slice(0, 4);
+    }
+    if (type === "exact_circle") return match.exactNames.slice(0, 5);
+    if (type === "points_swing") return [...new Set([...match.exactNames, ...match.correctNames])].slice(0, 5);
+    return [...new Set([...match.exactNames, ...match.uniqueCorrectNames, ...match.correctNames])].slice(0, 5);
+}
+
+function buildStoryTypeBlueprint(match, type, names = [], worldCupContext = []) {
+    const nameText = names.length ? names.join("، ") : "الأسماء التي قرأت اللحظة";
+    const popular = match.mostCommonPrediction;
+    const blueprints = {
+        real_event_plus_contest: {
+            seedTitle: "حين دخلت كرة القدم في دفتر التوقعات",
+            hookStyle: "افتح من الحدث الكروي الحقيقي، لكن اربطه فوراً بالمسابقة. لا تجعله تقرير مباراة.",
+            mood: "واقع الملعب لمس جدول التوقعات",
+            question: "كيف جعلت لقطة كروية موثقة التوقعات أكثر معنى؟",
+            reasons: ["فيها سياق كروي موثق أو إقصائي يمكن أن يعطي النص روحاً حقيقية", "الأثر داخل المسابقة أهم من النتيجة نفسها"],
+            specialFact: worldCupContext[0]?.details_ar || null,
+            writingAngle: "استخدم الحدث الكروي كخلفية سينمائية قصيرة، ثم انتقل للأسماء والنقاط والصدمة داخل المسابقة.",
+            priorityBoost: 22
+        },
+        knockout_pressure: {
+            seedTitle: "ضغط الإقصائيات لا يرحم التوقعات",
+            hookStyle: "افتح من ضغط المرحلة؛ كل توقع هنا أثقل لأن المباراة تقرّب منتخباً وتقصي آخر.",
+            mood: "توتر إقصائي",
+            question: "من تعامل مع ضغط المرحلة بهدوء؟ ومن استفاد من مباراة لا تشبه المجموعات؟",
+            reasons: [`جاءت في ${getStageLabel(match.stage)} حيث الخطأ أثقل من مباراة عادية`, names.length ? `${nameText} ظهروا في لحظة ضغط` : null].filter(Boolean),
+            specialFact: match.isDrawScore && match.winner_side ? "النتيجة الأصلية كانت تعادلاً في مباراة إقصائية، والحسم جاء بفائز بعد التعادل." : null,
+            writingAngle: "اكتبها كمنشور ضغط إقصائي: الجملة الأولى عن الثقل، لا عن النتيجة.",
+            priorityBoost: 18
+        },
+        popular_trap: {
+            seedTitle: "الفخ الذي دخلته الأغلبية",
+            hookStyle: "افتح من فكرة التوقع المريح الذي أغرى أكثر من شخص ثم خذلهم.",
+            mood: "صفعة خفيفة للأغلبية",
+            question: "لماذا كان السير خلف التوقع الشائع مكلفاً؟ ومن خرج من الزحمة؟",
+            reasons: [popular ? `التوقع الأكثر تكراراً كان ${popular.score} عند ${popular.count} مشاركين ولم يطابق الواقع` : null, names.length ? `${nameText} كانوا خارج الطريق المزدحم` : null].filter(Boolean),
+            specialFact: popular ? `التوقع الشائع ${popular.score} لم يطابق النتيجة ${match.score}` : null,
+            writingAngle: "اكتبها كلقطة عن فخ الأغلبية؛ لا تكرر كلمة أغلبية أكثر من مرتين.",
+            priorityBoost: 20
+        },
+        lone_reader: {
+            seedTitle: "القراءة التي جاءت من خارج الزحمة",
+            hookStyle: "افتح من شخص أو شخصين قرأوا المباراة بهدوء بينما البقية مروا عليها كأنها واضحة.",
+            mood: "ذكاء هادئ",
+            question: "ما الذي جعل هذه القراءة تستحق الأضواء؟",
+            reasons: [names.length ? `${nameText} كانوا أسماء القصة` : null, `${match.zeroOrMissingPercent}% لم يستفيدوا من المباراة`].filter(Boolean),
+            specialFact: match.exactCount === 1 ? "نتيجة واحدة فقط بالملّي في المباراة." : null,
+            writingAngle: "اكتبها كقصة اسم/اسمين، لا كقائمة أرقام.",
+            priorityBoost: 24
+        },
+        exact_circle: {
+            seedTitle: "ليلة بالملّي ما مرت بهدوء",
+            hookStyle: "افتح من فرحة مجموعة صغيرة مسكت النتيجة كاملة، كأنهم دخلوا المباراة ومعهم الورقة الصحيحة.",
+            mood: "فرحة جماعية",
+            question: "كيف صارت النتيجة الدقيقة لقطة مشتركة بين عدة مشاركين؟",
+            reasons: [`${match.exactCount} نتائج بالملّي`, names.length ? `${nameText} في قلب اللقطة` : null].filter(Boolean),
+            specialFact: `${match.exactCount} exact-score predictions in one match.` ,
+            writingAngle: "اكتبها كفرحة جماعية قصيرة، لا كتعداد أسماء طويل.",
+            priorityBoost: 14
+        },
+        points_swing: {
+            seedTitle: "المباراة التي فتحت الخزنة",
+            hookStyle: "افتح من فكرة أن مباراة واحدة سكبت نقاطاً كثيرة في الجدول وغيرت إحساس الجولة.",
+            mood: "اندفاع نقاط",
+            question: "كيف تحولت المباراة إلى محطة يتغير بعدها شكل المطاردة؟",
+            reasons: [`وزعت ${match.awardedPoints} نقطة`, names.length ? `أبرز المستفيدين: ${nameText}` : null].filter(Boolean),
+            specialFact: `${match.awardedPoints} نقطة موزعة في مباراة واحدة.`,
+            writingAngle: "اكتبها كمنعطف نقاط، لا كجدول حسابات.",
+            priorityBoost: 16
+        },
+        hard_stop: {
+            seedTitle: "الليلة التي خرج فيها الجدول صامتاً",
+            hookStyle: "افتح من قسوة المباراة على معظم المشاركين؛ لا تسمّ الخاسرين ولا تسخر.",
+            mood: "قسوة وهدوء بعد الصدمة",
+            question: "لماذا كانت هذه المباراة كأنها زر إيقاف مؤقت للنقاط؟",
+            reasons: [`${match.zeroOrMissingPercent}% بلا نقاط أو بلا توقع`, names.length ? `${nameText} نجوا من الليلة` : null].filter(Boolean),
+            specialFact: `${match.zeroOrMissingPercent}% لم يحصلوا على نقاط.`,
+            writingAngle: "اكتبها بلطف: صدمة على الجدول، لا شماتة في المشاركين.",
+            priorityBoost: 20
+        }
+    };
+    return blueprints[type] || blueprints.points_swing;
+}
+
+function buildWorldCupContext(match = {}, notes = []) {
+    const context = [];
+    const duration = String(match.score_duration || "").toUpperCase();
+    const stageLabel = getStageLabel(match.stage);
+    const isKnockout = match.stage && match.stage !== "GROUP_STAGE";
+    const totalGoals = Number(match.totalGoals || 0);
+    const goalDifference = Number(match.goalDifference || 0);
+
+    if (duration.includes("PENAL") || (isKnockout && match.isDrawScore && match.winner_side)) {
+        context.push({
+            type: "penalty_shootout_context",
+            stage_ar: stageLabel,
+            details_ar: "المباراة احتاجت إلى حسم بعد التعادل، وهذا يعطي التوقعات طابع ضغط أعلى من نتيجة عادية.",
+            source: "matches.score_duration/winner_side"
+        });
+    } else if (duration.includes("EXTRA")) {
+        context.push({
+            type: "extra_time_context",
+            stage_ar: stageLabel,
+            details_ar: "المباراة امتدت لما بعد الوقت الأصلي، فصار أثرها على التوقعات أقرب إلى لحظة أعصاب لا مجرد نتيجة.",
+            source: "matches.score_duration"
+        });
+    }
+
+    if (isKnockout) {
+        context.push({
+            type: "knockout_context",
+            stage_ar: stageLabel,
+            details_ar: `هذه مباراة من ${stageLabel}، وبالتالي نتيجتها تعني استمرار منتخب وخروج آخر من الطريق.`,
+            source: "matches.stage"
+        });
+    }
+
+    if (notes.length) {
+        for (const note of notes.slice(0, 2)) {
+            context.push({
+                type: note.event_type || "verified_event",
+                stage_ar: note.stage_ar || stageLabel,
+                details_ar: note.details_ar || note.title_ar,
+                source_note_id: note.id,
+                source: note.source_name || "final_event_notes"
+            });
+        }
+    }
+
+    if (totalGoals >= 5 && goalDifference <= 2) {
+        context.push({
+            type: "open_match_context",
+            stage_ar: stageLabel,
+            details_ar: "الأهداف الكثيرة قربت المباراة من إحساس الفوضى، لكنها لا تكفي وحدها لصناعة الأضواء إلا إذا انعكست على التوقعات.",
+            source: "matches.score"
+        });
+    }
+
+    return context.slice(0, 4);
+}
+
+function isNarrativeEventNote(note = {}) {
+    const type = String(note.event_type || "").toLowerCase();
+    const source = String(note.source_name || "").toLowerCase();
+    const title = String(note.title_ar || "");
+    const details = String(note.details_ar || "");
+    const text = `${title} ${details}`;
+    const rawTypes = new Set(["official_result", "winner_confirmed", "clean_sheet", "close_match", "goal_fest"]);
+    if (rawTypes.has(type)) return false;
+    if (source.includes("football-data") && !/(penalt|extra|var|red|card|injury|controvers|news|تصريح|جدل|طرد|إصابة|ركلات|ترجيح|أشواط|إضافية)/i.test(text)) return false;
+    return true;
+}
+
+function buildStageEmotion(stage) {
+    if (stage.averagePointsPerPossiblePrediction >= 8) return "مرحلة سخية، كثير من الناس لقوا فيها نقاط تنعش الترتيب.";
+    if (stage.averagePointsPerPossiblePrediction <= 4) return "مرحلة قاسية؛ كانت تعطي إحساس أن التوقع السهل ممكن يختفي بسرعة.";
+    if (stage.exactCount >= 20) return "مرحلة فيها لحظات كثيرة بالملّي، وكأن أكثر من شخص كان يقرأ السيناريو قبل المباراة.";
+    return "مرحلة متوازنة، فيها لحظات فرح صغيرة ولحظات ضاعت على ناس كثير.";
+}
+
+function buildMatchStoryReasons(match, notes = []) {
+    const reasons = [];
+    if (notes.length) reasons.push("فيها حدث كروي موثق يمكن استخدامه كخلفية للقصة");
+    if (match.exactCount >= 3) reasons.push(`${match.exactCount} نتائج بالملّي جعلت المباراة لقطة جماعية لا مجرد نتيجة`);
+    else if (match.exactCount > 0) reasons.push(`${match.exactCount} نتيجة بالملّي أعطت أسماء محددة لقطة تستحق الذكر`);
+    if (match.awardedPoints >= 180) reasons.push(`وزعت ${match.awardedPoints} نقطة، رقم كبير يكفي ليغيّر إحساس الجولة`);
+    else if (match.awardedPoints >= 110) reasons.push(`وزعت ${match.awardedPoints} نقطة، وكانت سخية على مجموعة واضحة`);
+    if (match.zeroOrMissingPercent >= 80) reasons.push(`${match.zeroOrMissingPercent}% بلا نقاط أو بلا توقع؛ مباراة قاسية على الأغلبية`);
+    else if (match.zeroOrMissingPercent >= 68) reasons.push(`أغلب المشاركين لم يستفيدوا منها، لذلك لها طعم الصدمة الصغيرة`);
+    if (match.mostCommonPrediction && !match.mostCommonPrediction.wasActual) reasons.push(`أكثر توقع متكرر لم يطابق النتيجة، وهذا يصنع قصة عن ثقة الأغلبية التي لم تنجح`);
+    if (match.uniqueCorrectNames.length) reasons.push(`فيها أسماء قرأت المباراة بشكل مختلف عن البقية: ${match.uniqueCorrectNames.slice(0, 4).join("، ")}`);
+    if (match.stage !== "GROUP_STAGE") reasons.push(`جاءت في ${getStageLabel(match.stage)} حيث كل نقطة أثقل من المعتاد`);
+    return reasons;
+}
+
+function buildSeedTitle(match, reasons) {
+    if (match.exactCount >= 3) return `ليلة ${match.exactCount} توقعات بالملّي`;
+    if (match.zeroOrMissingPercent >= 80) return "المباراة التي كسرت ثقة الأغلبية";
+    if (match.mostCommonPrediction && !match.mostCommonPrediction.wasActual) return "حين خذل التوقع الأكثر شعبية أصحابه";
+    if (match.awardedPoints >= 180) return "المباراة التي فتحت خزنة النقاط";
+    if (match.uniqueCorrectNames.length) return "أسماء قليلة شافت الطريق قبل البقية";
+    if (reasons.some((reason) => /حدث كروي/.test(reason))) return "حين دخل خبر المباراة في قصة التوقعات";
+    return "لقطة تستحق مكانها في الأضواء";
+}
+
+function chooseStoryKind(match, notes = []) {
+    if (notes.length) return "real_event_plus_contest";
+    if (match.exactCount >= 3) return "exact_score_party";
+    if (match.zeroOrMissingPercent >= 80) return "collective_shock";
+    if (match.awardedPoints >= 180) return "points_swing";
+    if (match.uniqueCorrectNames.length) return "contrarian_read";
+    return "contest_turning_point";
+}
+
+function buildOpeningAngle(match, notes = []) {
+    if (notes.length) return "ابدأ من أثر المباراة داخل المسابقة، ثم اربط الحدث الكروي الموثق بالقصة بدون اختراع تفاصيل.";
+    if (match.exactCount >= 3) return "ابدأ من فرحة النتائج بالملّي، كأن المباراة أعطت أكثر من شخص لقطة خاصة في نفس الليلة.";
+    if (match.zeroOrMissingPercent >= 80) return "ابدأ من صدمة الأغلبية: مباراة دخلت عادية وخرجت كدرس في أن التوقع السهل ليس مضموناً.";
+    if (match.mostCommonPrediction && !match.mostCommonPrediction.wasActual) return "ابدأ من التوقع المتكرر الذي بدا مطمئناً ثم لم يطابق الواقع.";
+    if (match.awardedPoints >= 180) return "ابدأ من فكرة أن المباراة فتحت باب النقاط، لا من النتيجة نفسها.";
+    return "ابدأ من لحظة المسابقة: ماذا فعلت هذه المباراة في جو المشاركين؟";
+}
+
+function buildMatchEmotion(match) {
+    if (match.zeroOrMissingPercent >= 80) return "صدمة وقلق خفيف";
+    if (match.exactCount >= 3) return "فرحة جماعية ودقة بالملّي";
+    if (match.awardedPoints >= 180) return "اندفاع في جدول النقاط";
+    if (match.mostCommonPrediction && !match.mostCommonPrediction.wasActual) return "مفاجأة للأغلبية";
+    if (match.stage !== "GROUP_STAGE") return "ضغط الأدوار الإقصائية";
+    return "لقطة صغيرة غيّرت مزاج الجولة";
 }
 
 function buildCandidateHighlightFacts({ rankedParticipants, matchFacts, stageFacts, activeParticipants, eventNotesByMatch, eventNotesWithoutMatch = [] }) {
@@ -698,6 +1166,13 @@ function publicMatchFact(match) {
         stage: match.stage,
         stageLabel: getStageLabel(match.stage),
         score: match.score,
+        score_duration: match.score_duration || null,
+        winner_side: match.winner_side || null,
+        totalGoals: match.totalGoals,
+        goalDifference: match.goalDifference,
+        isDrawScore: match.isDrawScore,
+        isKnockout: match.isKnockout,
+        worldCupContext: buildWorldCupContext(match, []),
         predictions: match.predictions,
         missing: match.missing,
         coveragePercent: match.coveragePercent,
@@ -794,8 +1269,8 @@ async function generateFinalContentInBatches(factsPack) {
     const targetHighlights = MAX_HIGHLIGHTS;
 
     for (const post of Array.isArray(output.highlights) ? output.highlights : []) {
-        const title = cleanText(post?.title_ar || "", 90);
-        const body = cleanText(post?.body_ar || "", 220);
+        const title = cleanText(post?.title_ar || "", AI_POST_TITLE_MAX_CHARS);
+        const body = cleanText(post?.body_ar || "", AI_POST_BODY_MAX_CHARS);
         if (title && body) usedHighlightKeys.add(`${title}|${body}`.toLowerCase());
     }
     for (const message of Array.isArray(output.profile_messages) ? output.profile_messages : []) {
@@ -842,9 +1317,9 @@ async function generateFinalContentInBatches(factsPack) {
 
         for (const post of batchHighlights) {
             if (output.highlights.length >= targetHighlights) break;
-            const title = cleanText(post?.title_ar || "", 90);
-            const body = cleanText(post?.body_ar || "", 220);
-            if (!title || !body) continue;
+            const title = cleanText(post?.title_ar || "", AI_POST_TITLE_MAX_CHARS);
+            const body = cleanText(post?.body_ar || "", AI_POST_BODY_MAX_CHARS);
+            if (!title || !body || isLowQualityHighlightPost(post)) continue;
             const key = `${title}|${body}`.toLowerCase();
             if (usedHighlightKeys.has(key)) continue;
             usedHighlightKeys.add(key);
@@ -863,7 +1338,7 @@ async function generateFinalContentInBatches(factsPack) {
                 ...message,
                 participant_name: participantName,
                 title_ar: cleanText(message?.title_ar || "رسالة ختام", 90),
-                body_ar: cleanText(message?.body_ar || "", 220),
+                body_ar: cleanText(message?.body_ar || "", 260),
                 icon: cleanText(message?.icon || "✨", 8)
             });
         }
@@ -904,6 +1379,10 @@ async function generateFinalContentInBatches(factsPack) {
                 saveCheckpoint();
                 return false;
             }
+            if (AI_INSERT_PARTIAL_ON_BATCH_FAILURE && output.highlights.length > 0) {
+                markStoppedEarly(`${providerLabel} batch failure limit reached during ${batchName}; partial insert is enabled (${error.message})`);
+                return false;
+            }
             saveCheckpoint();
             throw error;
         }
@@ -920,45 +1399,68 @@ async function generateFinalContentInBatches(factsPack) {
         leaderboard_top: (factsPack.contest.leaderboard || []).slice(0, 8)
     };
 
-    const eventNotes = factsPack.contest.eventNotes || [];
-    const eventBatches = chunkArray(eventNotes, AI_EVENT_NOTE_BATCH_SIZE);
-    const maxEventBatches = Math.min(eventBatches.length, Math.ceil(Math.max(18, targetHighlights * 0.5) / AI_BATCH_HIGHLIGHT_TARGET));
+    const storySeeds = factsPack.contest.integratedStorySeeds || [];
+    const storyBatches = chunkArray(storySeeds, AI_STORY_SEED_BATCH_SIZE);
+    const maxStoryBatches = Math.min(storyBatches.length, Math.ceil(Math.max(24, targetHighlights * 0.75) / AI_BATCH_HIGHLIGHT_TARGET));
 
-    for (let index = 0; index < maxEventBatches && !stoppedEarly && output.highlights.length < targetHighlights; index += 1) {
-        const notes = eventBatches[index];
-        const batchName = `event-notes-${index + 1}`;
+    for (let index = 0; index < maxStoryBatches && !stoppedEarly && output.highlights.length < targetHighlights; index += 1) {
+        const batchName = `story-seeds-${index + 1}`;
         const batchPrompt = buildBatchPrompt({
             batchName,
-            instruction: "اكتب منشورات أضواء من أحداث كأس العالم الموثقة في event_notes. اجعلها كأنها timeline، وليست شارات ولا نتائج خام.",
+            instruction: "اكتب منشورات أضواء من story_seeds فقط. كل seed فيه نوع قصة واضح: فخ الأغلبية، قراءة مختلفة، ضغط إقصائي، خزنة نقاط، أو حدث كروي موثق. لا تكتب تقرير مباراة. ابدأ من hook_style والسؤال القصصي، واجعل النتيجة مجرد تفصيل داخل النص.",
             highlightTarget: Math.min(AI_BATCH_HIGHLIGHT_TARGET, targetHighlights - output.highlights.length),
             profileTarget: 0,
             facts: {
                 ...contextBase,
-                event_notes: notes,
-                related_matches: relatedMatchesForEventNotes(notes, factsPack.contest.matches || [])
+                story_seeds: storyBatches[index]
             }
         });
         await runBatch(batchName, batchPrompt);
     }
 
-    const candidateHighlights = factsPack.contest.candidateHighlights || [];
-    const contestFacts = candidateHighlights.filter((fact) => !String(fact.type || "").includes("participant") && !String(fact.type || "").includes("verified_worldcup"));
-    const contestBatches = chunkArray(contestFacts, AI_FACT_BATCH_SIZE);
-    const maxContestBatches = Math.min(contestBatches.length, Math.ceil(Math.max(10, targetHighlights * 0.25) / AI_BATCH_HIGHLIGHT_TARGET));
+    if (AI_USE_EVENT_ONLY_BATCHES) {
+        const eventNotes = factsPack.contest.eventNotes || [];
+        const eventBatches = chunkArray(eventNotes, AI_EVENT_NOTE_BATCH_SIZE);
+        const maxEventBatches = Math.min(eventBatches.length, Math.ceil(Math.max(8, targetHighlights * 0.15) / AI_BATCH_HIGHLIGHT_TARGET));
 
-    for (let index = 0; index < maxContestBatches && !stoppedEarly && output.highlights.length < Math.max(0, targetHighlights - activeNames.length); index += 1) {
-        const batchName = `contest-moments-${index + 1}`;
-        const batchPrompt = buildBatchPrompt({
-            batchName,
-            instruction: "اكتب منشورات من لحظات مسابقة التوقعات: صعوبة مباراة، نقاط كثيرة، نتيجة بالملّي، تغير في الجو. لا تجعلها إحصائية جامدة.",
-            highlightTarget: Math.min(AI_BATCH_HIGHLIGHT_TARGET, targetHighlights - output.highlights.length),
-            profileTarget: 0,
-            facts: {
-                ...contextBase,
-                contest_moment_facts: contestBatches[index]
-            }
-        });
-        await runBatch(batchName, batchPrompt);
+        for (let index = 0; index < maxEventBatches && !stoppedEarly && output.highlights.length < targetHighlights; index += 1) {
+            const notes = eventBatches[index];
+            const batchName = `event-context-${index + 1}`;
+            const batchPrompt = buildBatchPrompt({
+                batchName,
+                instruction: "استخدم event_notes كسياق فقط، ولا تحولها إلى قائمة نتائج. لا تكتب منشوراً إلا إذا ربطته بالمشاركين أو التوقعات أو تغير جو المسابقة.",
+                highlightTarget: Math.min(Math.ceil(AI_BATCH_HIGHLIGHT_TARGET / 2), targetHighlights - output.highlights.length),
+                profileTarget: 0,
+                facts: {
+                    ...contextBase,
+                    event_notes: notes,
+                    related_matches: relatedMatchesForEventNotes(notes, factsPack.contest.matches || [])
+                }
+            });
+            await runBatch(batchName, batchPrompt);
+        }
+    }
+
+    if (AI_ENABLE_CONTEST_MOMENT_BATCHES) {
+        const candidateHighlights = factsPack.contest.candidateHighlights || [];
+        const contestFacts = candidateHighlights.filter((fact) => !String(fact.type || "").includes("participant") && !String(fact.type || "").includes("verified_worldcup"));
+        const contestBatches = chunkArray(contestFacts, AI_FACT_BATCH_SIZE);
+        const maxContestBatches = Math.min(contestBatches.length, Math.ceil(Math.max(10, targetHighlights * 0.25) / AI_BATCH_HIGHLIGHT_TARGET));
+
+        for (let index = 0; index < maxContestBatches && !stoppedEarly && output.highlights.length < Math.max(0, targetHighlights - activeNames.length); index += 1) {
+            const batchName = `contest-moments-${index + 1}`;
+            const batchPrompt = buildBatchPrompt({
+                batchName,
+                instruction: "اكتب منشورات من لحظات مسابقة التوقعات فقط عندما تكون لقطة قصصية واضحة: توقع بالملّي، صدمة للأغلبية، نقاط كثيرة لمجموعة أسماء، أو تحول في جو المنافسة. لا تجعلها إحصائية جامدة ولا نتيجة مباراة.",
+                highlightTarget: Math.min(AI_BATCH_HIGHLIGHT_TARGET, targetHighlights - output.highlights.length),
+                profileTarget: 0,
+                facts: {
+                    ...contextBase,
+                    contest_moment_facts: contestBatches[index]
+                }
+            });
+            await runBatch(batchName, batchPrompt);
+        }
     }
 
     const participantRows = factsPack.contest.leaderboard || [];
@@ -973,8 +1475,8 @@ async function generateFinalContentInBatches(factsPack) {
         const batchPrompt = buildBatchPrompt({
             batchName,
             instruction: GENERATE_PROFILES
-                ? "اكتب لقطة highlight واحدة لكل مشارك في هذه الدفعة، واكتب رسالة profile قصيرة لكل مشارك. لا تذكر قلة المشاركة ولا الغياب. استخدم الضمائر الصحيحة."
-                : "اكتب لقطة highlight واحدة لكل مشارك في هذه الدفعة. لا تكتب profile_messages. لا تذكر قلة المشاركة ولا الغياب. استخدم الضمائر الصحيحة.",
+                ? "اكتب لقطة highlight واحدة لكل مشارك في هذه الدفعة، واكتب رسالة profile قصيرة لكل مشارك. اجعلها إنسانية وممتعة وليست badge. لا تذكر قلة المشاركة ولا الغياب. استخدم الضمائر الصحيحة."
+                : "اكتب لقطة highlight واحدة لكل مشارك في هذه الدفعة. اجعلها إنسانية وممتعة وليست badge. لا تكتب profile_messages. لا تذكر قلة المشاركة ولا الغياب. استخدم الضمائر الصحيحة.",
             highlightTarget,
             profileTarget,
             facts: {
@@ -985,7 +1487,7 @@ async function generateFinalContentInBatches(factsPack) {
         await runBatch(batchName, batchPrompt);
     }
 
-    if (output.highlights.length < Math.min(35, targetHighlights)) {
+    if (AI_ENABLE_FILL_MATCHES && output.highlights.length < Math.min(35, targetHighlights)) {
         const remainingFacts = (factsPack.contest.matches || []).slice(0, 80);
         const fillBatches = chunkArray(remainingFacts, AI_FACT_BATCH_SIZE);
         for (let index = 0; index < fillBatches.length && !stoppedEarly && output.highlights.length < Math.min(35, targetHighlights); index += 1) {
@@ -1035,7 +1537,7 @@ async function generateFinalContentInBatches(factsPack) {
         const partialAllowed = (stoppedEarlyReason.includes("quota") && AI_INSERT_PARTIAL_ON_QUOTA)
             || (stoppedEarlyReason.includes("AI_MAX_BATCHES_PER_RUN") && AI_INSERT_PARTIAL_ON_MAX_BATCHES)
             || (stoppedEarlyReason.includes("batch failure") && AI_INSERT_PARTIAL_ON_BATCH_FAILURE);
-        if (!partialAllowed || !hasEnoughPartialHighlights()) {
+        if (!partialAllowed || (!hasEnoughPartialHighlights() && !AI_INSERT_PARTIAL_ANY_STORY_COUNT)) {
             throw new Error(`${stoppedEarlyReason}. Not inserting partial output. Rerun later to resume from ${AI_BATCH_CHECKPOINT_FILE}.`);
         }
         console.warn(`Inserting partial Gemini output: ${output.highlights.length} highlights and ${output.profile_messages.length} profiles.`);
@@ -1047,7 +1549,7 @@ async function generateFinalContentInBatches(factsPack) {
 
 function buildBatchPrompt({ batchName, instruction, highlightTarget, profileTarget, facts }) {
     return `
-اكتب دفعة واحدة من محتوى أضواء مسابقة توقعات كأس العالم 2026.
+اكتب دفعة واحدة من محتوى "الأضواء" لمسابقة توقعات كأس العالم 2026.
 
 اسم الدفعة: ${batchName}
 المهمة: ${instruction}
@@ -1056,11 +1558,11 @@ function buildBatchPrompt({ batchName, instruction, highlightTarget, profileTarg
 {
   "highlights": [
     {
-      "title_ar": "عنوان 3 إلى 7 كلمات",
-      "body_ar": "جملة عربية قصيرة واحدة فقط",
+      "title_ar": "عنوان قصصي جذاب 6 إلى 12 كلمة، لا يبدأ باسم مباراة ولا بنتيجة",
+      "body_ar": "منشور ممتع من فقرتين قصيرتين مفصولتين بسطر فارغ، 95 إلى 150 كلمة تقريباً",
       "icon": "✨",
       "category": "timeline|match|participant|emotional|fun|stage",
-      "stage_ar": "اسم المرحلة أو أضواء مباشرة",
+      "stage_ar": "اسم المرحلة أو أضواء المسابقة",
       "participant_names": ["اسم مشارك إن وجد"],
       "source_fact": "الحقيقة المستخدمة باختصار",
       "source_note_ids": ["id من final_event_notes إذا استخدمت حدثاً كروياً"]
@@ -1079,18 +1581,40 @@ function buildBatchPrompt({ batchName, instruction, highlightTarget, profileTarg
 عدد highlights المطلوب في هذه الدفعة: ${highlightTarget}
 عدد profile_messages المطلوب في هذه الدفعة: ${profileTarget}
 
+طريقة الكتابة المطلوبة:
+- اقرأ post_blueprint في كل story_seed: kind, hook_style, story_question, mood, must_include_facts, real_world_cup_context.
+- اكتب من نوع القصة، وليس من نتيجة المباراة.
+- الفقرة الأولى: hook ممتع أو إحساس اللحظة. لا تبدأ بـ "عندما انتهت" ولا "في مباراة" ولا باسم الفريقين.
+- الفقرة الثانية: اربط القصة بالأسماء والنقاط والتوقعات. اذكر النتيجة مرة واحدة فقط إذا احتجتها.
+- استخدم real_world_cup_context فقط إذا كان موجوداً. إذا لم يوجد، لا تخترع VAR أو طرد أو إصابة أو جمهور أو تصريح.
+- إذا كانت المباراة إقصائية أو فيها ركلات ترجيح/وقت إضافي من real_world_cup_context، استعملها كخلفية تزيد الضغط، ثم ارجع لأثرها في المسابقة.
+- كل منشور يجب أن يشعر القارئ أنه يقرأ لقطة من مسابقة أصدقاء/عائلة، وليس خبر مباراة.
+
 قواعد صارمة:
-- JSON فقط، بدون markdown.
-- لا تضف أي نص خارج JSON.
-- لا تستخدم trailing commas.
-- لا تخترع حدثاً كروياً غير موجود في facts.event_notes أو facts.matches أو facts.contest_moment_facts.
-- إذا كتبت عن event_note، ضع id الخاص به في source_note_ids.
-- لا تستخدم عبارة "مو كثير كلام، بس ضربات نظيفة".
-- لا تكرر نفس العنوان داخل الدفعة.
-- لا تجعلها شارات أو جوائز؛ اجعلها منشورات timeline قصيرة وممتعة.
+- JSON فقط، بدون markdown، بدون أي نص خارج JSON، وبدون trailing commas.
+- لا تكتب match report. لا تجعل العنوان أو أول جملة عن "الفريق فاز" أو "المباراة انتهت".
+- لا تستخدم قالب مكرر: نتيجة المباراة + من أخذ نقاط + غيرت الترتيب.
+- لا تستخدم لهجة مصرية أو عامية غريبة: ما فيهاش، كده، بيقرأوا، فارغين، ما كانش.
+- لا تستخدم عبارات مستهلكة أو عامة: أعادت تشكيل المزاج، أعادت تشكيل ملامح المنافسة، الثقة العمياء، القراء الهادئين، الجمهور كان متحمساً، تداولت الأحاديث، استثمروا الوقت في تحليل الفرق.
+- ممنوع عناوين خام أو مكررة: "مباراة أهدافها كثيرة"، "شباك نظيفة"، "حسم ضيق"، "النجوم تتألق"، "الطاقة تتفجر"، "التحول المفاجئ"، "ليلة 3 توقعات بالملّي".
+- لا تكدس الأرقام. اختر رقمين أو ثلاثة فقط تخدم القصة.
+- نتيجة بالملّي = 50 نقطة. الاتجاه الصحيح فقط = 10 نقاط. لا تخترع نقاطاً إضافية ولا أرقاماً غير موجودة.
+- اذكر 1 إلى 4 أسماء فقط داخل النص، حتى لو seed فيه أسماء أكثر.
 - لا تسخر من أي مشارك ولا تذكر الغياب أو قلة المشاركة.
 - استخدم ضمائر صحيحة للبنات حسب participantLanguage.
-- لا تكتب كلام كثير: العنوان قصير، والوصف جملة واحدة فقط.
+- لا تكتب أقل من 90 كلمة تقريباً. لا تكتب منشوراً من جملة واحدة.
+- الأسلوب: عربي سعودي/خليجي خفيف أو عربي فصيح بسيط، ودود، فيه لمعة، بدون صحافة ثقيلة.
+
+أمثلة سيئة ممنوعة:
+- "عندما انتهت بنما ضد إنجلترا بنتيجة 0-2..."
+- "في مباراة كرواتيا ضد غانا، أخذ ثلاثة مشاركين النتيجة بالملّي..."
+- "هذه النقاط أعادت تشكيل المزاج وأظهرت أن الدقة تصنع الفارق."
+- "الجمهور كان متحمساً وتداولت الأحاديث."
+
+مثال اتجاه جيد:
+"كان فيه توقع مريح يمشي بين أكثر من اسم، لكن المباراة قررت تكسر هذا الهدوء وتقول للجميع إن الطريق الأسهل مو دائماً آمن. اللقطة هنا ليست في النتيجة نفسها؛ اللقطة في الناس اللي خرجوا من الزحمة وشافوا الاحتمال الأصعب قبل ما يصير واضحاً.
+
+رحاب وتالين كانوا في المكان الصحيح في الوقت الصحيح. قراءة بالملّي أعطت كل وحدة 50 نقطة، بينما التوقع الأكثر تكراراً ترك أصحابه بلا المكافأة الكبيرة. هذه من اللحظات اللي تخلي الأضواء تروح للجرأة الهادئة، لا للصوت الأعلى."
 
 FACTS:
 ${JSON.stringify(facts, null, 2)}
@@ -1101,7 +1625,7 @@ async function runAiJsonBatch(prompt, batchName) {
     const messages = [
         {
             role: "system",
-            content: "أنت كاتب عربي خفيف الظل. تكتب JSON صحيح فقط. لا تخترع معلومات. لا تستخدم markdown."
+            content: "أنت كاتب عربي سعودي/خليجي خفيف الظل لمسابقة توقعات عائلية/أصدقاء. اكتب الأضواء كمنشورات قصصية ممتعة: hook، إحساس، أسماء، نقاط، نتائج بالملّي، صدمة أغلبية، ولقطة حقيقية من كرة القدم إذا كانت موثقة. لا تكتب match report ولا تبدأ بالنتيجة. لا تخترع أحداثاً. أعد JSON فقط."
         },
         { role: "user", content: prompt }
     ];
@@ -1139,6 +1663,39 @@ async function runAiJsonBatch(prompt, batchName) {
         error.quotaExhausted = firstError.quotaExhausted || isAiQuotaError(firstError);
         throw error;
     }
+}
+
+
+function isLowQualityHighlightPost(post = {}) {
+    const title = String(post.title_ar || "").trim();
+    const body = String(post.body_ar || "").trim();
+    const full = `${title} ${body}`;
+    const participantNames = Array.isArray(post.participant_names) ? post.participant_names.filter(Boolean) : [];
+    const compactBodyLength = body.replace(/[\s.،,!؟:؛\-–—]/g, "").length;
+    const bodyStart = body.trim().slice(0, 90);
+    const paragraphs = body.split(/\n\s*\n/).filter((part) => part.trim().length > 0);
+
+    const bannedTitle = /^(مباراة أهدافها كثيرة|حسم ضيق|شباك نظيفة|نتيجة موثقة|المتأهل|الفائز تم حسمه|مباراة حماسية|مباراة متقاربة|النجوم تتألق|الطاقة تتفجر|التحول المفاجئ|فارق هدف واحد|ليلة\s*\d+\s*توقعات|\d+\s*توقعات بالملّي|ثلاثية بالملّي)/i.test(title);
+    const bannedPhrases = /(الجمهور كان|الجمهور|تداولت الأحاديث|أصبح الحديث يدور|الكل كان يتكلم|نقاط إضافية|حصل كل منهم على \d+ نقاط|حصلت على \d+ نتائج بالملّي موزعة|فرقة|النجاحة|البمثيلة|أعادت تشكيل المزاج|أعادت تشكيل ملامح|كشفت القراء الهادئين|الثقة العمياء|استثمروا الوقت في تحليل|مع توزيع \d+ نقطة|هذه اللحظة كشفت|كان الجميع يتوقعون|ما فيهاش|كده|بيقرأوا|فارغين|ما كانش|دارتت|واجتهد)/i.test(full);
+    const titleLooksLikeResultTile = /\d+\s*[-–]\s*\d+/.test(title) || (/ضد/.test(title) && /^(مباراة|حسم|شباك|نتيجة|فوز|تعادل|ليلة|صدمة|ثلاثية)/.test(title));
+    const startsWithResult = /^(عندما انتهت|لما انتهت|في مباراة|مباراة|انتهت|فاز|فازت|سجلت|سجل|أحرز|أحرزت|عندما التقت|حين التقت)/.test(bodyStart);
+    const resultReportPattern = /(انتهت|فازت|فاز|تعادل).{0,45}(حصل|حصلت|حصد|حصدت|خرج|خرجت).{0,80}(نقطة|نقاط|توقع)/i.test(full);
+
+    const hasContestSignal = participantNames.length > 0
+        || /توقع|توقعات|المسابقة|مشارك|مشاركة|نقطة|نقاط|بالملّي|صحيح|صحيحة|المركز|الترتيب|فارق|أغلب|أغلبية|ناس|قرأ|قرأت|شاف|شافت|قاسية|وزعت|قفز|قفزت|تقدم|تقدمت|منصة|سلسلة|غيّرت|غيرت|قلبت|رجّعت|رجعت|صدمة|مفاجأة|exact/i.test(full);
+    const hasStorySignal = /لكن|وهنا|ومن هنا|اللقطة|القصة|الجو|المرحلة|المنافسة|السباق|تحوّل|تحول|الضغط|الصدمة|الفرحة|النقطة|المنعطف|مزاج|قراءة|جرأة|فخ|زحمة|خزنة|أضواء|هدوء|خارج|نجا|نجت|أعصاب|إقصائي|إقصائية/i.test(full);
+    const rawResultOnly = !hasContestSignal && /فازت|فاز|انتهت|سجلت|سجل|شباك نظيفة|فارق هدف|مباراة حماسية|مباراة متقاربة/i.test(full);
+    const tooShort = compactBodyLength < 260;
+    const tooFewSentences = (body.match(/[.؟!]/g) || []).length < 3;
+    const tooManyScores = (body.match(/\d+\s*[-–]\s*\d+/g) || []).length > 2;
+
+    if (bannedTitle || bannedPhrases || titleLooksLikeResultTile || rawResultOnly || tooShort || tooFewSentences || tooManyScores) return true;
+    if (startsWithResult) return true;
+    if (resultReportPattern && !/لكن|وهنا|اللقطة|فخ|زحمة|جرأة|ضغط|أضواء/.test(full)) return true;
+    if (AI_REQUIRE_CONTEST_SIGNAL && !hasContestSignal) return true;
+    if (!hasStorySignal && participantNames.length === 0) return true;
+    if (paragraphs.length < 2 && compactBodyLength < 430) return true;
+    return false;
 }
 
 function relatedMatchesForEventNotes(notes, matches) {
@@ -1358,13 +1915,15 @@ function buildPrompt(factsPack) {
 - كل مشارك نشط يجب أن يظهر مرة واحدة على الأقل في highlights أو profile_messages، ويفضل في الاثنين.
 - لا تجعل الصفحة عن صاحب المركز الأول فقط.
 - لا تذكر أن أحدهم لم يشارك كثيراً أو فاته مباريات كثيرة.
-- العنوان: 3 إلى 7 كلمات.
-- الوصف: جملة واحدة، 12 إلى 24 كلمة تقريباً.
+- العنوان: 5 إلى 11 كلمة، وليس مجرد نتيجة مباراة.
+- الوصف: جملتان قصيرتان، 28 إلى 55 كلمة تقريباً، ويربط الحدث بجو المسابقة أو المشاركين.
 - استخدم ضمائر صحيحة. أسماء البنات موضحة في participantLanguage.
 - لا تخترع أحداث كرة قدم مثل بطاقة حمراء، هوشة، إصابة، VAR، تصريح، احتفال، جدل، أو خبر بعد المباراة إلا إذا وجدت في eventNotes. إذا استخدمت eventNotes، ضع id الخاص بها داخل source_note_ids.
 - لو لم توجد eventNotes، ركز على أحداث مسابقة التوقعات نفسها.
 - لا تستخدم عبارة مكررة في أكثر من منشور.
-- لا تستخدم كلام كثير. لا تستخدم عبارات مكررة. لا تستخدم عبارة "مو كثير كلام، بس ضربات نظيفة".
+- ممنوع أن تكون الأضواء مجرد "فاز/خسر/سجل". يجب أن تكون قصة مسابقة وتوقعات.
+- لا تستخدم عبارات مكررة مثل "مباراة أهدافها كثيرة" أو "حسم ضيق" أو "شباك نظيفة" كعنوان مباشر.
+- لا تستخدم عبارة "مو كثير كلام، بس ضربات نظيفة".
 
 FACTS_JSON:
 ${JSON.stringify(factsPack, null, 2)}
@@ -1392,7 +1951,94 @@ function parseJsonContent(content) {
         }
     }
 
+    const loose = parseLooseAiJsonContent(trimmed);
+    if (loose) return loose;
+
     throw lastError || new Error("Could not parse AI JSON content.");
+}
+
+function parseLooseAiJsonContent(value) {
+    const text = stripMarkdownJsonFence(String(value || "").trim());
+    const highlightsText = extractArrayTextByKey(text, "highlights");
+    const profilesText = extractArrayTextByKey(text, "profile_messages");
+    const highlights = parseObjectsFromArrayText(highlightsText);
+    const profileMessages = parseObjectsFromArrayText(profilesText);
+    if (highlights.length || profileMessages.length) {
+        return { highlights, profile_messages: profileMessages };
+    }
+    return null;
+}
+
+function extractArrayTextByKey(text, key) {
+    const source = String(text || "");
+    const keyIndex = source.indexOf(`"${key}"`);
+    if (keyIndex === -1) return "";
+    const openIndex = source.indexOf("[", keyIndex);
+    if (openIndex === -1) return "";
+    let depth = 0;
+    let inString = false;
+    let escaped = false;
+    for (let index = openIndex; index < source.length; index += 1) {
+        const char = source[index];
+        if (inString) {
+            if (escaped) escaped = false;
+            else if (char === "\\") escaped = true;
+            else if (char === '"') inString = false;
+            continue;
+        }
+        if (char === '"') inString = true;
+        else if (char === "[") depth += 1;
+        else if (char === "]") {
+            depth -= 1;
+            if (depth === 0) return source.slice(openIndex, index + 1);
+        }
+    }
+    return source.slice(openIndex);
+}
+
+function parseObjectsFromArrayText(arrayText) {
+    const source = String(arrayText || "");
+    const objects = [];
+    for (let index = 0; index < source.length; index += 1) {
+        if (source[index] !== "{") continue;
+        const objectText = extractBalancedJsonObject(source.slice(index));
+        if (!objectText) continue;
+        index += Math.max(0, objectText.length - 1);
+        const candidates = [objectText, lightRepairJsonText(objectText), closeOpenJsonText(lightRepairJsonText(objectText))]
+            .filter(Boolean);
+        for (const candidate of candidates) {
+            try {
+                const parsed = JSON.parse(candidate);
+                if (parsed && typeof parsed === "object") objects.push(parsed);
+                break;
+            } catch (_) {
+                // try next candidate
+            }
+        }
+    }
+    return objects;
+}
+
+function closeOpenJsonText(value) {
+    const text = String(value || "").trim();
+    let braces = 0;
+    let brackets = 0;
+    let inString = false;
+    let escaped = false;
+    for (const char of text) {
+        if (inString) {
+            if (escaped) escaped = false;
+            else if (char === "\\") escaped = true;
+            else if (char === '"') inString = false;
+            continue;
+        }
+        if (char === '"') inString = true;
+        else if (char === "{") braces += 1;
+        else if (char === "}") braces -= 1;
+        else if (char === "[") brackets += 1;
+        else if (char === "]") brackets -= 1;
+    }
+    return text + "}".repeat(Math.max(0, braces)) + "]".repeat(Math.max(0, brackets));
 }
 
 function stripMarkdownJsonFence(value) {
@@ -1456,8 +2102,8 @@ function buildLocalFallbackAiOutput(factsPack, error) {
     const highlights = [];
     const usedTitles = new Set();
     const add = (post) => {
-        const title = cleanText(post?.title_ar || "", 90);
-        const body = cleanText(post?.body_ar || "", 220);
+        const title = cleanText(post?.title_ar || "", AI_POST_TITLE_MAX_CHARS);
+        const body = cleanText(post?.body_ar || "", AI_POST_BODY_MAX_CHARS);
         if (!title || !body || usedTitles.has(title)) return;
         usedTitles.add(title);
         highlights.push({
@@ -1720,14 +2366,14 @@ function normalizeAiOutputToRows(output, factsPack) {
 
     const highlights = Array.isArray(output?.highlights) ? output.highlights : [];
     highlights.slice(0, MAX_HIGHLIGHTS).forEach((post, index) => {
-        const title = cleanText(post.title_ar, 90);
-        const body = cleanText(post.body_ar, 220);
-        if (!title || !body) return;
+        const title = cleanText(post.title_ar, AI_POST_TITLE_MAX_CHARS);
+        const body = cleanText(post.body_ar, AI_POST_BODY_MAX_CHARS);
+        if (!title || !body || isLowQualityHighlightPost(post)) return;
 
         rows.push({
             section_key: FINAL_HIGHLIGHTS_SECTION,
             title_ar: title,
-            subtitle_ar: cleanText(post.stage_ar || post.category || "أضواء الختام", 80),
+            subtitle_ar: cleanText(post.stage_ar || "أضواء المسابقة", 80),
             body_ar: body,
             icon: cleanText(post.icon || "✨", 8),
             cards_json: [{
@@ -1750,8 +2396,8 @@ function normalizeAiOutputToRows(output, factsPack) {
         const profileMessages = Array.isArray(output?.profile_messages) ? output.profile_messages : [];
         for (const participant of activeParticipants) {
             const message = profileMessages.find((item) => String(item.participant_name || "").trim() === participant.name);
-            const title = cleanText(message?.title_ar || "رسالة ختام", 90);
-            const body = cleanText(message?.body_ar || buildFallbackProfileMessage(participant.name, factsPack), 220);
+            const title = cleanText(message?.title_ar || "رسالة ختام", AI_POST_TITLE_MAX_CHARS);
+            const body = cleanText(message?.body_ar || buildFallbackProfileMessage(participant.name, factsPack), 320);
 
             rows.push({
                 section_key: FINAL_PROFILE_SECTION,

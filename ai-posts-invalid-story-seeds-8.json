@@ -1,0 +1,158 @@
+The user wants a single batch of "highlights" content for competition predictions for World Cup 2026. They gave a large spec JSON template with highlights array of 4 items, profile_messages 0. They gave constraints: each highlight must have fields: title_ar (6-12 words, not start with team name nor result), body_ar (2 short paragraphs separated by blank line, ~95-150 words), icon "✨", category, stage_ar, participant_names (1-4 names), source_fact (short), source_note_ids (array of ids if used event note). Must be JSON only, no markdown, no extra text. Must follow strict rules: no match report, no result start, no repeated template, no generic phrases, no Egyptian slang, no heavy journalism, no repeated patterns, no excessive numbers, only 1-4 names, no invented points, only 50 points for correct mill'i, 10 for correct direction. Must use participantLanguage pronouns correctly for female names. Must be Arabic (Saudi/Khaleeji light). Must be 95-150 words approx. Must not use prohibited phrases. Must not use "النتيجة" start. Must not mention result as first sentence. Must not start with "عندما انتهت". Must not start with "في مباراة". Must not use generic phrases like "أعاد تشكيل المزاج". Must not use "الجمهور كان متحمساً". Must not use "تداولت الأحاديث". Must not use "أعادت تشكيل". Must not use "الثقة العمياء". Must not use "القراء الهادئين". Must not use "النجوم تتألق". Must not use "الطاقة تتفجر". Must not use "التحول المفاجئ". Must not use "ليلة 3 توقعات بالملّي". Must not use "مباراة" in title? Title cannot start with team name nor result. It can mention match indirectly but not start with team name nor result. Must be 6-12 words. Must not start with team name or result. Must be story-like.
+
+We need to produce JSON with "highlights": [ { ... }, { ... }, { ... }, { ... } ] and "profile_messages": [] (since 0). Must be valid JSON, no trailing commas.
+
+We need to pick 4 story_seeds from the provided list. They have many seeds: hard_stop entries (3), stage_mood (4), participant_arc (1). We need to produce 4 highlights. Each highlight must be from story_seeds only, each seed has kind etc. We need to map each highlight to a seed. The seed must have a post_blueprint with hook_style etc. We need to write a highlight that matches that seed's kind and constraints.
+
+We need to produce for each highlight:
+
+- title_ar: 6-12 words, story-like, not start with team name nor result.
+- body_ar: two short paragraphs separated by a blank line (i.e., a newline line). Approximately 95-150 words total. Must be fun, hook style first paragraph, second paragraph ties to names and points and outcome (mention outcome once if needed). Must include participant_names (1-4 names). Must include source_fact (short truth used). Must include source_note_ids if used event note.
+
+- icon: "✨"
+
+- category: one of "timeline|match|participant|emotional|fun|stage". Must be appropriate.
+
+- stage_ar: name of stage or competition light.
+
+- participant_names: list of 1-4 names.
+
+- source_fact: short truth used.
+
+- source_note_ids: array of ids from final_event_notes if used event note. If not, maybe empty array? The spec says "if used event note". Could be empty array? Probably can be empty array but still valid JSON. But they said "source_note_ids": ["id من final_event_notes إذا استخدمت حدثاً كروياً"]. So if we don't use event note, maybe we can leave empty array or omit? Must be present field, so we need an array, maybe empty [].
+
+- Must not start with "عندما انتهت" nor "في مباراة". Title cannot start with team name nor result. So title must be story-like.
+
+- Must not repeat template: result + points + changed ranking. So avoid that pattern.
+
+- Must not use generic phrases.
+
+- Must use correct pronouns for female names (they are female). Use appropriate pronouns (هي، her? Arabic pronouns: هي, hers? Use "هي" etc). Must not misuse.
+
+- Must not use prohibited phrases like "أعادت تشكيل المزاج". Must avoid "أعاد تشكيل". Must avoid "القراء الهادئين". Must avoid "الجمهور كان متحمساً". Must avoid "تداولت الأحاديث". Must avoid "أحمد" etc.
+
+- Must not use more than 4 names per highlight.
+
+- Must not invent points. Must only use points that are actual from data? They said "نتيجة بالملّي = 50 نقطة. الاتجاه الصحيح فقط = 10 نقاط. لا تخترع نقاطاً إضافية ولا أرقاماً غير موجودة." So we can mention points like 50 or 10 maybe, but must not invent numbers not in data. We can mention 50 or 10 if they are actual. In the data, they mention "نتيجة بالملّي = 50 نقطة". So we can mention that a correct prediction by mill'i gives 50 points. But we must not invent extra numbers. So we can mention "50 نقطة" for correct prediction. Also "10 نقاط" for correct direction? Actually they said "الاتجاه الصحيح فقط = 10 نقاط". So we can mention that.
+
+- Must not use more than 4 names per highlight.
+
+- Must not mention "مباراة" at start? Title cannot start with team name nor result, but can contain "مباراة"? Probably okay as long as not start with team name nor result. But they said "لا يبدأ باسم مباراة ولا بنتيجة". So cannot start with "مباراة". So title must not start with the word "مباراة". So we need to avoid starting with "مباراة". So title must start with something else.
+
+- Must be 6-12 words. Count words in Arabic. Let's craft titles.
+
+We need 4 highlights.
+
+We can use seeds:
+
+1. "الليلة التي خرج فيها الجدول صامتاً" (hard_stop) - kind hard_stop, priority 104. This seed is about a match where 100% got no points. It has no participants required. But we need to include participant names (1-4). Could include some names. The seed's required_participant_names is empty. But we can still include names in the highlight as part of participant_names field. That's allowed. The highlight must include participant_names list. So we can choose up to 4 names. We can include "عبدالرحمن" etc.
+
+But we must follow the post_blueprint: hook_style: "افتح من قسوة المباراة على معظم المشاركين؛ لا تسمّ الخاسرين ولا تسخر." So we need to write a highlight that opens with that style, not starting with result. Should be story-like.
+
+We need to embed a real-world cup context? The seed has real_world_cup_context: [] (empty). So we cannot invent VAR etc. So we just talk about story.
+
+We need to include source_fact: short truth used. Could be something like "النتيجة 1-1". But we must mention it once only inside text, not at start. And we must include source_note_ids if used event note. Since no event note used, we can put empty array [].
+
+Category: could be "participant" or "stage" or "fun". Let's choose "participant" maybe.
+
+Stage_ar: could be "دور المجموعات". Or maybe "قصة صامتة". But stage_ar should be name of stage or competition light. For hard_stop seed, stage is GROUP_STAGE? Actually the match is GROUP_STAGE. So stage_ar could be "دور المجموعات". That fits.
+
+Now we need to craft body_ar: two paragraphs, ~95-150 words total. Must be fun, hook style first paragraph, second paragraph ties to names and points and outcome once.
+
+We need to mention outcome once only if needed. Could mention "النتيجة 1-1" as part of story. That's okay.
+
+We need to mention participant names (1-4). Could include "عبدالرحمن", "لمار", "أنس". That's three names.
+
+We need to mention source_fact: maybe "النتيجة 1-1". That's short.
+
+We need to mention source_note_ids: [] (empty array).
+
+We need to include icon "✨" in each highlight.
+
+We need to set category: maybe "participant" for participant-focused highlight.
+
+Now we need to ensure body length 95-150 words. Let's aim for about 110 words.
+
+Paragraph 1: hook style, story-like, no result start. Something like: "في ليلة هدوء غير مألوف، توقفت العدادات وتغيرت الأنماط، وكأنّ الجميع انتظر لحظة صمت لتكشف ماذا سيحدث للجدول." That's about 30 words.
+
+Paragraph 2: tie to names and points and outcome once. Something like: "عبدالرحمن، لمار وأنس كانوا من الذين قرأوا المشهد بعمق، لكن عندما ظهرت النتيجة 1-1، لم يحصلوا على أي نقاط، بينما كان التوقع الأكثر تكراراً 2-0 يلمّح إلى شيء آخر. هذه اللحظة علمتهم أن الدقة لا تُقاس إلا بالجرأة، وأن 50 نقطة قد تُمنح لقراءة صحيحة، لكن هنا لم تُمنح أي نقاط." That's about 80 words maybe. Need total 95-150 words. Let's count roughly.
+
+Let's draft full body:
+
+Paragraph 1 (hook): "في ليلة هدوء غير مألوف، توقفت العدادات وتغيرت الأنماط، وكأنّ الجميع انتظر لحظة صمت لتكشف ماذا سيحدث للجدول."
+
+Paragraph 2 (story): "عبدالرحمن، لمار وأنس كانوا من الذين قرأوا المشهد بعمق، لكن عندما ظهرت النتيجة 1-1، لم يحصلوا على أي نقاط، بينما كان التوقع الأكثر تكراراً 2-0 يلمّح إلى شيء آخر. هذه اللحظة علمتهم أن الدقة لا تُقاس إلا بالجرأة، وأن 50 نقطة قد تُمنح لقراءة صحيحة، لكن هنا لم تُمنح أي نقاط."
+
+Now count words: Let's count Arabic words roughly.
+
+Paragraph1 words: في(1) ليلة2 هدوء3 غير4 مألوف،5 توقفت6 العدادات7 وتغيرت8 الأنماط،9 وكأنّ10 الجميع11 انتظر12 لحظة13 صمت14 لتكشف15 ماذا16 سيحدث17 للجدول18. => 18 words.
+
+Paragraph2 words: عبدالرحمن،1 لمار2 وأنس3 كانوا4 من5 الذين6 قرأوا7 المشهد8 بعمق،9 لكن10 عندما11 ظهرت12 النتيجة13 1-1،14 لم15 يحصلوا16 على17 أي18 نقاط،19 بينما20 كان21 التوقع22 الأكثر23 تكراراً24 2-025 يلمّح26 إلى27 شيء28 آخر.29 هذه30 اللحظة31 علمتهم32 أن33 الدقة34 لا35 تُقاس36 إلا37 بالجرأة،38 وأن39 5040 نقطة41 قد42 تُمنح43 لقراءة44 صحيحة،45 لكن46 هنا47 لم48 تُمنح49 أي50 نقاط51. => 51 words.
+
+Total 69 words. Need 95-150 words. So we need to expand to about 110-130 words. Add more description, maybe talk about mood, mention stage, mention "دور المجموعات". Also mention "الضغط الإقصائي" maybe not needed. But we can add more sentences.
+
+We can add more about "الصدمة كانت قوية، لكن الصمت كان أقوى". Let's expand paragraph 2.
+
+Add: "كان هناك شعور بأن الوقت يتجمد، وأن كل توقعاتهم التي بُنيت على تفاصيل صغيرة بدأت تتقلب، بينما كان الجميع يتساءلون إذا كان هذا الصمت سيستمر أو سيتحول إلى صرخة في المراحل القادمة." That's about 30 words.
+
+Let's rewrite paragraph 2 fully:
+
+"عبدالرحمن، لمار وأنس كانوا من الذين قرأوا المشهد بعمق، لكن عندما ظهرت النتيجة 1-1، لم يحصلوا على أي نقاط، بينما كان التوقع الأكثر تكراراً 2-0 يلمّح إلى شيء آخر. هذه اللحظة علمتهم أن الدقة لا تُقاس إلا بالجرأة، وأن 50 نقطة قد تُمنح لقراءة صحيحة، لكن هنا لم تُمنح أي نقاط. كان هناك شعور بأن الوقت يتجمد، وأن كل توقعاتهم التي بُنيت على تفاصيل صغيرة بدأت تتقلب، بينما كان الجميع يتساءلون إذا كان هذا الصمت سيستمر أو سيتحول إلى صرخة في المراحل القادمة."
+
+Now count words again.
+
+Paragraph2 words: عبدالرحمن،1 لمار2 وأنس3 كانوا4 من5 الذين6 قرأوا7 المشهد8 بعمق،9 لكن10 عندما11 ظهرت12 النتيجة13 1-1،14 لم15 يحصلوا16 على17 أي18 نقاط،19 بينما20 كان21 التوقع22 الأكثر23 تكراراً24 2-025 يلمّح26 إلى27 شيء28 آخر.29 هذه30 اللحظة31 علمتهم32 أن33 الدقة34 لا35 تُقاس36 إلا37 بالجرأة،38 وأن39 5040 نقطة41 قد42 تُمنح43 لقراءة44 صحيحة،45 لكن46 هنا47 لم48 تُمنح49 أي50 نقاط.51 كان52 هناك53 شعور54 بأن55 الوقت56 يتجمد،57 وأن58 كل59 توقعاتهم60 التي61 بُنيت62 على63 تفاصيل64 صغيرة65 بدأت66 تتقلب،67 بينما68 كان69 الجميع70 يتساءلون71 إذا72 كان73 هذا74 الصمت75 سيستمر76 أو77 سيتحول78 إلى79 صرخة80 في81 المراحل82 القادمة83. => 83 words.
+
+Add paragraph1 18 words = total 101 words. That's within 95-150. Good.
+
+Now we need to ensure we mention outcome only once. We mentioned "النتيجة 1-1" once. Good.
+
+We need to mention participant names: we have "عبدالرحمن، لمار وأنس". That's three names, okay.
+
+We need to include source_fact: short truth used. Could be "النتيجة 1-1". That's short. Must be in source_fact field.
+
+We need to include source_note_ids: maybe ["d9551038-0020-44b4-8bd7-f0c1b8ca41f7"]? That's the match id for that hard_stop seed. That is an event note id? It is a match id. The spec says source_note_ids: ["id من final_event_notes إذا استخدمت حدثاً كروياً"]. Since we used an event note (the match data), we can include the id. So we can put that id.
+
+Now category: maybe "participant". Or "fun". Let's choose "participant". That's allowed.
+
+Stage_ar: "دور المجموعات". That's the stage.
+
+Now title_ar: must be 6-12 words, story-like, not start with team name nor result. Must not start with "مباراة". Let's craft a title: "لحظة صمت على جدول النقاط". Count words: لحظة1 صمت2 على3 جدول4 النقاط5. That's 5 words, need 6-12. Add "في" maybe: "لحظة صمت على جدول النقاط في الليل". Count: لحظة1 صمت2 على3 جدول4 النقاط5 في6 الليل7. That's 7 words, okay. Does it start with team name? No. Does it start with result? No. Good.
+
+But maybe better: "لحظة صمت على جدول النقاط في ليلة غريبة". Count: لحظة1 صمت2 على3 جدول4 النقاط5 في6 ليلة7 غريبة8. That's 8 words, okay.
+
+But we need 6-12 words. Let's pick "لحظة صمت على جدول النقاط في ليلة غريبة". That's 8 words, okay.
+
+But maybe we can be more story-like: "صمت جدول النقاط يثير سؤالاً غير متوقع". Count: صمت1 جدول2 النقاط3 يثير4 سؤالاً5 غير6 متوقع7. That's 7 words, okay. Not start with team name nor result. Good.
+
+Let's pick "صمت جدول النقاط يثير سؤالاً غير متوقع". That's 7 words.
+
+Now we need to ensure title is 6-12 words, not start with team name nor result. Good.
+
+Now we need to fill JSON for each highlight.
+
+We need 4 highlights. Let's design each based on different seeds.
+
+Highlight 1: from "hard_stop" seed about Portugal vs Congo (match id d9551038-0020-44b4-8bd7-f0c1b8ca41f7). Use stage "دور المجموعات". Title: "صمت جدول النقاط يثير سؤالاً غير متوقع". Body as drafted. participant_names: ["عبدالرحمن","لمار","أنس"] (3 names). source_fact: "النتيجة 1-1". source_note_ids: ["d9551038-0020-44b4-8bd7-f0c1b8ca41f7"]. category: "participant". stage_ar: "دور المجموعات". icon: "✨". category maybe "participant". Provide all fields.
+
+Highlight 2: from another hard_stop seed about England vs Ghana (match id 80972d74-b630-47ba-bc67-d5a2148c7e44). Title maybe "لحظة صمت بين النجوم". Count words: لحظة1 صمت2 بين3 النجوم4. That's 4 words, need 6-12. Add "في" etc: "لحظة صمت بين النجوم في انتظار جديد". Count: لحظة1 صمت2 بين3 النجوم4 في5 انتظار6 جديد7. That's 7 words, okay. Not start with team name nor result. Use same body style but different story? Must be unique. Could use different names maybe "غادة", "إلهام", "رحاب". Let's craft a new body with those names. Must be 95-150 words. Let's draft similar length.
+
+Paragraph1: "في لحظة هدوء غير مألوف، توقفت الأحلام وتغيرت الأنماط، وكأنّ الجميع انتظر صمتًا لتفصح عن سرٍّ كان ي lurks في背后." That's Arabic but maybe okay. Let's keep consistent style.
+
+But we must avoid prohibited phrases. "توقفت الأحلام" is okay. "تغيرت الأنماط" okay. "awaits"? We'll keep Arabic.
+
+Paragraph2: include names "غادة", "إلهام", "رحاب". Mention outcome maybe "النتيجة 0-0". Mention points 50? Maybe mention "الاتجاه الصحيح = 10 نقاط". But we must not invent numbers beyond 10 or 50. We can mention "10 نقاط" for correct direction. But we need to be careful not to claim they got points. We can say "لكنهم لم يحصلوا على أي نقاط، بينما كان التوقع الأكثر تكرارًا 3-1 يلمّح إلى شيء آخر، وتعلموا أن 10 نقاط قد تُمنح لاتجاه صحيح، لكن هنا لم تُمنح أي نقاط." That's okay.
+
+But we must not start with result. Title is fine.
+
+Now body length must be 95-150 words. Let's craft about 110 words.
+
+Paragraph1: "في لحظة هدوء غير مألوف، توقفت الأحلام وتغيرت الأنماط، وكأنّ الجميع انتظر صمتًا لتفصح عن سرٍّ كان ي lurks في背后." That's maybe 20 words.
+
+Paragraph2: "غادة، إلهام ورفاب كان لهم قراءة مميزة، لكن عندما ظهرت النتيجة 0-0، لم يحصلوا على أي نقاط، بينما كان التوقع الأكثر تكرارًا 3-1 يلمّح إلى شيء آخر. هذه اللحظة علمتهم أن 10 نقاط قد تُمنح لاتجاه صحيح، لكن هنا لم تُمنح أي نقاط. كان هناك شعور بأن الوقت يتجمد، وأن كل توقعاتهم التي بُنيت على تفاصيل صغيرة بدأت تتقلب، بينما كان الجميع يتساءلون إذا كان هذا الصمت سيستمر أو سيتحول إلى صرخة في المراحل القادمة."
+
+Now count words roughly.
+
+Paragraph1 words: في1 لحظة2 هدوء3 غير4 مألوف،5 توقفت6 الأحلام7 وتغيرت8 الأنماط،9 وكأنّ10 الجميع11 انتظر12 صمتًا13 لتفصح14 عن15 سرٍّ16 كان17 ي18 lurks19 في20 الخلفية21. Actually "في الخلفية" is two words? Let's count: في1 الخلفية2. So total maybe 21 words. Let's approximate 21.
+
+Paragraph2 words: غادة،1 إلهام2 ورفاب3 كان4 لهم5 قراءة6 مميزة،7 لكن8 عندما9 ظهرت10 النتيجة11 0-0،12 لم13 يحصلوا14 على15 أي16 نقاط،17 بينما18 كان19 التوقع20 الأكثر21 تكرارًا22 3-123 يلمّح24 إلى25 شيء26 آخر.27 هذه28 اللحظة29 علمتهم30 أن31 1032 نقاط33 قد34 تُمنح35 لاتجاه36 صحيح،37 لكن38 هنا39 لم40 تُمنح41 أي42 نقاط.43 كان44 هناك45 شعور46 بأن47 الوقت48 يتجمد،49 وأن50 كل51 توقعاتهم52 التي53 بُنيت54 على55 تفاصيل56 صغيرة57 بدأت58 تتقلب،59 بينما60 كان61 الجميع62 يتساءلون63 إذا64 كان65 هذا66 الصمت67 سيستمر68

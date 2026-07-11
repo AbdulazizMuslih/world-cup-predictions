@@ -2586,6 +2586,7 @@ function buildLeaderboardRow(participant, completedMatches) {
     return {
         id: participant.id,
         name: participant.name,
+        sortOrder: Number(participant.sort_order || 9999),
         points: totalPoints,
         predictionCount: predictions.length,
         completedPredictionCount: completedPredictions.filter((prediction) => !prediction.missingPrediction).length,
@@ -3491,7 +3492,7 @@ async function renderStatisticsAndBadgesPage() {
         }
 
         statsContainer.innerHTML = renderStatisticsSnapshot(recap.seasonStats);
-        badgesContainer.innerHTML = renderBadgeCards(recap.awards);
+        badgesContainer.innerHTML = renderBadgeCards(recap.awards, recap.finalRows, recap.participants);
     } catch (error) {
         console.error("Statistics and badges load failed:", error);
         statsContainer.innerHTML = `<div class="placeholder-card">تعذر تحميل الإحصائيات حالياً.</div>`;
@@ -3732,22 +3733,110 @@ function renderStatisticsSnapshot(seasonStats) {
     `).join("");
 }
 
-function renderBadgeCards(awards) {
-    if (!awards || awards.length === 0) {
+function renderBadgeCards(awards = [], finalRows = [], participants = []) {
+    const cards = buildParticipantBadgeCards(awards, finalRows, participants);
+
+    if (!cards.length) {
         return `<div class="placeholder-card">لا توجد شارات كافية حتى الآن.</div>`;
     }
 
-    return awards.map((award) => `
-        <article class="recap-award-card badge-story-card">
-            <div class="recap-award-icon" aria-hidden="true">${escapeHtml(award.icon)}</div>
-            <div>
-                <h4>${escapeHtml(award.title)}</h4>
-                <strong>${escapeHtml(award.winner)}</strong>
-                <p>${escapeHtml(award.value)}</p>
-                <small>${escapeHtml(award.note)}</small>
+    return cards.map((card) => `
+        <article class="recap-award-card badge-story-card participant-badge-card">
+            <div class="recap-award-icon participant-badge-icon" aria-hidden="true">${escapeHtml(card.icon)}</div>
+            <div class="participant-badge-content">
+                <div class="participant-badge-head">
+                    <strong class="participant-badge-person">${escapeHtml(card.name)}</strong>
+                    <span class="participant-badge-rank">#${escapeHtml(card.rank)}</span>
+                </div>
+                <h4>${escapeHtml(card.title)}</h4>
+                <p>${escapeHtml(card.value)}</p>
+                <small>${escapeHtml(card.note)}</small>
+                ${card.extra ? `<em class="participant-badge-extra">${escapeHtml(card.extra)}</em>` : ""}
             </div>
         </article>
     `).join("");
+}
+
+function buildParticipantBadgeCards(awards = [], finalRows = [], participants = []) {
+    const rowsById = new Map((finalRows || []).map((row) => [String(row.id), row]));
+    const rowsByName = new Map((finalRows || []).map((row) => [row.name, row]));
+    const awardsByWinner = new Map();
+
+    (awards || []).forEach((award) => {
+        if (!award?.winner) return;
+        if (!awardsByWinner.has(award.winner)) awardsByWinner.set(award.winner, []);
+        awardsByWinner.get(award.winner).push(award);
+    });
+
+    const orderedRows = (participants || []).length
+        ? participants
+            .map((participant, index) => {
+                const row = rowsById.get(String(participant.id)) || rowsByName.get(participant.name);
+                return row ? { ...row, participantOrder: Number(participant.sort_order || index + 1) } : null;
+            })
+            .filter(Boolean)
+        : [...(finalRows || [])].map((row, index) => ({ ...row, participantOrder: Number(row.sortOrder || index + 1) }));
+
+    return orderedRows
+        .sort((a, b) => a.participantOrder - b.participantOrder || a.name.localeCompare(b.name, "ar"))
+        .map((row) => {
+            const participantAwards = awardsByWinner.get(row.name) || [];
+            const primaryAward = participantAwards[0];
+            const fallback = buildParticipantDefaultBadge(row);
+            const badge = primaryAward ? {
+                icon: primaryAward.icon || fallback.icon,
+                title: primaryAward.title,
+                value: primaryAward.value,
+                note: primaryAward.note,
+                extra: participantAwards.length > 1 ? `وله أيضاً ${participantAwards.length - 1} شارة أخرى` : ""
+            } : fallback;
+
+            return {
+                name: row.name,
+                rank: row.finalRank || "-",
+                ...badge
+            };
+        });
+}
+
+function buildParticipantDefaultBadge(row) {
+    if (!row) {
+        return { icon: "🙂", title: "حاضر معنا", value: "مشارك في المسابقة", note: "شارة مشاركة لكل اسم في القائمة." };
+    }
+
+    if (row.finalRank === 1) {
+        return { icon: "🏆", title: "بطل المسابقة", value: `${row.points} نقطة`, note: "ختمها في المركز الأول." };
+    }
+
+    if (row.finalRank && row.finalRank <= 3) {
+        return { icon: "🥇", title: "على المنصة", value: `المركز ${row.finalRank} بـ${row.points} نقطة`, note: "نهاية قوية بين الثلاثة الأوائل." };
+    }
+
+    if (row.exactScores > 0) {
+        return { icon: "🎯", title: "عينك على النتيجة", value: `${row.exactScores} بالملّي`, note: "ضربات كاملة صنعت الحضور." };
+    }
+
+    if (row.uniqueCorrect > 0) {
+        return { icon: "🐺", title: "قراءة مختلفة", value: `${row.uniqueCorrect} توقعات ما شاركه فيها أحد`, note: "اختار طريقه بعيداً عن الزحمة." };
+    }
+
+    if (row.againstCrowdPoints > 0) {
+        return { icon: "⚡", title: "ضد الموجة", value: `${row.againstCrowdPoints} نقطة ضد الأغلبية`, note: "كسب نقاطاً من قراءات غير شعبية." };
+    }
+
+    if (row.bestCorrectStreak > 1) {
+        return { icon: "🔥", title: "نَفَس طويل", value: `${row.bestCorrectStreak} توقعات صحيحة متتالية`, note: "سلسلة هادئة تستاهل الذكر." };
+    }
+
+    if (row.correctPredictions > 0) {
+        return { icon: "✅", title: "حاضر في النقاط", value: `${row.correctPredictions} توقعات جابت نقاط`, note: "العشرة والخمسين صنعت بصمة واضحة." };
+    }
+
+    if (row.predictions > 0) {
+        return { icon: "⚽", title: "حاضر للنهاية", value: `${row.predictions} توقع`, note: "المشاركة نفسها جزء من جو المسابقة." };
+    }
+
+    return { icon: "🙂", title: "اسم في القصة", value: "بدون أرقام كافية بعد", note: "الشارة موجودة حتى لو الأرقام ما خدمت اللحظة." };
 }
 
 function renderSeasonThankYouPage() {
@@ -3849,6 +3938,7 @@ function buildFinalRecapParticipantModels(participants, completedMatches, predic
     const models = new Map(participants.map((participant) => [participant.id, {
         id: participant.id,
         name: participant.name,
+        sortOrder: Number(participant.sort_order || 9999),
         points: 0,
         predictions: 0,
         missing: 0,

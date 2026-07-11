@@ -18,7 +18,7 @@ on:
       max_highlights:
         description: "Maximum highlight posts to ask for"
         required: true
-        default: "70"
+        default: "50"
       reset_existing:
         description: "Delete old final_highlights/final_profile rows before inserting new rows?"
         required: true
@@ -59,23 +59,34 @@ jobs:
           OPENROUTER_USE_FALLBACK_MODELS: ${{ secrets.OPENROUTER_USE_FALLBACK_MODELS || 'false' }}
           OPENROUTER_HTTP_REFERER: ${{ secrets.OPENROUTER_HTTP_REFERER }}
           OPENROUTER_APP_TITLE: "World Cup 2026 Predictions"
-          AI_RESPONSE_FORMAT: ${{ secrets.AI_RESPONSE_FORMAT || 'true' }}
+          AI_RESPONSE_FORMAT: ${{ secrets.AI_RESPONSE_FORMAT || 'false' }}
           AI_DISABLE_REPAIR_CALL: ${{ secrets.AI_DISABLE_REPAIR_CALL || 'true' }}
+          AI_TEMPERATURE: "0.62"
+          AI_MAX_TOKENS: "7000"
           AI_BATCH_GENERATION: "true"
-          AI_BATCH_HIGHLIGHT_TARGET: "10"
+          AI_BATCH_HIGHLIGHT_TARGET: "3"
           AI_EVENT_NOTE_BATCH_SIZE: "30"
           AI_FACT_BATCH_SIZE: "40"
-          AI_MAX_BATCHES_PER_RUN: "6"
+          AI_USE_EVENT_ONLY_BATCHES: "false"
+          AI_ENABLE_FILL_MATCHES: "false"
+          AI_REQUIRE_CONTEST_SIGNAL: "true"
+          AI_STORY_SEED_BATCH_SIZE: "6"
+          AI_POST_BODY_MAX_CHARS: "1350"
+          AI_MAX_BATCHES_PER_RUN: "12"
           AI_INSERT_PARTIAL_ON_QUOTA: "true"
           AI_INSERT_PARTIAL_ON_BATCH_FAILURE: "true"
           AI_INSERT_PARTIAL_ON_MAX_BATCHES: "true"
-          AI_MIN_HIGHLIGHTS_FOR_PARTIAL_INSERT: "15"
+          AI_MIN_HIGHLIGHTS_FOR_PARTIAL_INSERT: "8"
+          AI_CONTINUE_ON_BATCH_FAILURE: "true"
+          AI_MAX_FAILED_BATCHES: "10"
+          AI_ENABLE_CONTEST_MOMENT_BATCHES: "false"
+          AI_INSERT_PARTIAL_ANY_STORY_COUNT: "false"
           EXPECTED_WORLD_CUP_MATCH_COUNT: "104"
           ALLOW_FINAL_PREVIEW: ${{ github.event_name == 'schedule' && 'true' || inputs.allow_preview_generation }}
           PUBLISH_VISIBLE: ${{ github.event_name == 'schedule' && 'true' || inputs.publish_visible }}
           MAX_HIGHLIGHTS: ${{ github.event_name == 'schedule' && '70' || inputs.max_highlights }}
           RESET_EXISTING_FINAL_AI: ${{ github.event_name == 'schedule' && 'true' || inputs.reset_existing }}
-          GENERATE_PROFILES: "true"
+          GENERATE_PROFILES: "false"
           MIN_APPROVED_EVENT_NOTES: "0"
           REQUIRE_EVENT_NOTES_FOR_PUBLISH: "false"
           USE_TRUSTED_EVENT_NOTES: "true"
