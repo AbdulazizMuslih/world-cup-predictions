@@ -45,7 +45,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "24"
 
       - name: Generate final highlights and profile messages
         env:
@@ -60,11 +60,11 @@ jobs:
           OPENROUTER_BASE_URL: ${{ secrets.OPENROUTER_BASE_URL }}
           OPENROUTER_MODEL: ${{ secrets.OPENROUTER_MODEL }}
           OPENROUTER_FALLBACK_MODELS: ${{ secrets.OPENROUTER_FALLBACK_MODELS }}
-          OPENROUTER_USE_FALLBACK_MODELS: ${{ secrets.OPENROUTER_USE_FALLBACK_MODELS || 'false' }}
+          OPENROUTER_USE_FALLBACK_MODELS: "true"
           OPENROUTER_HTTP_REFERER: ${{ secrets.OPENROUTER_HTTP_REFERER }}
           OPENROUTER_APP_TITLE: "World Cup 2026 Predictions"
           AI_RESPONSE_FORMAT: ${{ secrets.AI_RESPONSE_FORMAT || 'false' }}
-          AI_DISABLE_REPAIR_CALL: ${{ secrets.AI_DISABLE_REPAIR_CALL || 'true' }}
+          AI_DISABLE_REPAIR_CALL: "false"
           AI_TEMPERATURE: "0.62"
           AI_MAX_TOKENS: "7000"
           AI_BATCH_GENERATION: "true"
@@ -75,7 +75,8 @@ jobs:
           AI_ENABLE_FILL_MATCHES: "false"
           AI_REQUIRE_CONTEST_SIGNAL: "true"
           AI_STORY_SEED_BATCH_SIZE: "6"
-          AI_POST_BODY_MAX_CHARS: "1350"
+          AI_POST_BODY_MAX_CHARS: "520"
+          AI_HIGHLIGHT_MAX_WORDS: "62"
           AI_ENFORCE_UNIQUE_TITLES: "true"
           AI_TITLE_MATCH_HINT: "true"
           AI_MAX_BATCHES_PER_RUN: "12"
@@ -93,9 +94,9 @@ jobs:
           EXPECTED_WORLD_CUP_MATCH_COUNT: "104"
           ALLOW_FINAL_PREVIEW: ${{ github.event_name == 'schedule' && 'true' || inputs.allow_preview_generation }}
           PUBLISH_VISIBLE: ${{ github.event_name == 'schedule' && 'true' || inputs.publish_visible }}
-          MAX_HIGHLIGHTS: ${{ github.event_name == 'schedule' && '60' || inputs.max_highlights }}
+          MAX_HIGHLIGHTS: ${{ github.event_name == 'schedule' && '50' || inputs.max_highlights }}
           RESET_EXISTING_FINAL_AI: ${{ github.event_name == 'schedule' && 'true' || inputs.reset_existing }}
-          GENERATE_PROFILES: ${{ github.event_name == 'schedule' && 'auto' || 'true' }}
+          GENERATE_PROFILES: "auto"
           AI_AUTO_STAGE_MODE: ${{ github.event_name == 'schedule' && 'true' || 'false' }}
           AUTO_GENERATION_REMAINING_MATCHES: "6"
           AI_SKIP_IF_SAME_COMPLETED_COUNT_EXISTS: ${{ github.event_name == 'schedule' && 'true' || 'false' }}

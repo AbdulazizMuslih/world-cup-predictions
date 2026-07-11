@@ -60,7 +60,8 @@ const AI_ENABLE_CONTEST_MOMENT_BATCHES = String(process.env.AI_ENABLE_CONTEST_MO
 const AI_INSERT_PARTIAL_ANY_STORY_COUNT = String(process.env.AI_INSERT_PARTIAL_ANY_STORY_COUNT || "false").toLowerCase() === "true";
 const AI_STORY_SEED_BATCH_SIZE = Math.max(4, Math.min(28, Number(process.env.AI_STORY_SEED_BATCH_SIZE || 6)));
 const AI_POST_TITLE_MAX_CHARS = Math.max(90, Math.min(170, Number(process.env.AI_POST_TITLE_MAX_CHARS || 140)));
-const AI_POST_BODY_MAX_CHARS = Math.max(700, Math.min(1600, Number(process.env.AI_POST_BODY_MAX_CHARS || 1250)));
+const AI_POST_BODY_MAX_CHARS = Math.max(320, Math.min(700, Number(process.env.AI_POST_BODY_MAX_CHARS || 520)));
+const AI_HIGHLIGHT_MAX_WORDS = Math.max(35, Math.min(85, Number(process.env.AI_HIGHLIGHT_MAX_WORDS || 62)));
 const AI_MIN_VALID_HIGHLIGHT_ROWS = Math.max(1, Number(process.env.AI_MIN_VALID_HIGHLIGHT_ROWS || AI_MIN_HIGHLIGHTS_FOR_PARTIAL_INSERT));
 const MAX_HIGHLIGHTS = Math.min(90, Math.max(20, Number(process.env.MAX_HIGHLIGHTS || 60)));
 const AI_TOP_UP_WITH_CALCULATED_HIGHLIGHTS = String(process.env.AI_TOP_UP_WITH_CALCULATED_HIGHLIGHTS || "true").toLowerCase() !== "false";
@@ -90,7 +91,7 @@ const POSTS_TABLE = "ai_posts";
 const EVENT_NOTES_TABLE = "final_event_notes";
 const FINAL_HIGHLIGHTS_SECTION = "final_highlights";
 const FINAL_PROFILE_SECTION = "final_profile";
-const GENERATOR_VERSION = "wc-final-recap-v39-source-aware-highlights";
+const GENERATOR_VERSION = "wc-final-recap-v39-source-aware-short-highlights-v2";
 const BONUS_EXACT_POINTS_BY_STAGE = { SEMI_FINALS: 100, THIRD_PLACE: 100, FINAL: 200 };
 const CHAMPION_WINNER_POINTS = 50;
 const CHAMPION_RUNNER_UP_POINTS = 10;
@@ -668,7 +669,7 @@ async function buildFactsPack() {
             "استخدم ضمائر صحيحة للأسماء النسائية المذكورة في participantLanguage.",
             "لا تستخدم عبارات صحفية عامة مثل الجمهور كان متحمساً أو تداولت الأحاديث، ولا تتكلم عن جمهور غير موجود في البيانات.",
             "نتيجة بالملّي = 50 نقطة، وفي نصف النهائي والمركز الثالث = 100، وفي النهائي = 200. الاتجاه الصحيح فقط = 10 نقاط. لا تخترع نقاطاً إضافية.",
-            "كل منشور: عنوان قصصي واضح + وصف فيه 3 إلى 6 جمل قصيرة. لا مقالات طويلة ولا كروت صغيرة.",
+            "كل منشور: عنوان قصصي واضح + وصف مختصر من جملتين إلى ثلاث جمل، بين 32 و60 كلمة تقريباً. لا مقالات طويلة ولا حشو.",
             "إذا لم توجد معلومة كافية عن حدث كروي خارجي، تجاهله ولا تخترعه وركز على قصة المسابقة."
         ]
     };
@@ -1000,19 +1001,61 @@ function getHighlightDuplicateReason(first, second, factsPack = {}) {
     const secondMatchId = inferHighlightMatchId(second, factsPack);
     const sameMatch = firstMatchId && secondMatchId && firstMatchId === secondMatchId;
 
-    // Same match + same story category means the generator described the same
-    // angle twice, even if the wording changed.
-    if (sameMatch && firstCategory === secondCategory) {
-        return `same match/category ${firstMatchId}/${firstCategory}`;
+    const firstParticipants = new Set(getHighlightParticipantNames(first));
+    const secondParticipants = new Set(getHighlightParticipantNames(second));
+    const sharedParticipants = [...firstParticipants].filter((name) => secondParticipants.has(name));
+    const sourceFactSimilarity = tokenSetJaccard(
+        highlightDedupeTokenSet(firstText.sourceFact),
+        highlightDedupeTokenSet(secondText.sourceFact)
+    );
+
+    /*
+      A match may legitimately produce more than one highlight when the angles
+      are genuinely different: for example, one real match event and one
+      participant prediction story. Never remove a post merely because it has
+      the same match/category. Require shared source identity or strong wording
+      overlap as well.
+    */
+    if (sameMatch) {
+        if (
+            participantCategories.has(firstCategory)
+            && participantCategories.has(secondCategory)
+            && sharedParticipants.length > 0
+            && (combinedSimilarity >= 0.42 || titleSimilarity >= 0.50 || bodySimilarity >= 0.38)
+        ) {
+            return `same participant/match story ${firstMatchId}/${sharedParticipants.join(",")}`;
+        }
+
+        if (
+            firstCategory === secondCategory
+            && !participantCategories.has(firstCategory)
+            && (
+                combinedSimilarity >= 0.54
+                || (titleSimilarity >= 0.58 && bodySimilarity >= 0.40)
+                || (sourceFactSimilarity >= 0.72 && bodySimilarity >= 0.34)
+            )
+        ) {
+            return `same match/category with overlapping story ${firstMatchId}/${firstCategory}`;
+        }
+
+        if (combinedSimilarity >= 0.68 || (titleSimilarity >= 0.66 && bodySimilarity >= 0.46)) {
+            return `same match with overlapping story (${combinedSimilarity.toFixed(2)})`;
+        }
     }
 
-    // Different legitimate angles from one match are allowed. They are removed
-    // only when their actual text is strongly overlapping.
-    if (sameMatch && (combinedSimilarity >= 0.58 || (titleSimilarity >= 0.58 && bodySimilarity >= 0.42))) {
-        return `same match with overlapping story (${combinedSimilarity.toFixed(2)})`;
-    }
+    const clearlyDifferentSources = (
+        firstSourceKey && secondSourceKey && firstSourceKey !== secondSourceKey
+    ) || (
+        firstMatchId && secondMatchId && firstMatchId !== secondMatchId
+    );
 
-    if (combinedSimilarity >= 0.82 || (titleSimilarity >= 0.72 && bodySimilarity >= 0.52)) {
+    // Text similarity alone must never collapse two clearly different matches
+    // or two explicitly different story sources. It is only a fallback when
+    // source identity is missing or ambiguous.
+    if (
+        !clearlyDifferentSources
+        && (combinedSimilarity >= 0.86 || (titleSimilarity >= 0.78 && bodySimilarity >= 0.58))
+    ) {
         return `high semantic similarity (${combinedSimilarity.toFixed(2)})`;
     }
 
@@ -1780,7 +1823,7 @@ async function generateFinalContentInBatches(factsPack) {
 
     for (const post of Array.isArray(output.highlights) ? output.highlights : []) {
         const title = cleanText(post?.title_ar || "", AI_POST_TITLE_MAX_CHARS);
-        const body = cleanText(post?.body_ar || "", AI_POST_BODY_MAX_CHARS);
+        const body = formatHighlightBody(post?.body_ar || "");
         if (title && body) usedHighlightKeys.add(`${title}|${body}`.toLowerCase());
     }
     for (const message of Array.isArray(output.profile_messages) ? output.profile_messages : []) {
@@ -1828,13 +1871,13 @@ async function generateFinalContentInBatches(factsPack) {
         for (const post of batchHighlights) {
             if (output.highlights.length >= targetHighlights) break;
             const title = cleanText(post?.title_ar || "", AI_POST_TITLE_MAX_CHARS);
-            const body = cleanText(post?.body_ar || "", AI_POST_BODY_MAX_CHARS);
-            if (!title || !body || isLowQualityHighlightPost(post)) continue;
+            const body = formatHighlightBody(post?.body_ar || "");
             const normalizedPost = {
                 ...post,
                 title_ar: title,
                 body_ar: body
             };
+            if (!title || !body || isLowQualityHighlightPost(normalizedPost)) continue;
             const key = `${title}|${body}`.toLowerCase();
             if (usedHighlightKeys.has(key)) continue;
             const duplicateOf = output.highlights.find((candidate) => getHighlightDuplicateReason(normalizedPost, candidate, factsPack));
@@ -1989,7 +2032,9 @@ async function generateFinalContentInBatches(factsPack) {
         const remainingHighlights = Math.max(0, targetHighlights - output.highlights.length);
         const batchName = `participants-${index + 1}`;
         const highlightTarget = Math.min(participants.length, remainingHighlights);
-        const profileTarget = GENERATE_PROFILES ? participants.length : 0;
+        // Profile rows are built deterministically in normalizeAiOutputToRows.
+        // Do not spend AI batches on profile JSON.
+        const profileTarget = 0;
         if (highlightTarget <= 0 && profileTarget <= 0) continue;
         const batchPrompt = buildBatchPrompt({
             batchName,
@@ -2032,9 +2077,9 @@ async function generateFinalContentInBatches(factsPack) {
         }
     }
 
-    const missingProfileNames = GENERATE_PROFILES
-        ? activeNames.filter((name) => !usedProfileNames.has(name))
-        : [];
+    // Profile messages are generated safely from calculated participant facts,
+    // so no AI recovery batches are needed here.
+    const missingProfileNames = [];
     if (missingProfileNames.length && !stoppedEarly) {
         const missingParticipants = participantRows.filter((participant) => missingProfileNames.includes(participant.name));
         const missingBatches = chunkArray(missingParticipants, AI_PROFILE_BATCH_SIZE);
@@ -2095,7 +2140,7 @@ function topUpHighlightsWithCalculatedStories(output, factsPack, targetCount, us
         const post = buildCalculatedHighlightPost(seed, output.highlights.length + 1);
         if (!post) continue;
         const title = cleanText(post.title_ar || "", AI_POST_TITLE_MAX_CHARS);
-        const body = cleanText(post.body_ar || "", AI_POST_BODY_MAX_CHARS);
+        const body = formatHighlightBody(post.body_ar || "");
         if (!title || !body || isLowQualityHighlightPost({ ...post, title_ar: title, body_ar: body })) continue;
         const normalizedPost = { ...post, title_ar: title, body_ar: body, generated_by: "calculated_top_up" };
         const key = `${title}|${body}`.toLowerCase();
@@ -2128,58 +2173,96 @@ function buildVariedMatchStoryTitle(match = {}, fallback = "لقطة تستحق 
     return matchTitle ? `${matchTitle}${score}: ${phrase}` : phrase;
 }
 
+function calculatedHighlightIcon(category) {
+    const icons = {
+        real_event_plus_contest: "⚽",
+        knockout_pressure: "🔥",
+        popular_trap: "🌪️",
+        lone_reader: "🎯",
+        exact_circle: "✨",
+        points_swing: "⚡",
+        hard_stop: "🧱",
+        stage_mood: "🏟️"
+    };
+    return icons[category] || "✨";
+}
+
+function buildCalculatedStoryTitle(match = {}, phrase = "لقطة تستحق الأضواء") {
+    const shortMatch = cleanText(match.title || "", 54).replace(/\s+ضد\s+/g, " × ");
+    return cleanText(shortMatch ? `${shortMatch}: ${phrase}` : phrase, AI_POST_TITLE_MAX_CHARS);
+}
+
 function buildCalculatedHighlightPost(seed, index) {
     const match = seed.match || {};
     const stage = match.stageLabel || seed.stage?.label_ar || "أضواء المسابقة";
-    const names = Array.isArray(seed.required_participant_names) ? seed.required_participant_names.filter(Boolean).slice(0, 5) : [];
-    const nameText = names.length ? names.join("، ") : "بعض المشاركين";
+    const names = Array.isArray(seed.required_participant_names)
+        ? seed.required_participant_names.filter(Boolean).slice(0, 5)
+        : [];
+    const nameText = names.length ? names.join("، ") : "الأسماء التي قرأت اللحظة";
     const common = match.mostCommonPrediction;
     const exactNames = Array.isArray(match.exactNames) ? match.exactNames.slice(0, 5) : [];
-    const correctNames = Array.isArray(match.correctNames) ? match.correctNames.slice(0, 5) : [];
     const context = Array.isArray(seed.verified_event_context) ? seed.verified_event_context : [];
-    const contextText = context.map((item) => item.details_ar || item.title_ar).filter(Boolean)[0] || "";
+    const contextText = cleanText(
+        context.map((item) => item.details_ar || item.title_ar).filter(Boolean)[0] || "",
+        170
+    );
     const matchTitle = match.title || "إحدى مباريات البطولة";
-    const scoreText = match.score ? `وانتهت ${match.score}` : "";
-
+    const resultText = match.score ? `${matchTitle} انتهت ${match.score}` : matchTitle;
     const category = seed.type || "timeline";
+
     let title = "لقطة من قلب المسابقة";
     let body = "";
 
     if (category === "real_event_plus_contest") {
-        title = buildVariedMatchStoryTitle(match, contextText ? "لقطة كروية وصلت للتوقعات" : "مباراة صارت لها حكاية", category, index);
-        body = `${contextText ? `${contextText} ` : "كانت المباراة تحمل ثقلاً أكبر من رقم في الجدول. "}داخل المسابقة، لم تكن اللقطة في النتيجة وحدها، بل في طريقة انعكاسها على توقعات المشاركين.\n\n${matchTitle} ${scoreText}، لكنها صارت مادة للأضواء لأنها جمعت بين سياق كروي واضح وأثر مباشر في التوقعات. ${names.length ? `${nameText} كانوا من الأسماء الأقرب للقصة، بين قراءة صحيحة ونقاط ظهرت في وقت مهم.` : `القصة هنا أن أرقام المسابقة التقطت لحظة كروية حقيقية وحولتها إلى ذاكرة داخل التنافس.`}`;
+        title = buildCalculatedStoryTitle(match, "لقطة كروية وصلت للتوقعات");
+        const eventLead = contextText || "الملعب قدّم لحظة لها وزن أكبر من النتيجة وحدها";
+        body = `${eventLead}. ${resultText}، وظهر أثرها مباشرة في توقعات ${nameText}. هكذا تحولت لقطة كروية موثقة إلى جزء خفيف وواضح من حكاية المسابقة.`;
     } else if (category === "knockout_pressure") {
-        title = buildVariedMatchStoryTitle(match, "اختبار أعصاب في الإقصائيات", category, index);
-        body = `في الأدوار الإقصائية، كل توقع يدخل بثقل مختلف. المباراة لا تعطي نقاطاً فقط؛ تعطي إحساساً أن الخطأ صار أغلى، وأن القراءة الهادئة قد تساوي قفزة كاملة في الجدول.\n\n${matchTitle} ${scoreText}، وكانت من اللحظات التي جعلت ${nameText} يظهرون في الصورة. ${match.exactCount ? `${match.exactCount} نتيجة بالملّي منحت أصحابها نقاطاً كبيرة.` : "حتى التوقع الصحيح للاتجاه كان له وزن واضح."} الأهم أن القصة هنا لم تكن نتيجة فقط، بل اختبار أعصاب في مرحلة لا ترحم.`;
+        title = buildCalculatedStoryTitle(match, "اختبار أعصاب في الإقصائيات");
+        const pointsText = match.exactCount
+            ? `${match.exactCount} توقع بالملّي جعل المكافأة أثقل`
+            : "حتى الاتجاه الصحيح كان له وزن واضح";
+        body = `في الإقصائيات، كل اختيار يدخل بضغط مختلف. ${resultText}، وبرز ${nameText} لأن ${pointsText}. لقطة قالت إن الهدوء في هذه المرحلة قد يساوي قفزة كاملة.`;
     } else if (category === "popular_trap") {
-        title = buildVariedMatchStoryTitle(match, "الطريق المزدحم لم يكسب", category, index);
-        body = `أحياناً يكون التوقع الأكثر راحة هو أكثر واحد يخدع الناس. في هذه اللقطة، بدا الطريق الشائع واضحاً، لكن المباراة أخذت زاوية مختلفة وتركت جزءاً كبيراً من الجدول بلا مكسب.\n\n${matchTitle} ${scoreText}. ${common ? `التوقع الأكثر تكراراً كان ${common.score} عند ${common.count} مشاركين، لكنه لم يطابق الواقع.` : "التوقعات تكدست في اتجاه لم يكسب في النهاية."} وسط هذا الفخ، ${nameText} خرجوا بصورة مختلفة؛ ليس لأنهم أكثر حظاً فقط، بل لأنهم لم يسيروا مع الطريق المزدحم.`;
+        title = buildCalculatedStoryTitle(match, "الطريق المزدحم لم يكسب");
+        const commonText = common
+            ? `التوقع الأكثر تكراراً كان ${common.score} عند ${common.count} مشاركين لكنه لم يصب`
+            : "الاختيار الأكثر شيوعاً لم ينجح";
+        body = `التوقع المريح بدا آمناً، لكنه وقع في الفخ. ${resultText}؛ ${commonText}، بينما خرج ${nameText} بقراءة مختلفة. أحياناً أفضل لقطة تبدأ من قرار عدم السير مع الزحمة.`;
     } else if (category === "lone_reader") {
-        title = buildVariedMatchStoryTitle(match, "قراءة هادئة خرجت من الزحمة", category, index);
-        body = `هذه من اللقطات التي لا تحتاج ضجيجاً. أغلب التوقعات كانت تمشي في اتجاه مألوف، لكن اسماً أو اسمين قرأوا المباراة من زاوية ثانية وخرجوا منها بما يستحق الأضواء.\n\n${matchTitle} ${scoreText}. ${exactNames.length ? `${exactNames.join("، ")} أخذوا النتيجة بالملّي وخرجوا بمكافأة كاملة.` : `${nameText} كانوا الأقرب لقراءة اللحظة.`} ومع ${match.zeroOrMissingPercent || 0}% بلا نقاط أو بلا توقع، صارت اللقطة أوضح: أحياناً القراءة الهادئة تكسب أكثر من التوقع الشعبي.`;
+        title = buildCalculatedStoryTitle(match, "قراءة هادئة خرجت من الزحمة");
+        const readers = exactNames.length ? exactNames.join("، ") : nameText;
+        body = `وسط زحمة التوقعات، ظهرت قراءة مختلفة من ${readers}. ${resultText}، ومع ${match.zeroOrMissingPercent || 0}% بلا نقاط أو بلا توقع، صارت هذه القراءة أثمن. لقطة صغيرة قالت الكثير عن قيمة الخروج من توقع الأغلبية.`;
     } else if (category === "exact_circle") {
-        title = buildVariedMatchStoryTitle(match, "بالملّي في توقيت ثمين", category, index);
-        body = `في بعض المباريات، الفرحة لا تكون لشخص واحد. النتيجة الدقيقة فتحت باباً صغيراً لمجموعة أسماء دخلوا منه معاً، وكأن المباراة وزعت عليهم لقطة خاصة في نفس الليلة.\n\n${matchTitle} ${scoreText}. ${exactNames.length ? `${exactNames.join("، ")} ضربوا النتيجة كاملة، وكانت مكافأة بالملّي هي الأثقل في اللقطة.` : `${nameText} كانوا في قلب اللقطة.`} جمال هذه اللحظة أنها لم تكن مجرد رقم؛ كانت تذكيراً أن المسابقة تحفظ التفاصيل الصغيرة حين يقرأها أكثر من شخص بالطريقة الصحيحة.`;
+        title = buildCalculatedStoryTitle(match, "بالملّي في توقيت ثمين");
+        const readers = exactNames.length ? exactNames.join("، ") : nameText;
+        body = `الفرحة هنا كانت جماعية وليست لقطة فردية. ${resultText}، و${readers} أصابوا النتيجة بالملّي. لحظة دقيقة وخفيفة أثبتت أن التفاصيل الصغيرة قد تصنع أجمل مشاهد المسابقة.`;
     } else if (category === "points_swing") {
-        title = buildVariedMatchStoryTitle(match, "خزنة النقاط انفتحت", category, index);
-        body = `هناك مباريات تمر بهدوء، وهناك مباريات تفتح الجدول كأنها خزنة. هذه كانت من النوع الثاني: نقاط كثيرة خرجت دفعة واحدة، وخلت المطاردة تبدو أكثر جدية بعد صافرة النهاية.\n\n${matchTitle} ${scoreText}. ${match.awardedPoints ? `المباراة وزعت ${match.awardedPoints} نقطة على المشاركين،` : "النقاط تحركت بشكل واضح،"} وظهرت معها أسماء مثل ${nameText}. ليست الأضواء هنا لأن النتيجة كبيرة، بل لأن أثرها على المسابقة كان محسوساً: بعض الأسماء اقتربت، وبعض الفوارق بدأت تضيق.`;
+        title = buildCalculatedStoryTitle(match, "خزنة النقاط انفتحت");
+        const pointsText = match.awardedPoints
+            ? `وزعت ${match.awardedPoints} نقطة`
+            : "حرّكت النقاط بوضوح";
+        body = `هذه المباراة فتحت خزنة النقاط دفعة واحدة. ${resultText} و${pointsText}، فظهر ${nameText} واقتربت بعض المسافات في السباق. لم تكن النتيجة وحدها هي القصة؛ أثرها على الجدول كان واضحاً.`;
     } else if (category === "hard_stop") {
-        title = buildVariedMatchStoryTitle(match, "ليلة قاسية على التوقعات", category, index);
-        body = `ليست كل لقطة مضيئة لأنها منحت نقاطاً كثيرة. أحياناً تدخل الأضواء لأنها كانت قاسية على الجميع تقريباً، وتترك الجدول كأنه أخذ نفساً طويلاً قبل أن يتحرك من جديد.\n\n${matchTitle} ${scoreText}. ${match.zeroOrMissingPercent ? `${match.zeroOrMissingPercent}% خرجوا بلا نقاط أو بلا توقع،` : "عدد كبير من المشاركين لم يستفيدوا منها،"} لذلك كانت قيمة الناجين أكبر. ${names.length ? `${nameText} خرجوا من الليلة بصورة أفضل.` : "القصة هنا في ندرة من قرأها، لا في النتيجة نفسها."} هذه لحظة تذكّر أن الصفر الجماعي يصنع دراما أيضاً.`;
+        title = buildCalculatedStoryTitle(match, "ليلة قاسية على التوقعات");
+        const difficulty = match.zeroOrMissingPercent
+            ? `${match.zeroOrMissingPercent}% خرجوا بلا نقاط أو بلا توقع`
+            : "أغلب التوقعات لم تستفد";
+        body = `هذه كانت ليلة ثقيلة على الجدول، لا ليلة نقاط سهلة. ${resultText}؛ ${difficulty}، لذلك بدت قراءة ${nameText} أكثر قيمة من المعتاد. حين يقل الناجون، تصبح كل قراءة صحيحة لقطة بحد ذاتها.`;
     } else if (category === "stage_mood") {
         const stageLabel = seed.stage?.label_ar || stage;
         title = `${stageLabel}: صفحة من مزاج المسابقة`;
-        body = `${stageLabel} لم يكن مجرد مجموعة مباريات. كان مرحلة صنعت إيقاع المسابقة: لحظات سخية، لقطات قاسية، وأسماء بدأت تظهر أكثر مع كل نتيجة.\n\nفي هذه المرحلة جاءت ${seed.stage?.exactCount ?? "عدة"} نتيجة بالملّي، وتوزعت ${seed.stage?.awardedPoints ?? "الكثير من"} نقطة بين المشاركين. الصورة العامة كانت أهم من مباراة واحدة: من يثبت حضوره؟ من يستفيد من الهدايا؟ ومن ينتظر فرصة يرجع بها للسباق؟`;
+        body = `${stageLabel} صنع إيقاعه الخاص بين الدقة والمفاجآت. المرحلة شهدت ${seed.stage?.exactCount ?? "عدة"} نتيجة بالملّي و${seed.stage?.awardedPoints ?? "عدداً من"} نقطة. ومع كل مباراة، بدأت أسماء جديدة تظهر وتغيّر شكل المطاردة.`;
     } else {
-        title = buildMatchHintTitle(match, seed.title || "لقطة تستحق مكانها في الأضواء");
-        body = `${matchTitle} لم تكن مجرد نتيجة عابرة في الجدول. داخل المسابقة، صارت لقطة لأنها أظهرت فرقاً واضحاً بين من قرأ التفاصيل ومن مر على المباراة كأنها سهلة.\n\n${match.score ? `النتيجة كانت ${match.score}،` : "بعد النهاية،"} لكن الأهم كان أثرها على المشاركين. ${names.length ? `${nameText} كانوا أقرب للأضواء في هذه القصة.` : "الأرقام المحسوبة من التوقعات هي التي أعطتها مكانها هنا."}`;
+        title = buildCalculatedStoryTitle(match, seed.title || "لقطة تستحق مكانها في الأضواء");
+        body = `هذه لم تكن نتيجة عابرة في الجدول. ${resultText}، وظهر الفرق بين قراءة ${nameText} وبين الطريق الذي بدا سهلاً قبل البداية. لقطة مختصرة، لكنها تركت أثراً واضحاً في جو المسابقة.`;
     }
 
     return {
         title_ar: title,
-        body_ar: body,
-        icon: "✨",
-        category: category === "real_event_plus_contest" ? "match" : "timeline",
+        body_ar: formatHighlightBody(body),
+        icon: calculatedHighlightIcon(category),
+        category: category === "real_event_plus_contest" ? "match" : category,
         stage_ar: stage,
         participant_names: names,
         source_fact: seed.title || matchTitle,
@@ -2200,8 +2283,8 @@ function buildBatchPrompt({ batchName, instruction, highlightTarget, profileTarg
 {
   "highlights": [
     {
-      "title_ar": "عنوان قصصي جذاب ومحدد 7 إلى 14 كلمة، يفضل أن يلمح للمباراة أو النتيجة بدون أن يكون تقريراً",
-      "body_ar": "منشور ممتع من فقرتين قصيرتين مفصولتين بسطر فارغ، 95 إلى 150 كلمة تقريباً",
+      "title_ar": "عنوان قصصي جذاب ومحدد من 6 إلى 12 كلمة، يلمح للحظة بدون أن يكون تقرير مباراة",
+      "body_ar": "وصف خفيف من جملتين إلى ثلاث جمل قصيرة، بين 32 و60 كلمة تقريباً",
       "icon": "✨",
       "category": "timeline|match|participant|emotional|fun|stage",
       "stage_ar": "اسم المرحلة أو أضواء المسابقة",
@@ -2230,8 +2313,9 @@ function buildBatchPrompt({ batchName, instruction, highlightTarget, profileTarg
 - لكل منشور استخدم مصدراً واحداً فقط، وانسخ story_key أو source_key منه حرفياً إلى source_key.
 - لا تنشئ أكثر من منشور لنفس story_key أو source_key أو source_note_id أو source_match_id داخل الدفعة.
 - اكتب من نوع القصة، وليس من نتيجة المباراة.
-- الفقرة الأولى: hook ممتع أو إحساس اللحظة. لا تبدأ بـ "عندما انتهت" ولا "في مباراة" ولا باسم الفريقين.
-- الفقرة الثانية: اربط القصة بالأسماء والنقاط والتوقعات. اذكر المباراة ونتيجتها مرة واحدة بشكل طبيعي إذا كانت seed تحتوي مباراة.
+- الجملة الأولى: hook ممتع أو إحساس اللحظة. لا تبدأ بـ "عندما انتهت" ولا "في مباراة" ولا باسم الفريقين.
+- الجملة الثانية أو الثالثة: اربط القصة بالأسماء والنقاط والتوقعات. اذكر المباراة ونتيجتها مرة واحدة بشكل طبيعي إذا كانت seed تحتوي مباراة.
+- اجعل النص سريع القراءة على الجوال: لا تتجاوز 60 كلمة، ولا تكرر الفكرة نفسها بصياغتين.
 - استخدم real_world_cup_context فقط إذا كان موجوداً. إذا لم يوجد، لا تخترع VAR أو طرد أو إصابة أو جمهور أو تصريح.
 - إذا كانت المباراة إقصائية أو فيها ركلات ترجيح/وقت إضافي من real_world_cup_context، استعملها كخلفية تزيد الضغط، ثم ارجع لأثرها في المسابقة.
 - كل منشور يجب أن يشعر القارئ أنه يقرأ لقطة من مسابقة أصدقاء/عائلة، وليس خبر مباراة.
@@ -2240,7 +2324,7 @@ function buildBatchPrompt({ batchName, instruction, highlightTarget, profileTarg
 - JSON فقط، بدون markdown، بدون أي نص خارج JSON، وبدون trailing commas.
 - لا تكتب match report. لا تجعل العنوان أو أول جملة عن "الفريق فاز" أو "المباراة انتهت".
 - لا تستخدم قالب مكرر: نتيجة المباراة + من أخذ نقاط + غيرت الترتيب.
-- ممنوع تكرار نفس المباراة أو الحدث بصياغة أخرى؛ منشور واحد فقط لكل مباراة/حدث.
+- ممنوع تكرار الحدث نفسه أو زاوية القصة نفسها بصياغة أخرى. يمكن ظهور المباراة مرة ثانية فقط إذا كانت القصة مختلفة فعلاً ومصدرها مختلف، مثل حدث موثق مقابل لقطة توقع خاصة بمشارك.
 - لا تستخدم لهجة مصرية أو عامية غريبة: ما فيهاش، كده، بيقرأوا، فارغين، ما كانش.
 - لا تستخدم عبارات مستهلكة أو عامة: أعادت تشكيل المزاج، أعادت تشكيل ملامح المنافسة، الثقة العمياء، القراء الهادئين، الجمهور كان متحمساً، تداولت الأحاديث، استثمروا الوقت في تحليل الفرق.
 - ممنوع عناوين خام أو مكررة: "مباراة أهدافها كثيرة"، "شباك نظيفة"، "حسم ضيق"، "النجوم تتألق"، "الطاقة تتفجر"، "التحول المفاجئ"، "ليلة 3 توقعات بالملّي".
@@ -2407,8 +2491,8 @@ function isLowQualityHighlightPost(post = {}) {
         || /توقع|توقعات|المسابقة|مشارك|مشاركة|نقطة|نقاط|بالملّي|صحيح|صحيحة|المركز|الترتيب|فارق|أغلب|أغلبية|ناس|قرأ|قرأت|شاف|شافت|قاسية|وزعت|قفز|قفزت|تقدم|تقدمت|منصة|سلسلة|غيّرت|غيرت|قلبت|رجّعت|رجعت|صدمة|مفاجأة|exact/i.test(full);
     const hasStorySignal = /لكن|وهنا|ومن هنا|اللقطة|القصة|الجو|المرحلة|المنافسة|السباق|تحوّل|تحول|الضغط|الصدمة|الفرحة|النقطة|المنعطف|مزاج|قراءة|جرأة|فخ|زحمة|خزنة|أضواء|هدوء|خارج|نجا|نجت|أعصاب|إقصائي|إقصائية/i.test(full);
     const rawResultOnly = !hasContestSignal && /فازت|فاز|انتهت|سجلت|سجل|شباك نظيفة|فارق هدف|مباراة حماسية|مباراة متقاربة/i.test(full);
-    const tooShort = compactBodyLength < 260;
-    const tooFewSentences = (body.match(/[.؟!]/g) || []).length < 3;
+    const tooShort = compactBodyLength < 115;
+    const tooFewSentences = (body.match(/[.؟!]/g) || []).length < 2;
     const tooManyScores = (body.match(/\d+\s*[-–]\s*\d+/g) || []).length > 2;
 
     if (bannedTitle || bannedPhrases || metadataLeak || inventedQuote || repeatedSameSentence || tooMuchMatchReport || titleLooksLikeResultTile || rawResultOnly || tooShort || tooFewSentences || tooManyScores) return true;
@@ -2416,7 +2500,7 @@ function isLowQualityHighlightPost(post = {}) {
     if (resultReportPattern && !/لكن|وهنا|اللقطة|فخ|زحمة|جرأة|ضغط|أضواء/.test(full)) return true;
     if (AI_REQUIRE_CONTEST_SIGNAL && !hasContestSignal) return true;
     if (!hasStorySignal && participantNames.length === 0) return true;
-    if (paragraphs.length < 2 && compactBodyLength < 430) return true;
+    if (paragraphs.length < 1) return true;
     return false;
 }
 
@@ -2640,12 +2724,12 @@ function buildPrompt(factsPack) {
 - لا تجعل الصفحة عن صاحب المركز الأول فقط.
 - لا تذكر أن أحدهم لم يشارك كثيراً أو فاته مباريات كثيرة.
 - العنوان: 5 إلى 11 كلمة، وليس مجرد نتيجة مباراة.
-- الوصف: جملتان قصيرتان، 28 إلى 55 كلمة تقريباً، ويربط الحدث بجو المسابقة أو المشاركين.
+- الوصف: جملتان إلى ثلاث جمل قصيرة، 32 إلى 60 كلمة تقريباً، ويربط الحدث بجو المسابقة أو المشاركين. لا حشو ولا فقرتان طويلتان.
 - استخدم ضمائر صحيحة. أسماء البنات موضحة في participantLanguage.
 - لا تخترع أحداث كرة قدم مثل بطاقة حمراء، هوشة، إصابة، VAR، تصريح، احتفال، جدل، أو خبر بعد المباراة إلا إذا وجدت في eventNotes. إذا استخدمت eventNotes، ضع id الخاص بها داخل source_note_ids.
 - لو لم توجد eventNotes، ركز على أحداث مسابقة التوقعات نفسها.
 - لا تستخدم عبارة مكررة في أكثر من منشور.
-- لا تكتب منشورين عن نفس المباراة أو نفس eventNote حتى لو اختلف العنوان والأسلوب.
+- لا تكتب منشورين عن نفس eventNote أو نفس زاوية القصة. يمكن استخدام المباراة مرة أخرى فقط لقصة مختلفة فعلاً ومصدر مختلف، وليس إعادة صياغة الحدث نفسه.
 - ممنوع أن تكون الأضواء مجرد "فاز/خسر/سجل". يجب أن تكون قصة مسابقة وتوقعات.
 - لا تستخدم عبارات مكررة مثل "مباراة أهدافها كثيرة" أو "حسم ضيق" أو "شباك نظيفة" كعنوان مباشر.
 - لا تستخدم عبارة "مو كثير كلام، بس ضربات نظيفة".
@@ -2828,7 +2912,7 @@ function buildLocalFallbackAiOutput(factsPack, error) {
     const usedTitles = new Set();
     const add = (post) => {
         const title = cleanText(post?.title_ar || "", AI_POST_TITLE_MAX_CHARS);
-        const body = cleanText(post?.body_ar || "", AI_POST_BODY_MAX_CHARS);
+        const body = formatHighlightBody(post?.body_ar || "");
         if (!title || !body || usedTitles.has(title)) return;
         usedTitles.add(title);
         highlights.push({
@@ -3091,7 +3175,7 @@ function normalizeAiOutputToRows(output, factsPack) {
 
     const highlights = Array.isArray(output?.highlights) ? output.highlights : [];
     highlights.slice(0, MAX_HIGHLIGHTS).forEach((post, index) => {
-        const body = cleanBodyText(post.body_ar, AI_POST_BODY_MAX_CHARS);
+        const body = formatHighlightBody(post.body_ar);
         const title = cleanText(buildDisplayHighlightTitle(post, index), AI_POST_TITLE_MAX_CHARS);
         if (!title || !body || isLowQualityHighlightPost({ ...post, title_ar: title, body_ar: body })) return;
 
@@ -3179,7 +3263,7 @@ function addCalculatedHighlightRowsToRows(existingRows, factsPack, targetCount) 
         if (!post) continue;
 
         const title = cleanText(buildDisplayHighlightTitle(post, currentCount), AI_POST_TITLE_MAX_CHARS);
-        const body = cleanBodyText(post.body_ar, AI_POST_BODY_MAX_CHARS);
+        const body = formatHighlightBody(post.body_ar);
         const key = `${title}|${body}`.toLowerCase();
         const candidatePost = { ...post, title_ar: title, body_ar: body };
         if (!title || !body || used.has(key) || isUnsafeCalculatedHighlightPost(candidatePost)) continue;
@@ -3303,7 +3387,7 @@ function isUnsafeCalculatedHighlightPost(post = {}) {
     const full = `${title} ${body}`;
     const compactLength = body.replace(/[\s.،,!؟:؛\-–—]/g, "").length;
 
-    if (compactLength < 220) return true;
+    if (compactLength < 105) return true;
     if (/ما فيهاش|كده|بيقرأوا|فارغين|ما كانش|دارتت|النجاحة|البمثيلة|واجتهد/i.test(full)) return true;
     if (/^(مباراة أهدافها كثيرة|حسم ضيق|شباك نظيفة|نتيجة موثقة|مباراة حماسية|مباراة متقاربة)$/i.test(title)) return true;
     if (/^\d+\s*[-–]\s*\d+/.test(title)) return true;
@@ -3401,6 +3485,57 @@ function arabicCountWord(count, one, two, many) {
     if (count === 1) return one;
     if (count === 2) return two;
     return many;
+}
+
+function formatHighlightBody(value) {
+    const raw = String(value || "")
+        .replace(/\r\n/g, "\n")
+        .replace(/[ \t]+/g, " ")
+        .replace(/\n+/g, " ")
+        .trim();
+
+    if (!raw) return "";
+
+    const sentenceParts = raw.match(/[^.!؟]+[.!؟]?/g) || [raw];
+    const selected = [];
+    let wordCount = 0;
+
+    for (const part of sentenceParts) {
+        const sentence = part.replace(/\s+/g, " ").trim();
+        if (!sentence) continue;
+
+        const words = sentence.split(/\s+/).filter(Boolean);
+        const remainingWords = AI_HIGHLIGHT_MAX_WORDS - wordCount;
+        if (remainingWords <= 0 || selected.length >= 3) break;
+
+        if (words.length > remainingWords) {
+            if (selected.length === 0) {
+                selected.push(`${words.slice(0, remainingWords).join(" ").replace(/[،,:؛-]+$/, "")}…`);
+                wordCount += remainingWords;
+            }
+            break;
+        }
+
+        selected.push(sentence);
+        wordCount += words.length;
+    }
+
+    let result = selected.join(" ").replace(/\s+/g, " ").trim();
+    if (!result) result = raw;
+
+    if (result.length > AI_POST_BODY_MAX_CHARS) {
+        const sliced = result.slice(0, AI_POST_BODY_MAX_CHARS + 1);
+        const safeEnd = Math.max(
+            sliced.lastIndexOf("."),
+            sliced.lastIndexOf("؟"),
+            sliced.lastIndexOf("!"),
+            sliced.lastIndexOf("،"),
+            sliced.lastIndexOf(" ")
+        );
+        result = `${sliced.slice(0, safeEnd > 120 ? safeEnd : AI_POST_BODY_MAX_CHARS).trim().replace(/[،,:؛-]+$/, "")}…`;
+    }
+
+    return result;
 }
 
 function cleanBodyText(value, maxLength) {
