@@ -9285,3 +9285,49 @@ body.site-stage-theme #availableMatches .available-stage-card.match-card-predict
     grid-column: auto;
   }
 }
+
+/* V39 final user-facing copy polish */
+.about-hero-card-final {
+  overflow: hidden;
+  align-items: stretch;
+  min-height: 190px;
+}
+
+.about-hero-card-final > span {
+  align-self: center;
+}
+
+.about-rule-grid-final {
+  align-items: stretch;
+}
+
+.about-rule-grid-final .rules-card {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 8px;
+  min-height: 118px;
+  padding: 18px 20px;
+}
+
+.about-rule-grid-final .rules-card span {
+  line-height: 1.75;
+}
+
+.season-thanks-card-final {
+  text-wrap: balance;
+}
+
+.season-thanks-card-final p {
+  text-wrap: pretty;
+}
+
+.season-thanks-mini-grid-final .season-thanks-mini-card {
+  min-height: 118px;
+  display: grid;
+  align-content: center;
+}
+
+.season-thanks-mini-grid-final .season-thanks-mini-card span {
+  line-height: 1.65;
+}

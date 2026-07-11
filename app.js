@@ -165,6 +165,8 @@ async function playHeartTrackForSeasonRecap() {
     if (!heartAlreadyLoaded) {
         currentMusicTrackIndex = heartIndex;
         loadCurrentMusicTrack();
+    } else {
+        daiDaiAudio.currentTime = 0;
     }
 
     try {
@@ -889,21 +891,21 @@ function renderAboutPage() {
 
     rulesSummary.dataset.rendered = "true";
     rulesSummary.innerHTML = `
-        <section class="about-hero-card">
+        <section class="about-hero-card about-hero-card-final">
             <span aria-hidden="true">🏆</span>
             <div>
                 <p class="eyebrow">عن المسابقة</p>
-                <h4>توقعات، ضحك، وأعصاب قبل كل صافرة</h4>
-                <p>هذه صفحة صغيرة لمسابقة خاصة بين المشاركين: تختار النتيجة، تتابع النقاط، وبعدها تشوف الأضواء والشارات التي طلعت من كل لقطة.</p>
+                <h4>توقع، تابع، واستمتع بالرحلة</h4>
+                <p>مسابقة بسيطة بين الأحبة: كل واحد يتوقع النتيجة، وكل مباراة تترك ضحكة أو حسرة أو لقطة تستاهل الذكر. هنا تجد القواعد بشكل واضح، بدون تعقيد.</p>
             </div>
         </section>
-        <div class="about-rule-grid">
-            <div class="info-card rules-card"><strong>50 نقطة</strong><span>إذا كان التوقع مطابقاً للنتيجة بالضبط.</span></div>
-            <div class="info-card rules-card"><strong>10 نقاط</strong><span>إذا كان الفائز أو التعادل صحيحاً، حتى لو اختلفت النتيجة.</span></div>
-            <div class="info-card rules-card"><strong>72 ساعة</strong><span>تفتح نافذة التوقع قبل المباراة بثلاثة أيام.</span></div>
-            <div class="info-card rules-card"><strong>قبل البداية</strong><span>يمكن تعديل التوقع حتى لحظة بداية المباراة فقط.</span></div>
-            <div class="info-card rules-card"><strong>الترجيح</strong><span>ركلات الترجيح لا تدخل في نتيجة التوقع؛ تعتمد نتيجة المباراة قبل الترجيح.</span></div>
-            <div class="info-card rules-card"><strong>الأضواء</strong><span>المنشورات مبنية على أرقام المسابقة، مع صياغة ممتعة للّقطات المميزة فقط.</span></div>
+        <div class="about-rule-grid about-rule-grid-final">
+            <article class="info-card rules-card"><strong>50 نقطة</strong><span>إذا طابق التوقع النتيجة كاملة.</span></article>
+            <article class="info-card rules-card"><strong>10 نقاط</strong><span>إذا كان الفائز أو التعادل صحيحاً.</span></article>
+            <article class="info-card rules-card"><strong>72 ساعة</strong><span>تفتح التوقعات قبل المباراة بثلاثة أيام.</span></article>
+            <article class="info-card rules-card"><strong>صافرة البداية</strong><span>بعد بداية المباراة يُغلق التعديل.</span></article>
+            <article class="info-card rules-card"><strong>ركلات الترجيح</strong><span>لا تُحسب ضمن نتيجة التوقع؛ نعتمد نتيجة المباراة قبل الترجيح.</span></article>
+            <article class="info-card rules-card"><strong>الأضواء</strong><span>مساحة للّقطات الجميلة: مفاجآت، قراءات مختلفة، وشارات تستاهل التصفيق.</span></article>
         </div>
     `;
 }
@@ -3516,12 +3518,15 @@ function renderFinalHighlightsNotGeneratedMessage(recap) {
 
 function renderFinalAiHighlights(posts, recap) {
     const visiblePosts = sortFinalAiHighlightPosts(posts).slice(0, FINAL_RECAP_MAX_HIGHLIGHTS);
+    const heroText = recap?.seasonStats?.isTournamentComplete
+        ? "منشورات مختارة من أجمل لحظات الطريق: مفاجآت، قراءات مختلفة، وأسماء تركت بصمتها حتى آخر صافرة."
+        : "لقطات مختارة من أجمل ما حدث حتى الآن؛ لحظات صنعت ضحكة، رفعت اسم، أو قلبت توقعاً كان يبدو مضموناً.";
 
     return `
         <section class="season-highlight-hero season-highlight-hero-ai">
             <p class="eyebrow">أضواء الختام</p>
             <h4>قصة البطولة في لقطات</h4>
-            <p>${recap?.seasonStats?.isTournamentComplete ? "منشورات قصيرة بعد قفل البيانات النهائية." : "أضواء متجددة حتى الآن، وتتحدث تلقائياً بعد النتائج القادمة."} الأرقام والوقائع محسوبة من قاعدة البيانات، والنص فقط تمت صياغته بشكل ممتع.</p>
+            <p>${heroText}</p>
         </section>
 
         <div class="season-highlight-card-grid season-highlight-card-grid-ai">
@@ -4026,26 +4031,34 @@ function buildParticipantDefaultBadge(row) {
     return { icon: "🙂", title: "اسم في القصة", value: "بدون أرقام كافية بعد", note: "الشارة موجودة حتى لو الأرقام ما خدمت اللحظة." };
 }
 
-function renderSeasonThankYouPage() {
+function renderSeasonThankYouPage(recap = null) {
+    const stats = recap?.seasonStats || {};
+    const championName = stats.champion?.name || "البطل";
+    const participantCount = stats.participantCount || 0;
+    const totalPredictions = stats.totalPredictions || 0;
+    const completedMatches = stats.completedMatches || 0;
+    const topNames = (recap?.finalRows || []).slice(0, 3).map((row) => row.name).join("، ");
+
     return `
         <section class="season-thanks-card season-thanks-card-final">
             <div class="season-thanks-icon" aria-hidden="true">❤️</div>
             <p class="eyebrow">ختام المسابقة</p>
-            <h2>شكراً… هذه كانت أحلى من مجرد توقعات</h2>
+            <h2>شكراً لأنكم جعلتموها ذكرى</h2>
             <p>
-                كل مباراة كان لها جوها: واحد واثق، واحد متردد، واحد يقول النتيجة سهلة… وبالأخير الجدول يضحك علينا كلنا.
-                شكراً لكل المشاركين؛ أنتم اللي خليتوا المتابعة ألطف، والانتظار قبل كل مباراة له طعم خاص.
+                في البداية كانت مجرد توقعات قبل المباريات، ثم صارت لحظات ننتظرها معاً: فرحة نتيجة جاءت بالملّي، حسرة هدف غيّر كل شيء، وضحكة بعد مباراة قلبت كل الحسابات.
+                شكراً لكل من آمن بالفكرة، وشارك، وتحمّس، وانتظر، وفتح الصفحة كأنه يفتح باباً صغيراً للفرح.
             </p>
             <p>
-                الجوائز والتقدير للجميع بإذن الله. الفائز له تصفيق، واللي جابها بالملّي له لقطة، واللي شارك معنا له مكان في الذكرى.
+                ${participantCount ? `${participantCount} مشاركاً` : "كل المشاركين"} صنعوا لهذه المسابقة روحها. ${completedMatches ? `${completedMatches} مباراة` : "كل مباراة"} مرّت، و${totalPredictions ? `${totalPredictions} توقعاً` : "كل توقع"} كان له مكان في الحكاية.
+                مبروك لـ${escapeHtml(championName)}، ومبروك لكل اسم ترك أثراً؛ فهذه النهاية ليست إعلان فائز فقط، بل شكر صادق لكل من جعل الطريق أجمل من الكأس نفسها.
             </p>
         </section>
 
         <div class="season-thanks-mini-grid season-thanks-mini-grid-final">
-            <div class="season-thanks-mini-card"><strong>❤️</strong><span>الأغنية تبدأ هنا تلقائياً</span></div>
-            <div class="season-thanks-mini-card"><strong>🏆</strong><span>مبروك للبطل</span></div>
-            <div class="season-thanks-mini-card"><strong>🎁</strong><span>كل المشاركين لهم تقدير</span></div>
-            <div class="season-thanks-mini-card"><strong>✨</strong><span>الأضواء حفظت أجمل اللقطات</span></div>
+            <div class="season-thanks-mini-card"><strong>❤️</strong><span>شكراً من القلب لكل مشارك</span></div>
+            <div class="season-thanks-mini-card"><strong>🏆</strong><span>${topNames ? `منصة الختام: ${escapeHtml(topNames)}` : "مبروك لمن وصل للمنصة"}</span></div>
+            <div class="season-thanks-mini-card"><strong>🤍</strong><span>الفكرة كبرت بوجودكم</span></div>
+            <div class="season-thanks-mini-card"><strong>✨</strong><span>كل توقع كان جزءاً من الذكرى</span></div>
         </div>
     `;
 }
@@ -4054,7 +4067,13 @@ function renderSeasonThankYouPage() {
 async function renderSeasonRecapPage() {
     if (!seasonRecap) return;
 
-    seasonRecap.innerHTML = renderSeasonThankYouPage();
+    try {
+        const recap = await loadFinalRecapModel();
+        seasonRecap.innerHTML = renderSeasonThankYouPage(recap);
+    } catch (error) {
+        console.warn("Season closing recap unavailable:", error?.message || error);
+        seasonRecap.innerHTML = renderSeasonThankYouPage();
+    }
 }
 
 async function loadFinalRecapModel() {
