@@ -78,7 +78,7 @@ let allowLeavingPage = false;
 let dashboardRefreshTimer = null;
 let championPredictionCutoffTimer = null;
 
-const APP_VERSION = "39.0.3";
+const APP_VERSION = "39.0.4";
 const PREDICTION_OPEN_HOURS = 72;
 const FINAL_RECAP_PREVIEW_PARAM = "previewFinal";
 const EXPECTED_WORLD_CUP_MATCH_COUNT = 104;
@@ -4576,13 +4576,46 @@ function buildParticipantDefaultBadge(row) {
     return { icon: "🙂", title: "اسم في القصة", value: "بدون أرقام كافية بعد", note: "الشارة موجودة حتى لو الأرقام ما خدمت اللحظة." };
 }
 
+function formatArabicList(items = []) {
+    const cleanItems = items.filter(Boolean);
+
+    if (cleanItems.length === 0) return "";
+    if (cleanItems.length === 1) return cleanItems[0];
+    if (cleanItems.length === 2) return `${cleanItems[0]}، و${cleanItems[1]}`;
+
+    return `${cleanItems.slice(0, -1).join("، ")}، و${cleanItems[cleanItems.length - 1]}`;
+}
+
+function buildFinalPodiumSentence(finalRows = []) {
+    const podiumRows = finalRows.slice(0, 3);
+    const rankPhrases = [
+        "بطلاً للمسابقة",
+        "في المركز الثاني",
+        "في المركز الثالث"
+    ];
+
+    return formatArabicList(
+        podiumRows.map((row, index) => `${escapeHtml(row.name)} ${rankPhrases[index]}`)
+    );
+}
+
+function buildFinalPodiumMiniText(finalRows = []) {
+    const medals = ["🥇", "🥈", "🥉"];
+
+    return finalRows
+        .slice(0, 3)
+        .map((row, index) => `${medals[index]} ${escapeHtml(row.name)}`)
+        .join(" • ");
+}
+
 function renderSeasonThankYouPage(recap = null) {
     const stats = recap?.seasonStats || {};
-    const championName = stats.champion?.name || "البطل";
     const participantCount = stats.participantCount || 0;
     const totalPredictions = stats.totalPredictions || 0;
     const completedMatches = stats.completedMatches || 0;
-    const topNames = (recap?.finalRows || []).slice(0, 3).map((row) => row.name).join("، ");
+    const finalRows = recap?.finalRows || [];
+    const podiumSentence = buildFinalPodiumSentence(finalRows);
+    const podiumMiniText = buildFinalPodiumMiniText(finalRows);
 
     return `
         <section class="season-thanks-card season-thanks-card-final">
@@ -4590,19 +4623,21 @@ function renderSeasonThankYouPage(recap = null) {
             <p class="eyebrow">ختام المسابقة</p>
             <h2>شكراً… لأنكم جعلتم الفكرة تعيش</h2>
             <p>
-                ما كانت المسابقة مجرد أرقام في جدول، ولا توقعات تُحفظ قبل المباراة. كانت لحظات ننتظرها معاً: رسالة بعد نتيجة، ضحكة على توقع ضاع في الدقيقة الأخيرة، وفرحة صغيرة عندما يطلع أحدنا بالنتيجة بالملّي.
+                لم تكن المسابقة مجرد أرقام في جدول، ولا توقعات تُحفظ قبل بداية المباراة. كانت موعداً ننتظره معاً؛ رسالة بعد نتيجة، وضحكة على توقع ضاع في اللحظة الأخيرة، وفرحة لا تُنسى عندما تصيب النتيجة بالملّي.
             </p>
             <p>
-                شكراً لكل من وثق بالفكرة وشارك فيها. وجودكم هو الذي جعلني أستمتع ببنائها، وتطويرها، ومتابعتها حتى صارت شيئاً له روح وذكرى. أنتم لم تكونوا مستخدمين للموقع فقط؛ أنتم السبب أن هذه التجربة صارت أجمل من مجرد مسابقة.
+                شكراً لكل من وثق بالفكرة وشارك فيها. كل دخول للموقع، وكل توقع، وكل حديث بعد مباراة كان سبباً في أن تكبر التجربة وتصبح أكثر من مجرد مسابقة. وجودكم هو الذي أعطاها روحاً، وجعلني أستمتع ببنائها وتطويرها ومتابعتها حتى النهاية.
             </p>
             <p>
-                ${participantCount ? `${participantCount} مشاركاً` : "كل المشاركين"} صنعوا الحكاية، و${completedMatches ? `${completedMatches} مباراة` : "كل مباراة"} كان لها أثر، و${totalPredictions ? `${totalPredictions} توقعاً` : "كل توقع"} كان جزءاً من الطريق. مبروك لـ${escapeHtml(championName)}، ومبروك لكل من شارك؛ ستكون هناك جوائز لكل المشاركين، لأن الذكرى هنا للجميع، لا للمركز الأول فقط.
+                ${participantCount ? `${participantCount} مشاركاً` : "كل المشاركين"} صنعوا الحكاية، و${completedMatches ? `${completedMatches} مباراة` : "كل مباراة"} تركت أثرها، و${totalPredictions ? `${totalPredictions} توقعاً` : "كل توقع"} كان جزءاً من رحلة عشناها معاً.
+                ${podiumSentence ? `ومع نهاية الرحلة، تستحق منصة الختام لحظتها: ${podiumSentence}. ` : ""}
+                مبروك لمن وصلوا إلى المنصة على مراكز استحقوها بعد منافسة امتدت حتى النهاية، ومبروك لكل من شارك وأضاف لهذه التجربة شيئاً من حضوره وروحه. ستكون هناك جوائز لجميع المشاركين؛ لأن اللقب والمراكز لأصحابها، أما الحكاية فصنعناها جميعاً.
             </p>
         </section>
 
         <div class="season-thanks-mini-grid season-thanks-mini-grid-final">
             <div class="season-thanks-mini-card"><strong>❤️</strong><span>أنتم سبب نجاح الفكرة</span></div>
-            <div class="season-thanks-mini-card"><strong>🏆</strong><span>${topNames ? `منصة الختام: ${escapeHtml(topNames)}` : "مبروك لمن وصل للمنصة"}</span></div>
+            <div class="season-thanks-mini-card"><strong>🏆</strong><span>${podiumMiniText || "مبروك لمن وصلوا إلى المنصة"}</span></div>
             <div class="season-thanks-mini-card"><strong>🎁</strong><span>جوائز لكل المشاركين</span></div>
             <div class="season-thanks-mini-card"><strong>✨</strong><span>هذه الذكرى صنعتوها أنتم</span></div>
         </div>

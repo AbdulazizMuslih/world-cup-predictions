@@ -1,11 +1,11 @@
-World Cup v39.0.3 — strict highlight date sorting
+Version 39.0.4
 
-Replace only:
-app.js
+Change:
+- Keeps the original static closing page.
+- Rewrites the thank-you message with warmer wording.
+- Dynamically mentions the final top three from recap.finalRows.
+- The podium automatically updates after the remaining match changes the standings.
+- The mini podium card also shows the ranked top three with medals.
 
-Behavior:
-- Match-based highlights are sorted by match kickoff time, newest first.
-- General/participant highlights appear after match-based highlights.
-- Existing editorial priority remains as the tie-breaker.
-- Argentina vs Switzerland correctly appears above Norway vs England because it kicked off later.
-- No workflow, AI, database, CSS, or version change is required.
+Apply:
+Replace index.html, app.js, style.css, and version.json.
