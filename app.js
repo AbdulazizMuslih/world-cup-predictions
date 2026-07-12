@@ -4016,7 +4016,7 @@ function renderFinalAiHighlights(posts, recap) {
         const matchId = String(card.source_match_id || "").trim();
         return !matchId || completedMatchIds.has(matchId);
     });
-    const visiblePosts = sortFinalAiHighlightPosts(safePosts).slice(0, FINAL_RECAP_MAX_HIGHLIGHTS);
+    const visiblePosts = sortFinalAiHighlightPosts(safePosts, recap).slice(0, FINAL_RECAP_MAX_HIGHLIGHTS);
     const completedCount = Number(recap?.seasonStats?.completedMatches || recap?.completedMatches?.length || 0);
     const heroText = recap?.seasonStats?.isTournamentComplete
         ? "منشورات مختارة من أجمل لحظات الطريق: مفاجآت، قراءات مختلفة، وأسماء تركت بصمتها حتى آخر صافرة."
@@ -4043,8 +4043,28 @@ function renderFinalAiHighlights(posts, recap) {
 }
 
 
-function sortFinalAiHighlightPosts(posts = []) {
+function sortFinalAiHighlightPosts(posts = [], recap = null) {
+    const kickoffByMatchId = new Map(
+        (recap?.completedMatches || []).map((match) => [
+            String(match.id),
+            new Date(match.kickoff_at || 0).getTime()
+        ])
+    );
+
     return [...posts].sort((a, b) => {
+        const aCard = Array.isArray(a.cards) ? a.cards[0] || {} : {};
+        const bCard = Array.isArray(b.cards) ? b.cards[0] || {} : {};
+        const aMatchId = String(aCard.source_match_id || "").trim();
+        const bMatchId = String(bCard.source_match_id || "").trim();
+        const aKickoff = kickoffByMatchId.get(aMatchId) || 0;
+        const bKickoff = kickoffByMatchId.get(bMatchId) || 0;
+
+        // Match highlights are shown first, newest completed match first.
+        if (aKickoff || bKickoff) {
+            if (aKickoff !== bKickoff) return bKickoff - aKickoff;
+        }
+
+        // Non-match posts, or ties, keep the existing editorial priority.
         return (finalAiHighlightSortScore(b) - finalAiHighlightSortScore(a))
             || ((b.display_order || 0) - (a.display_order || 0))
             || String(b.created_at || "").localeCompare(String(a.created_at || ""))
