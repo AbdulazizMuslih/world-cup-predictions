@@ -3,6 +3,12 @@ name: Generate Final Highlights AI
 on:
   workflow_dispatch:
     inputs:
+      generation_mode:
+        description: "auto = incremental until 104, then full final; full = force full rebuild; incremental = append missing final-stage matches"
+        required: true
+        default: "auto"
+        type: choice
+        options: ["auto", "incremental", "full"]
       allow_preview_generation:
         description: "Allow generation before all 104 matches are completed?"
         required: true
@@ -26,9 +32,6 @@ on:
         type: choice
         options: ["true", "false"]
 
-  schedule:
-    # Check twice per hour after result syncs. The script exits before any AI call when the completed-match count has not changed.
-    - cron: "27,57 * * * *"
 
 env:
   AUTOMATION_ACTIVE_UNTIL: "2026-07-21T03:00:00Z"
@@ -118,21 +121,23 @@ jobs:
           AI_ENABLE_CONTEST_MOMENT_BATCHES: "false"
           AI_INSERT_PARTIAL_ANY_STORY_COUNT: "false"
           EXPECTED_WORLD_CUP_MATCH_COUNT: "104"
-          ALLOW_FINAL_PREVIEW: ${{ github.event_name == 'schedule' && 'true' || inputs.allow_preview_generation }}
-          PUBLISH_VISIBLE: ${{ github.event_name == 'schedule' && 'true' || inputs.publish_visible }}
-          MAX_HIGHLIGHTS: ${{ github.event_name == 'schedule' && '40' || inputs.max_highlights }}
+          ALLOW_FINAL_PREVIEW: ${{ inputs.allow_preview_generation }}
+          PUBLISH_VISIBLE: ${{ inputs.publish_visible }}
+          MAX_HIGHLIGHTS: ${{ inputs.max_highlights }}
           AI_PUBLIC_HIGHLIGHT_TARGET: "32"
           AI_GROUP_STAGE_HIGHLIGHT_MAX: "10"
           AI_PARTICIPANT_HIGHLIGHT_MAX: "6"
           AI_STAGE_SUMMARY_MAX: "2"
           AI_STYLE_FAMILY_MAX: "3"
           AI_MAX_CALCULATED_TOP_UP: "4"
-          RESET_EXISTING_FINAL_AI: ${{ github.event_name == 'schedule' && 'true' || inputs.reset_existing }}
+          RESET_EXISTING_FINAL_AI: ${{ inputs.reset_existing }}
           GENERATE_PROFILES: "auto"
-          AI_AUTO_STAGE_MODE: ${{ github.event_name == 'schedule' && 'true' || 'false' }}
+          AI_GENERATION_MODE: ${{ inputs.generation_mode }}
+          INCREMENTAL_BASE_COMPLETED_MATCH_COUNT: "98"
+          AI_AUTO_STAGE_MODE: "false"
           AI_AUTO_MIN_MATCH_AGE_HOURS: "4"
           AUTO_GENERATION_REMAINING_MATCHES: "6"
-          AI_SKIP_IF_SAME_COMPLETED_COUNT_EXISTS: ${{ github.event_name == 'schedule' && 'true' || 'false' }}
+          AI_SKIP_IF_SAME_COMPLETED_COUNT_EXISTS: "false"
           MIN_APPROVED_EVENT_NOTES: "0"
           REQUIRE_EVENT_NOTES_FOR_PUBLISH: "false"
           USE_TRUSTED_EVENT_NOTES: "true"

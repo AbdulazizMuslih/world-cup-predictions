@@ -147,12 +147,14 @@ jobs:
           AI_MAX_CALCULATED_TOP_UP: "4"
           RESET_EXISTING_FINAL_AI: "true"
           GENERATE_PROFILES: "auto"
+          AI_GENERATION_MODE: "auto"
+          INCREMENTAL_BASE_COMPLETED_MATCH_COUNT: "98"
 
           # Treat cron-job.org dispatches as automatic—not as unrestricted manual runs.
           AI_AUTO_STAGE_MODE: "true"
           AI_AUTO_MIN_MATCH_AGE_HOURS: "4"
           AUTO_GENERATION_REMAINING_MATCHES: "6"
-          AI_SKIP_IF_SAME_COMPLETED_COUNT_EXISTS: "true"
+          AI_SKIP_IF_SAME_COMPLETED_COUNT_EXISTS: "false"
 
           MIN_APPROVED_EVENT_NOTES: "0"
           REQUIRE_EVENT_NOTES_FOR_PUBLISH: "false"

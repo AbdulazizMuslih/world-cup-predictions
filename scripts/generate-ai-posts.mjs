@@ -81,6 +81,11 @@ const AI_SKIP_IF_SAME_COMPLETED_COUNT_EXISTS = String(process.env.AI_SKIP_IF_SAM
 const AI_AUTO_STAGE_MODE = String(process.env.AI_AUTO_STAGE_MODE || "false").toLowerCase() === "true";
 const AUTO_GENERATION_REMAINING_MATCHES = Math.max(0, Number(process.env.AUTO_GENERATION_REMAINING_MATCHES || 6));
 const AI_AUTO_MIN_MATCH_AGE_HOURS = Math.max(0, Number(process.env.AI_AUTO_MIN_MATCH_AGE_HOURS || 4));
+const AI_GENERATION_MODE_SETTING = String(process.env.AI_GENERATION_MODE || "auto").trim().toLowerCase();
+const INCREMENTAL_BASE_COMPLETED_MATCH_COUNT = Math.max(0, Number(process.env.INCREMENTAL_BASE_COMPLETED_MATCH_COUNT || 98));
+const INCREMENTAL_HIGHLIGHT_MARKER = "incremental_final_match";
+const INCREMENTAL_PROFILE_MARKER = "incremental_profile_refresh";
+const FULL_FINAL_RECAP_MARKER = "full_final_recap";
 
 const EXPECTED_WORLD_CUP_MATCH_COUNT = Number(process.env.EXPECTED_WORLD_CUP_MATCH_COUNT || 104);
 const ALLOW_FINAL_PREVIEW = String(process.env.ALLOW_FINAL_PREVIEW || "false").toLowerCase() === "true";
@@ -128,6 +133,9 @@ if (!HIGHLIGHT_QUALITY_SELF_TEST && !AI_API_KEY) throw new Error("Missing AI_API
 if (!HIGHLIGHT_QUALITY_SELF_TEST && !AI_MODEL) throw new Error("Missing AI_MODEL, OPENAI_MODEL, or OPENROUTER_MODEL");
 if (!Number.isInteger(EXPECTED_WORLD_CUP_MATCH_COUNT) || EXPECTED_WORLD_CUP_MATCH_COUNT < 1) {
     throw new Error("EXPECTED_WORLD_CUP_MATCH_COUNT must be a positive integer");
+}
+if (!["auto", "incremental", "full", "full_final"].includes(AI_GENERATION_MODE_SETTING)) {
+    throw new Error("AI_GENERATION_MODE must be auto, incremental, full, or full_final");
 }
 
 function shouldGenerateProfilesForRun(factsPack = {}) {
@@ -198,13 +206,435 @@ async function shouldSkipBecauseSameCompletedCountExists(factsPack = {}) {
     return Array.isArray(existing) && existing.length > 0;
 }
 
+
+function resolveGenerationMode(factsPack = {}) {
+    if (["full", "full_final"].includes(AI_GENERATION_MODE_SETTING)) return "full_final";
+    if (AI_GENERATION_MODE_SETTING === "incremental") return "incremental";
+    return factsPack?.audit?.finalDataReady ? "full_final" : "incremental";
+}
+
+function getStoredRowCard(row = {}) {
+    return Array.isArray(row.cards_json) ? (row.cards_json[0] || {}) : {};
+}
+
+function getStoredGenerationMode(row = {}) {
+    return String(getStoredRowCard(row).generation_mode || "").trim();
+}
+
+function getStoredMatchId(row = {}) {
+    return String(getStoredRowCard(row).source_match_id || "").trim();
+}
+
+async function loadExistingFinalAiRows() {
+    const select = [
+        "id", "section_key", "title_ar", "subtitle_ar", "body_ar", "icon",
+        "cards_json", "participant_id", "source_completed_match_count",
+        "source_match_ids", "source_hash", "display_order", "visible", "created_at"
+    ].join(",");
+    return optionalSupabaseFetch(
+        `${POSTS_TABLE}?section_key=in.(${FINAL_HIGHLIGHTS_SECTION},${FINAL_PROFILE_SECTION})` +
+        `&visible=eq.true&select=${select}&order=display_order.desc`
+    );
+}
+
+function getIncrementalCandidateMatches(factsPack = {}) {
+    const completed = Array.isArray(factsPack?.contest?.matches) ? factsPack.contest.matches : [];
+    return completed.slice(INCREMENTAL_BASE_COMPLETED_MATCH_COUNT);
+}
+
+function hasAutomaticFullFinalRecap(existingRows = [], factsPack = {}) {
+    if (!factsPack?.audit?.finalDataReady) return false;
+    return existingRows.some((row) =>
+        row.section_key === FINAL_HIGHLIGHTS_SECTION &&
+        Number(row.source_completed_match_count) === Number(factsPack.audit.completedMatches) &&
+        getStoredGenerationMode(row) === FULL_FINAL_RECAP_MARKER
+    );
+}
+
+function getMissingIncrementalMatches(factsPack = {}, existingRows = []) {
+    const completedIncrementalIds = new Set(
+        existingRows
+            .filter((row) => row.section_key === FINAL_HIGHLIGHTS_SECTION)
+            .filter((row) => [INCREMENTAL_HIGHLIGHT_MARKER, FULL_FINAL_RECAP_MARKER].includes(getStoredGenerationMode(row)))
+            .map(getStoredMatchId)
+            .filter(Boolean)
+    );
+    return getIncrementalCandidateMatches(factsPack)
+        .filter((match) => match?.id && !completedIncrementalIds.has(String(match.id)));
+}
+
+function profilesNeedRefresh(existingRows = [], factsPack = {}) {
+    const profileRows = existingRows.filter((row) => row.section_key === FINAL_PROFILE_SECTION);
+    if (profileRows.length < Number(factsPack?.audit?.activeParticipants || 0)) return true;
+    return profileRows.some((row) => Number(row.source_completed_match_count) !== Number(factsPack?.audit?.completedMatches));
+}
+
+function sanitizeStoredRowForInsert(row = {}) {
+    return {
+        section_key: row.section_key,
+        title_ar: row.title_ar,
+        subtitle_ar: row.subtitle_ar,
+        body_ar: row.body_ar,
+        icon: row.icon,
+        cards_json: row.cards_json,
+        participant_id: row.participant_id || null,
+        source_completed_match_count: row.source_completed_match_count,
+        source_match_ids: row.source_match_ids,
+        source_hash: row.source_hash,
+        display_order: row.display_order,
+        visible: row.visible !== false
+    };
+}
+
+function markRowGenerationMode(row, generationMode) {
+    const cards = Array.isArray(row.cards_json) && row.cards_json.length
+        ? row.cards_json.map((card, index) => index === 0 ? { ...card, generation_mode: generationMode } : card)
+        : [{ generation_mode: generationMode }];
+    return {
+        ...row,
+        cards_json: cards,
+        source_hash: `${GENERATOR_VERSION}:${generationMode}:${String(row.source_hash || hashObject([row.title_ar, row.body_ar]))}`
+    };
+}
+
+function buildIncrementalSeedForMatch(match = {}, factsPack = {}) {
+    const seeds = (factsPack?.contest?.integratedStorySeeds || [])
+        .filter((seed) => String(seed?.match?.id || "") === String(match.id))
+        .filter((seed) => !["participant_arc", "stage_mood"].includes(seed.type))
+        .sort((a, b) => (b.priority || 0) - (a.priority || 0));
+    if (seeds.length) return seeds[0];
+
+    const notes = (factsPack?.contest?.eventNotes || []).filter((note) => String(note.match_id || "") === String(match.id));
+    return {
+        type: "knockout_pressure",
+        priority: 1000 + stageDisplayScore(match.stageLabel || match.stage),
+        title: `${match.title}: لقطة الحسم`,
+        match,
+        verified_event_context: notes.slice(0, 3).map((note) => ({ ...note, source_note_id: note.id })),
+        story_key: `incremental:${match.id}`,
+        post_blueprint: {
+            kind: "knockout_pressure",
+            hook_style: "ابدأ من ضغط المباراة وأثرها في توقعات المشاركين.",
+            story_question: "من قرأ المباراة بشكل أدق، وكيف انعكس ذلك على النقاط؟",
+            mood: "حسم إقصائي",
+            must_include_facts: [match.title, match.score]
+        }
+    };
+}
+
+function buildGuaranteedIncrementalFallback(seed = {}, match = {}, index = 0) {
+    const exactNames = Array.isArray(match.exactNames) ? match.exactNames.slice(0, 3) : [];
+    const correctNames = Array.isArray(match.correctNames) ? match.correctNames.filter((name) => !exactNames.includes(name)).slice(0, 2) : [];
+    const score = match.score || "النتيجة المسجلة";
+    const exactPoints = ["SEMI_FINALS", "THIRD_PLACE"].includes(match.stage) ? 100 : (match.stage === "FINAL" ? 200 : 50);
+    let body = "";
+    if (exactNames.length) {
+        body = `ضغط ${match.stageLabel || "الأدوار الإقصائية"} لم يترك مساحة كبيرة للخطأ. انتهت ${match.title} بنتيجة ${score}، وأصاب ${exactNames.join(" و")} النتيجة بالملّي ليحصل كل اسم على ${exactPoints} نقطة${correctNames.length ? `، بينما اكتفى ${correctNames.join(" و")} بالاتجاه الصحيح` : ""}.`;
+    } else if (correctNames.length) {
+        body = `كانت ${match.title} اختباراً صعباً في ${match.stageLabel || "الأدوار الإقصائية"}. انتهت المواجهة ${score}، ولم تظهر نتيجة بالملّي، لكن توقعات ${correctNames.join(" و")} جاءت في الاتجاه الصحيح، وحصل كل اسم على 10 نقاط في لحظة حسم واضحة.`;
+    } else {
+        body = `رفعت ${match.title} ضغط المسابقة مع اقتراب النهاية. انتهت المواجهة ${score} من دون قراءة بالملّي بين المشاركين، فصارت قيمتها في صعوبة التوقع نفسها وفي أثرها المباشر على طريق البطولة.`;
+    }
+    return {
+        title_ar: `${String(match.title || "مباراة الحسم").replace(/ ضد /g, " × ")}: لقطة من طريق النهاية`,
+        body_ar: body,
+        icon: "🏆",
+        category: "knockout_pressure",
+        stage_ar: match.stageLabel || getStageLabel(match.stage),
+        participant_names: [...exactNames, ...correctNames].slice(0, 4),
+        source_fact: seed.title || match.title,
+        source_note_ids: (seed.verified_event_context || []).map((item) => item.source_note_id || item.id).filter(Boolean).slice(0, 4),
+        source_key: seed.story_key || `incremental:${match.id}`,
+        source_match_id: match.id,
+        generated_by: "guaranteed_incremental_fallback"
+    };
+}
+
+function normalizeIncrementalHighlightPost(post, seed, match, factsPack, index, displayOrder) {
+    const sourceNoteIds = (seed?.verified_event_context || [])
+        .map((item) => item?.source_note_id || item?.id)
+        .filter(Boolean)
+        .slice(0, 6);
+    const forcedPost = {
+        ...post,
+        category: seed?.type || post?.category || "knockout_pressure",
+        stage_ar: match.stageLabel || getStageLabel(match.stage),
+        source_fact: seed?.title || post?.source_fact || match.title,
+        source_note_ids: sourceNoteIds,
+        source_key: seed?.story_key || post?.source_key || `incremental:${match.id}`,
+        source_match_id: match.id
+    };
+    const presentation = resolveHighlightPresentation(forcedPost, factsPack);
+    const polishedPost = {
+        ...forcedPost,
+        stage_ar: presentation.stage,
+        icon: presentation.icon,
+        body_ar: polishHighlightArabicText(forcedPost.body_ar),
+        title_ar: polishHighlightArabicText(forcedPost.title_ar)
+    };
+    const body = formatHighlightBody(polishedPost.body_ar);
+    const title = cleanText(buildDisplayHighlightTitle(polishedPost, index, factsPack), AI_POST_TITLE_MAX_CHARS);
+    if (!title || !body || isLowQualityHighlightPost({ ...polishedPost, title_ar: title, body_ar: body })) return null;
+
+    const sourceCompletedMatchCount = factsPack.audit.completedMatches;
+    const sourceMatchIds = (factsPack.contest.matches || []).map((item) => item.id);
+    return markRowGenerationMode({
+        section_key: FINAL_HIGHLIGHTS_SECTION,
+        title_ar: title,
+        subtitle_ar: cleanText(presentation.stage, 80),
+        body_ar: body,
+        icon: cleanText(presentation.icon || forcedPost.icon || "🏆", 8),
+        cards_json: [{
+            type: cleanText(forcedPost.category || "knockout_pressure", 40),
+            stage_ar: cleanText(presentation.stage, 80),
+            participant_names: Array.isArray(forcedPost.participant_names) ? forcedPost.participant_names.slice(0, 6) : [],
+            source_fact: cleanText(forcedPost.source_fact || match.title, 180),
+            source_note_ids: sourceNoteIds,
+            source_key: cleanText(forcedPost.source_key || `incremental:${match.id}`, 180),
+            source_match_id: String(match.id)
+        }],
+        participant_id: null,
+        source_completed_match_count: sourceCompletedMatchCount,
+        source_match_ids: sourceMatchIds,
+        source_hash: `${GENERATOR_VERSION}:incremental:${match.id}:${hashObject([title, body, sourceCompletedMatchCount])}`,
+        display_order: displayOrder,
+        visible: PUBLISH_VISIBLE
+    }, INCREMENTAL_HIGHLIGHT_MARKER);
+}
+
+async function generateIncrementalHighlightRows(factsPack, missingMatches, existingRows) {
+    const existingTitles = existingRows
+        .filter((row) => row.section_key === FINAL_HIGHLIGHTS_SECTION)
+        .map((row) => row.title_ar)
+        .filter(Boolean)
+        .slice(0, 40);
+    const maxOrder = Math.max(2000, ...existingRows.map((row) => Number(row.display_order || 0)));
+    const rows = [];
+
+    for (let index = 0; index < missingMatches.length; index += 1) {
+        const match = missingMatches[index];
+        const seed = buildIncrementalSeedForMatch(match, factsPack);
+        const prompt = buildBatchPrompt({
+            batchName: `incremental-${match.id}`,
+            instruction: "اكتب منشوراً واحداً فقط لهذه المباراة المكتملة. المباراة من آخر ست مباريات، لذلك وجودها في الأضواء إلزامي. لا تعيد كتابة أي عنوان قديم، ولا تكتب profile_messages. حافظ على الدقة واللغة، وركز على أثر المباراة في مسابقة التوقعات.",
+            highlightTarget: 1,
+            profileTarget: 0,
+            facts: {
+                generator: factsPack.generator,
+                audit: factsPack.audit,
+                language: factsPack.language,
+                strictRules: factsPack.strictRules,
+                active_participant_names: (factsPack.contest.activeParticipants || []).map((participant) => participant.name),
+                leaderboard_top: (factsPack.contest.leaderboard || []).slice(0, 8),
+                existing_highlight_titles: existingTitles,
+                story_seeds: [seed],
+                match,
+                event_notes: (factsPack.contest.eventNotes || []).filter((note) => String(note.match_id || "") === String(match.id))
+            }
+        });
+
+        let post = null;
+        try {
+            const batch = await runAiJsonBatch(prompt, `incremental-${match.id}`);
+            post = Array.isArray(batch?.highlights) ? batch.highlights[0] : null;
+        } catch (error) {
+            console.warn(`Incremental AI wording failed for ${match.title}; using guaranteed factual fallback: ${error.message}`);
+        }
+
+        let row = post ? normalizeIncrementalHighlightPost(post, seed, match, factsPack, index, maxOrder + missingMatches.length - index) : null;
+        if (!row) {
+            row = normalizeIncrementalHighlightPost(
+                buildCalculatedHighlightPost(seed, index) || buildGuaranteedIncrementalFallback(seed, match, index),
+                seed,
+                match,
+                factsPack,
+                index,
+                maxOrder + missingMatches.length - index
+            );
+        }
+        if (!row) {
+            row = normalizeIncrementalHighlightPost(
+                buildGuaranteedIncrementalFallback(seed, match, index),
+                seed,
+                match,
+                factsPack,
+                index,
+                maxOrder + missingMatches.length - index
+            );
+        }
+        if (!row) throw new Error(`Could not build a valid incremental highlight for completed match ${match.title}. Existing rows were not changed.`);
+        rows.push(row);
+        existingTitles.push(row.title_ar);
+    }
+
+    assertHighlightsUseCompletedMatches(rows, factsPack);
+    assertNoDuplicateFinalHighlights(rows, factsPack);
+    return rows;
+}
+
+function buildIncrementalProfileRows(factsPack) {
+    return rebuildSafeProfileRows([], factsPack)
+        .filter((row) => row.section_key === FINAL_PROFILE_SECTION)
+        .map((row) => markRowGenerationMode(row, INCREMENTAL_PROFILE_MARKER));
+}
+
+async function deleteRowsByIds(ids = []) {
+    const cleanIds = [...new Set(ids.map(String).filter(Boolean))];
+    const chunkSize = 40;
+    for (let index = 0; index < cleanIds.length; index += chunkSize) {
+        const chunk = cleanIds.slice(index, index + chunkSize);
+        await supabaseFetch(`${POSTS_TABLE}?id=in.(${chunk.map(encodeURIComponent).join(",")})`, {
+            method: "DELETE",
+            headers: { Prefer: "return=minimal" }
+        });
+    }
+}
+
+async function clearExistingSection(sectionKey) {
+    await supabaseFetch(`${POSTS_TABLE}?section_key=eq.${encodeURIComponent(sectionKey)}`, {
+        method: "DELETE",
+        headers: { Prefer: "return=minimal" }
+    });
+}
+
+async function runIncrementalGeneration(factsPack, existingRows) {
+    const missingMatches = getMissingIncrementalMatches(factsPack, existingRows);
+    const refreshProfiles = GENERATE_PROFILES && profilesNeedRefresh(existingRows, factsPack);
+
+    if (!missingMatches.length && !refreshProfiles) {
+        console.log(`INCREMENTAL AI SKIPPED: no missing final-six match highlights and profiles already reflect ${factsPack.audit.completedMatches} completed matches.`);
+        return;
+    }
+
+    console.log("INCREMENTAL FINAL-STAGE UPDATE");
+    console.log(JSON.stringify({
+        baselineCompletedMatches: INCREMENTAL_BASE_COMPLETED_MATCH_COUNT,
+        completedMatches: factsPack.audit.completedMatches,
+        missingMatches: missingMatches.map((match) => ({ id: match.id, title: match.title, stage: match.stage })),
+        refreshProfiles
+    }, null, 2));
+
+    const newHighlightRows = missingMatches.length
+        ? await generateIncrementalHighlightRows(factsPack, missingMatches, existingRows)
+        : [];
+    const profileRows = refreshProfiles ? buildIncrementalProfileRows(factsPack) : [];
+
+    // Re-read immediately before writing, then remove only obsolete rows for the same newly completed matches.
+    const currentRows = await loadExistingFinalAiRows();
+    const targetMatchIds = new Set(missingMatches.map((match) => String(match.id)));
+    const obsoleteMatchRowIds = currentRows
+        .filter((row) => row.section_key === FINAL_HIGHLIGHTS_SECTION)
+        .filter((row) => targetMatchIds.has(getStoredMatchId(row)))
+        .map((row) => row.id)
+        .filter(Boolean);
+
+    if (obsoleteMatchRowIds.length) {
+        await deleteRowsByIds(obsoleteMatchRowIds);
+        console.log(`Removed ${obsoleteMatchRowIds.length} obsolete/previous highlight row(s) for the newly completed match(es).`);
+    }
+    if (refreshProfiles) {
+        await clearExistingSection(FINAL_PROFILE_SECTION);
+        console.log("Refreshed final_profile rows without rewriting historical highlights.");
+    }
+
+    const rowsToInsert = [...newHighlightRows, ...profileRows];
+    if (rowsToInsert.length) await insertRows(rowsToInsert);
+    clearBatchCheckpointAfterInsert();
+    console.log(`Incremental update inserted ${newHighlightRows.length} new highlight(s) and ${profileRows.length} refreshed profile row(s). Existing unrelated highlights were untouched.`);
+}
+
+function mergeExistingHighlightsForFinalFallback(rows, existingRows, factsPack) {
+    const generatedProfiles = rows.filter((row) => row.section_key === FINAL_PROFILE_SECTION);
+    const generatedHighlights = rows.filter((row) => row.section_key === FINAL_HIGHLIGHTS_SECTION);
+    const completedIds = new Set((factsPack.contest.matches || []).map((match) => String(match.id)));
+    const safeExisting = existingRows
+        .filter((row) => row.section_key === FINAL_HIGHLIGHTS_SECTION)
+        .filter((row) => {
+            const matchId = getStoredMatchId(row);
+            return !matchId || completedIds.has(matchId);
+        })
+        .map(sanitizeStoredRowForInsert);
+    let merged = dedupeFinalHighlightRows([...generatedHighlights, ...safeExisting], factsPack, "final fallback merge")
+        .filter((row) => row.section_key === FINAL_HIGHLIGHTS_SECTION)
+        .sort(compareHighlightRows)
+        .slice(0, AI_PUBLIC_HIGHLIGHT_TARGET);
+    merged = merged.map((row) => markRowGenerationMode(row, FULL_FINAL_RECAP_MARKER));
+    return [...merged, ...generatedProfiles];
+}
+
+
+function ensureMandatoryFinalSixHighlights(rows, existingRows, factsPack) {
+    if (!factsPack?.audit?.finalDataReady) return rows;
+
+    const profiles = rows.filter((row) => row.section_key === FINAL_PROFILE_SECTION);
+    let highlights = rows.filter((row) => row.section_key === FINAL_HIGHLIGHTS_SECTION);
+    const mandatoryMatches = getIncrementalCandidateMatches(factsPack);
+    const represented = new Set(highlights.map(getStoredMatchId).filter(Boolean));
+    const existingByMatch = new Map(
+        existingRows
+            .filter((row) => row.section_key === FINAL_HIGHLIGHTS_SECTION)
+            .map((row) => [getStoredMatchId(row), row])
+            .filter(([matchId]) => Boolean(matchId))
+    );
+    let maxOrder = Math.max(2000, ...highlights.map((row) => Number(row.display_order || 0)));
+
+    for (const match of mandatoryMatches) {
+        const matchId = String(match.id || "");
+        if (!matchId || represented.has(matchId)) continue;
+
+        let row = existingByMatch.get(matchId)
+            ? sanitizeStoredRowForInsert(existingByMatch.get(matchId))
+            : null;
+
+        if (!row) {
+            const seed = buildIncrementalSeedForMatch(match, factsPack);
+            row = normalizeIncrementalHighlightPost(
+                buildCalculatedHighlightPost(seed, highlights.length) || buildGuaranteedIncrementalFallback(seed, match, highlights.length),
+                seed,
+                match,
+                factsPack,
+                highlights.length,
+                ++maxOrder
+            );
+            if (!row) {
+                row = normalizeIncrementalHighlightPost(
+                    buildGuaranteedIncrementalFallback(seed, match, highlights.length),
+                    seed,
+                    match,
+                    factsPack,
+                    highlights.length,
+                    ++maxOrder
+                );
+            }
+        }
+
+        if (!row) throw new Error(`Automatic final recap could not guarantee a highlight for ${match.title}. Existing rows were not cleared.`);
+        highlights.push(markRowGenerationMode(row, FULL_FINAL_RECAP_MARKER));
+        represented.add(matchId);
+        console.warn(`Automatic final recap guaranteed mandatory final-six highlight: ${match.title}`);
+    }
+
+    highlights = dedupeFinalHighlightRows(highlights, factsPack, "mandatory final-six protection")
+        .filter((row) => row.section_key === FINAL_HIGHLIGHTS_SECTION);
+
+    const mandatoryIds = new Set(mandatoryMatches.map((match) => String(match.id)));
+    const mandatoryRows = highlights.filter((row) => mandatoryIds.has(getStoredMatchId(row))).sort(compareHighlightRows);
+    const otherRows = highlights.filter((row) => !mandatoryIds.has(getStoredMatchId(row))).sort(compareHighlightRows);
+    highlights = [...mandatoryRows, ...otherRows.slice(0, Math.max(0, AI_PUBLIC_HIGHLIGHT_TARGET - mandatoryRows.length))];
+
+    return [...highlights, ...profiles];
+}
+
 async function main() {
     const factsPack = await buildFactsPack();
     GENERATE_PROFILES = shouldGenerateProfilesForRun(factsPack);
+    const generationMode = resolveGenerationMode(factsPack);
+    const existingRows = await loadExistingFinalAiRows();
 
     if (!shouldGenerateHighlightsForRun(factsPack)) {
         console.log(`AUTO AI GENERATION SKIPPED: ${getAutoGenerationSkipReason(factsPack) || "not ready"}.`);
         console.log(JSON.stringify({
+            generationMode,
             completedMatches: factsPack.audit.completedMatches,
             quarterFinalsComplete: factsPack.audit.quarterFinalsComplete,
             semiFinalsComplete: factsPack.audit.semiFinalsComplete,
@@ -214,13 +644,19 @@ async function main() {
         return;
     }
 
-    if (await shouldSkipBecauseSameCompletedCountExists(factsPack)) {
-        console.log(`AUTO AI GENERATION SKIPPED: final_highlights already exist for ${factsPack.audit.completedMatches} completed matches.`);
+    if (generationMode === "incremental") {
+        await runIncrementalGeneration(factsPack, existingRows);
+        return;
+    }
+
+    if (AI_AUTO_STAGE_MODE && hasAutomaticFullFinalRecap(existingRows, factsPack)) {
+        console.log(`AUTO FULL FINAL RECAP SKIPPED: a ${FULL_FINAL_RECAP_MARKER} snapshot already exists for ${factsPack.audit.completedMatches} completed matches.`);
         return;
     }
 
     console.log("FINAL AI GENERATION FACT SUMMARY");
     console.log(JSON.stringify({
+        generationMode,
         expectedMatches: EXPECTED_WORLD_CUP_MATCH_COUNT,
         totalMatchesInDb: factsPack.audit.totalMatchesInDb,
         completedMatches: factsPack.audit.completedMatches,
@@ -326,10 +762,18 @@ async function main() {
         throw new Error("AI returned no valid rows to save, and calculated top-up could not create safe rows.");
     }
 
+    if (highlightRows.length < AI_MIN_VALID_HIGHLIGHT_ROWS && generationMode === "full_final" && existingRows.length) {
+        const before = highlightRows.length;
+        rows = mergeExistingHighlightsForFinalFallback(rows, existingRows, factsPack);
+        highlightRows = rows.filter((row) => row.section_key === FINAL_HIGHLIGHTS_SECTION);
+        profileRows = rows.filter((row) => row.section_key === FINAL_PROFILE_SECTION);
+        console.warn(`Automatic final recap fallback merged the frozen baseline: ${before} -> ${highlightRows.length} highlights.`);
+    }
+
     if (highlightRows.length < AI_MIN_VALID_HIGHLIGHT_ROWS) {
         throw new Error(
             `Only ${highlightRows.length} valid final_highlights rows are available; minimum is ${AI_MIN_VALID_HIGHLIGHT_ROWS}. ` +
-            `Nothing was cleared or inserted. Use a paid/stable model or lower AI_MIN_VALID_HIGHLIGHT_ROWS only for emergency publishing.`
+            `Nothing was cleared or inserted. The next automatic cycle will retry.`
         );
     }
 
@@ -346,16 +790,32 @@ async function main() {
     highlightRows = rows.filter((row) => row.section_key === FINAL_HIGHLIGHTS_SECTION);
     profileRows = rows.filter((row) => row.section_key === FINAL_PROFILE_SECTION);
 
+    if (highlightRows.length < AI_MIN_VALID_HIGHLIGHT_ROWS && generationMode === "full_final" && existingRows.length) {
+        rows = mergeExistingHighlightsForFinalFallback(rows, existingRows, factsPack);
+        highlightRows = rows.filter((row) => row.section_key === FINAL_HIGHLIGHTS_SECTION);
+        profileRows = rows.filter((row) => row.section_key === FINAL_PROFILE_SECTION);
+    }
+
+    if (generationMode === "full_final") {
+        rows = ensureMandatoryFinalSixHighlights(rows, existingRows, factsPack);
+        highlightRows = rows.filter((row) => row.section_key === FINAL_HIGHLIGHTS_SECTION);
+        profileRows = rows.filter((row) => row.section_key === FINAL_PROFILE_SECTION);
+    }
+
     if (highlightRows.length < AI_MIN_VALID_HIGHLIGHT_ROWS) {
         throw new Error(
             `Only ${highlightRows.length} unique final_highlights remained after final duplicate protection; ` +
-            `minimum is ${AI_MIN_VALID_HIGHLIGHT_ROWS}. Existing database rows were not cleared.`
+            `minimum is ${AI_MIN_VALID_HIGHLIGHT_ROWS}. Existing database rows were not cleared; the automatic cycle will retry.`
         );
     }
 
+    rows = rows.map((row) => markRowGenerationMode(row, FULL_FINAL_RECAP_MARKER));
+    highlightRows = rows.filter((row) => row.section_key === FINAL_HIGHLIGHTS_SECTION);
+    profileRows = rows.filter((row) => row.section_key === FINAL_PROFILE_SECTION);
+
     assertHighlightsUseCompletedMatches(rows, factsPack);
     assertNoDuplicateFinalHighlights(rows, factsPack);
-    console.log(`Validated final AI rows: ${highlightRows.length} unique final_highlights, ${profileRows.length} final_profile.`);
+    console.log(`Validated ${generationMode} AI rows: ${highlightRows.length} unique final_highlights, ${profileRows.length} final_profile.`);
 
     if (RESET_EXISTING_FINAL_AI) {
         await clearExistingFinalAiRows();
@@ -4118,6 +4578,11 @@ function runHighlightQualitySelfTest() {
         curatedSynthetic.filter((row) => row.section_key === FINAL_HIGHLIGHTS_SECTION).length <= AI_GROUP_STAGE_HIGHLIGHT_MAX,
         "group-stage curation cap"
     );
+
+    assert(resolveGenerationMode({ audit: { finalDataReady: false } }) === (AI_GENERATION_MODE_SETTING === "auto" ? "incremental" : resolveGenerationMode({ audit: { finalDataReady: false } })), "generation mode resolves");
+    if (AI_GENERATION_MODE_SETTING === "auto") {
+        assert(resolveGenerationMode({ audit: { finalDataReady: true } }) === "full_final", "automatic final recap mode");
+    }
 
     console.log("Highlight quality self-test passed.");
 }

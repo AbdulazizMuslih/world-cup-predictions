@@ -52,10 +52,6 @@ on:
           - "false"
           - "true"
 
-  schedule:
-    # During the end of the tournament, this keeps fetching drafts after new results land.
-    # The script deduplicates by match/event/source before inserting.
-    - cron: "17 * * * *"
 
 env:
   AUTOMATION_ACTIVE_UNTIL: "2026-07-21T03:00:00Z"
