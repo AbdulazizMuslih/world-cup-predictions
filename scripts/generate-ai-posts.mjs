@@ -342,7 +342,7 @@ function buildGuaranteedIncrementalFallback(seed = {}, match = {}, index = 0) {
         category: "knockout_pressure",
         stage_ar: match.stageLabel || getStageLabel(match.stage),
         participant_names: [...exactNames, ...correctNames].slice(0, 4),
-        source_fact: seed.title || match.title,
+        source_fact: `${match.title} | ${seed.title || match.title}`,
         source_note_ids: (seed.verified_event_context || []).map((item) => item.source_note_id || item.id).filter(Boolean).slice(0, 4),
         source_key: seed.story_key || `incremental:${match.id}`,
         source_match_id: match.id,
@@ -359,7 +359,7 @@ function normalizeIncrementalHighlightPost(post, seed, match, factsPack, index, 
         ...post,
         category: seed?.type || post?.category || "knockout_pressure",
         stage_ar: match.stageLabel || getStageLabel(match.stage),
-        source_fact: seed?.title || post?.source_fact || match.title,
+        source_fact: `${match.title} | ${seed?.title || post?.source_fact || match.title}`,
         source_note_ids: sourceNoteIds,
         source_key: seed?.story_key || post?.source_key || `incremental:${match.id}`,
         source_match_id: match.id
@@ -1512,8 +1512,20 @@ function getHighlightDuplicateReason(first, second, factsPack = {}) {
 
     const firstText = getHighlightTextParts(first);
     const secondText = getHighlightTextParts(second);
-    if (firstText.title && firstText.title === secondText.title) return "same normalized title";
-    if (firstText.sourceFact && firstText.sourceFact.length >= 12 && firstText.sourceFact === secondText.sourceFact) {
+    const firstMatchId = inferHighlightMatchId(first, factsPack);
+    const secondMatchId = inferHighlightMatchId(second, factsPack);
+    const sameMatch = firstMatchId && secondMatchId && firstMatchId === secondMatchId;
+    const clearlyDifferentMatches = firstMatchId && secondMatchId && firstMatchId !== secondMatchId;
+
+    if (firstText.title && firstText.title === secondText.title && !clearlyDifferentMatches) {
+        return "same normalized title";
+    }
+    if (
+        firstText.sourceFact
+        && firstText.sourceFact.length >= 12
+        && firstText.sourceFact === secondText.sourceFact
+        && !clearlyDifferentMatches
+    ) {
         return "same source fact";
     }
 
@@ -1529,10 +1541,6 @@ function getHighlightDuplicateReason(first, second, factsPack = {}) {
         highlightDedupeTokenSet(`${firstText.title} ${firstText.body} ${firstText.sourceFact}`),
         highlightDedupeTokenSet(`${secondText.title} ${secondText.body} ${secondText.sourceFact}`)
     );
-
-    const firstMatchId = inferHighlightMatchId(first, factsPack);
-    const secondMatchId = inferHighlightMatchId(second, factsPack);
-    const sameMatch = firstMatchId && secondMatchId && firstMatchId === secondMatchId;
 
     const firstParticipants = new Set(getHighlightParticipantNames(first));
     const secondParticipants = new Set(getHighlightParticipantNames(second));
@@ -4528,6 +4536,31 @@ function runHighlightQualitySelfTest() {
     assert(
         getHighlightDuplicateReason(sameMatchA, sameMatchB, { contest: { matches: [] } }) === "same match match-1",
         "one final highlight per match"
+    );
+
+    const differentExtraTimeMatchA = {
+        title_ar: "النرويج × إنجلترا: وقت إضافي",
+        body_ar: "قصة المباراة الأولى.",
+        category: "knockout_pressure",
+        source_match_id: "match-england",
+        source_key: "incremental:match-england",
+        source_fact: "مباراة امتدت للأشواط الإضافية"
+    };
+    const differentExtraTimeMatchB = {
+        title_ar: "الأرجنتين × سويسرا: وقت إضافي",
+        body_ar: "قصة المباراة الثانية.",
+        category: "knockout_pressure",
+        source_match_id: "match-argentina",
+        source_key: "incremental:match-argentina",
+        source_fact: "مباراة امتدت للأشواط الإضافية"
+    };
+    assert(
+        getHighlightDuplicateReason(
+            differentExtraTimeMatchA,
+            differentExtraTimeMatchB,
+            { contest: { matches: [] } }
+        ) === "",
+        "different matches may share the same event type without becoming duplicates"
     );
 
     assert(
