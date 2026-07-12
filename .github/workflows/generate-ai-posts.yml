@@ -135,7 +135,7 @@ jobs:
           AI_GENERATION_MODE: ${{ inputs.generation_mode }}
           INCREMENTAL_BASE_COMPLETED_MATCH_COUNT: "98"
           AI_AUTO_STAGE_MODE: "false"
-          AI_AUTO_MIN_MATCH_AGE_HOURS: "4"
+          AI_AUTO_MIN_MATCH_AGE_HOURS: "2.5"
           AUTO_GENERATION_REMAINING_MATCHES: "6"
           AI_SKIP_IF_SAME_COMPLETED_COUNT_EXISTS: "false"
           MIN_APPROVED_EVENT_NOTES: "0"
