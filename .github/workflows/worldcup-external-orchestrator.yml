@@ -1,0 +1,162 @@
+name: World Cup External Orchestrator
+
+run-name: World Cup external cycle #${{ github.run_number }}
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  AUTOMATION_ACTIVE_UNTIL: "2026-07-21T03:00:00Z"
+
+concurrency:
+  group: world-cup-external-orchestrator
+  cancel-in-progress: false
+
+jobs:
+  run-world-cup-cycle:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+
+    steps:
+      - name: Check external automation window
+        id: automation_window
+        shell: bash
+        run: |
+          now_epoch=$(date -u +%s)
+          cutoff_epoch=$(date -u -d "$AUTOMATION_ACTIVE_UNTIL" +%s)
+
+          echo "utc_now=$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+          echo "automatic_cutoff=$AUTOMATION_ACTIVE_UNTIL"
+
+          if (( now_epoch <= cutoff_epoch )); then
+            echo "allowed=true" >> "$GITHUB_OUTPUT"
+            echo "External World Cup cycle is allowed."
+          else
+            echo "allowed=false" >> "$GITHUB_OUTPUT"
+            echo "External World Cup cycle skipped: automatic cutoff has passed."
+            echo "Manual runs of the individual workflows remain available."
+          fi
+
+      - name: Checkout repository
+        if: steps.automation_window.outputs.allowed == 'true'
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        if: steps.automation_window.outputs.allowed == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - name: Sync World Cup results
+        if: steps.automation_window.outputs.allowed == 'true'
+        env:
+          FOOTBALL_DATA_TOKEN: ${{ secrets.FOOTBALL_DATA_TOKEN }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SYNC_MODE: "normal"
+        run: node scripts/sync-results.mjs
+
+      - name: Fetch final event notes
+        id: event_notes
+        if: steps.automation_window.outputs.allowed == 'true'
+        continue-on-error: true
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          FOOTBALL_DATA_TOKEN: ${{ secrets.FOOTBALL_DATA_TOKEN }}
+          API_FOOTBALL_KEY: ${{ secrets.API_FOOTBALL_KEY }}
+          FETCH_FOOTBALL_DATA_NOTES: "true"
+          FETCH_FOOTBALL_EVENTS: "false"
+          FETCH_NEWS_EVENTS: "true"
+          TARGET_RECENT_COMPLETED_DAYS: "3"
+          NEWS_MAX_PER_MATCH: "2"
+          DEFAULT_APPROVED: "false"
+          DRY_RUN: "false"
+          SCHEDULE_ACTIVE_FROM: "2026-07-10T00:00:00Z"
+          SCHEDULE_ACTIVE_UNTIL: "2026-07-21T03:00:00Z"
+        run: node scripts/fetch-final-event-notes.mjs
+
+      - name: Report event-note result
+        if: steps.automation_window.outputs.allowed == 'true'
+        shell: bash
+        run: |
+          echo "event_notes_outcome=${{ steps.event_notes.outcome }}"
+          if [[ "${{ steps.event_notes.outcome }}" != "success" ]]; then
+            echo "Event-note fetching failed, but highlight generation will continue using existing verified data."
+          fi
+
+      - name: Generate highlights and profile messages when eligible
+        if: steps.automation_window.outputs.allowed == 'true'
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+
+          AI_PROVIDER: "openrouter"
+          AI_API_KEY: ${{ secrets.AI_API_KEY }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          AI_BASE_URL: ${{ secrets.AI_BASE_URL }}
+          AI_MODEL: ${{ secrets.AI_MODEL }}
+          OPENROUTER_BASE_URL: ${{ secrets.OPENROUTER_BASE_URL }}
+          OPENROUTER_MODEL: "qwen/qwen3.6-plus"
+          OPENROUTER_FALLBACK_MODELS: ""
+          OPENROUTER_USE_FALLBACK_MODELS: "false"
+          OPENROUTER_HTTP_REFERER: ${{ secrets.OPENROUTER_HTTP_REFERER }}
+          OPENROUTER_APP_TITLE: "World Cup 2026 Predictions"
+
+          AI_RESPONSE_FORMAT: ${{ secrets.AI_RESPONSE_FORMAT || 'false' }}
+          AI_DISABLE_REPAIR_CALL: "false"
+          AI_TEMPERATURE: "0.55"
+          AI_MAX_TOKENS: "7000"
+          AI_BATCH_GENERATION: "true"
+          AI_BATCH_HIGHLIGHT_TARGET: "6"
+          AI_EVENT_NOTE_BATCH_SIZE: "30"
+          AI_FACT_BATCH_SIZE: "40"
+          AI_USE_EVENT_ONLY_BATCHES: "false"
+          AI_ENABLE_FILL_MATCHES: "false"
+          AI_REQUIRE_CONTEST_SIGNAL: "true"
+          AI_STORY_SEED_BATCH_SIZE: "6"
+          AI_POST_BODY_MAX_CHARS: "460"
+          AI_HIGHLIGHT_MAX_WORDS: "54"
+          AI_ENFORCE_UNIQUE_TITLES: "true"
+          AI_TITLE_MATCH_HINT: "true"
+          AI_MAX_BATCHES_PER_RUN: "14"
+          AI_INSERT_PARTIAL_ON_QUOTA: "true"
+          AI_INSERT_PARTIAL_ON_BATCH_FAILURE: "true"
+          AI_INSERT_PARTIAL_ON_MAX_BATCHES: "true"
+          AI_MIN_HIGHLIGHTS_FOR_PARTIAL_INSERT: "12"
+          AI_MIN_VALID_HIGHLIGHT_ROWS: "24"
+          AI_TOP_UP_WITH_CALCULATED_HIGHLIGHTS: "true"
+          AI_CALCULATED_HIGHLIGHT_TOP_UP_TO: "28"
+          AI_CONTINUE_ON_BATCH_FAILURE: "true"
+          AI_MAX_FAILED_BATCHES: "10"
+          AI_ENABLE_CONTEST_MOMENT_BATCHES: "false"
+          AI_INSERT_PARTIAL_ANY_STORY_COUNT: "false"
+
+          EXPECTED_WORLD_CUP_MATCH_COUNT: "104"
+          ALLOW_FINAL_PREVIEW: "true"
+          PUBLISH_VISIBLE: "true"
+          MAX_HIGHLIGHTS: "40"
+          AI_PUBLIC_HIGHLIGHT_TARGET: "32"
+          AI_GROUP_STAGE_HIGHLIGHT_MAX: "10"
+          AI_PARTICIPANT_HIGHLIGHT_MAX: "6"
+          AI_STAGE_SUMMARY_MAX: "2"
+          AI_STYLE_FAMILY_MAX: "3"
+          AI_MAX_CALCULATED_TOP_UP: "4"
+          RESET_EXISTING_FINAL_AI: "true"
+          GENERATE_PROFILES: "auto"
+
+          # Treat cron-job.org dispatches as automatic—not as unrestricted manual runs.
+          AI_AUTO_STAGE_MODE: "true"
+          AI_AUTO_MIN_MATCH_AGE_HOURS: "4"
+          AUTO_GENERATION_REMAINING_MATCHES: "6"
+          AI_SKIP_IF_SAME_COMPLETED_COUNT_EXISTS: "true"
+
+          MIN_APPROVED_EVENT_NOTES: "0"
+          REQUIRE_EVENT_NOTES_FOR_PUBLISH: "false"
+          USE_TRUSTED_EVENT_NOTES: "true"
+          MAX_EVENT_NOTES_FOR_AI: "120"
+          TRUSTED_EVENT_SOURCE_PATTERNS: "Football-Data.org,API-Football,GDELT"
+        run: node scripts/generate-ai-posts.mjs
