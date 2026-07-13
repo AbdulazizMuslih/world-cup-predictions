@@ -10366,3 +10366,150 @@ body.site-stage-theme #availableMatches .available-stage-card.match-card-predict
     display: none;
   }
 }
+
+/* ===============================
+   V39.0.5 mobile badge grid density
+   Keep desktop unchanged; use available width better on tablet/mobile.
+   =============================== */
+@media (min-width: 601px) and (max-width: 760px) {
+  #statisticsTab .participant-badge-chip-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  }
+}
+
+@media (min-width: 361px) and (max-width: 600px) {
+  #statisticsTab .participant-badge-chip-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+}
+
+@media (max-width: 760px) {
+  #statisticsTab .participant-badge-chip {
+    width: 100% !important;
+    min-width: 0 !important;
+    height: 100% !important;
+    align-content: start !important;
+  }
+
+  #statisticsTab .participant-badge-chip-body {
+    min-width: 0 !important;
+  }
+
+  #statisticsTab .participant-badge-chip strong,
+  #statisticsTab .participant-badge-chip em,
+  #statisticsTab .participant-badge-chip small {
+    overflow-wrap: anywhere !important;
+  }
+}
+
+@media (max-width: 360px) {
+  #statisticsTab .participant-badge-chip-grid {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+}
+
+/* ===============================
+   V39.0.6 profile mobile density
+   Use mobile width better without reducing text size or readability.
+   =============================== */
+@media (min-width: 540px) and (max-width: 900px) {
+  #profileTab .profile-stat-grid-final {
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+    grid-auto-rows: 1fr !important;
+    gap: 10px !important;
+  }
+
+  #profileTab .profile-stat-grid-final .profile-stat-card-wide {
+    grid-column: auto !important;
+  }
+}
+
+@media (max-width: 539px) {
+  #profileTab .profile-stat-grid-final {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    grid-auto-rows: 1fr !important;
+    gap: 9px !important;
+  }
+
+  #profileTab .profile-stat-grid-final .profile-stat-card-wide {
+    grid-column: 1 / -1 !important;
+  }
+
+  #profileTab .profile-stat-grid-final .profile-stat-card {
+    min-width: 0 !important;
+    min-height: 88px !important;
+    height: 100% !important;
+    padding: 13px 10px !important;
+  }
+
+  #profileTab .profile-stat-grid-final .profile-stat-card strong,
+  #profileTab .profile-stat-grid-final .profile-stat-card span {
+    overflow-wrap: anywhere !important;
+  }
+}
+
+@media (min-width: 680px) and (max-width: 900px) {
+  #profileBadges.badge-grid,
+  #profileTab .badge-grid {
+    display: grid !important;
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+    grid-auto-rows: 1fr !important;
+    gap: 10px !important;
+  }
+}
+
+@media (min-width: 391px) and (max-width: 679px) {
+  #profileBadges.badge-grid,
+  #profileTab .badge-grid {
+    display: grid !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    grid-auto-rows: 1fr !important;
+    gap: 9px !important;
+  }
+}
+
+@media (max-width: 390px) {
+  #profileBadges.badge-grid,
+  #profileTab .badge-grid {
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) !important;
+    gap: 8px !important;
+  }
+}
+
+@media (max-width: 900px) {
+  #profileBadges.badge-grid,
+  #profileTab .badge-grid {
+    align-items: stretch !important;
+    margin-top: 14px !important;
+  }
+
+  #profileTab .profile-badge-card-final {
+    width: 100% !important;
+    min-width: 0 !important;
+    min-height: 82px !important;
+    height: 100% !important;
+    display: grid !important;
+    grid-template-columns: 30px minmax(0, 1fr) !important;
+    grid-template-rows: auto auto !important;
+    align-content: center !important;
+    align-items: center !important;
+    gap: 5px 9px !important;
+    padding: 11px 12px !important;
+    border-radius: 18px !important;
+    text-align: start !important;
+  }
+
+  #profileTab .profile-badge-card-final span[aria-hidden="true"] {
+    grid-column: 1 !important;
+    grid-row: 1 / span 2 !important;
+    align-self: center !important;
+  }
+
+  #profileTab .profile-badge-card-final strong,
+  #profileTab .profile-badge-card-final small {
+    grid-column: 2 !important;
+    min-width: 0 !important;
+    overflow-wrap: anywhere !important;
+  }
+}
