@@ -1,0 +1,10 @@
+V39.2.1
+- Unified every participant recap page on the same light final-stage background.
+- Recolored all previously dark-page content for high-contrast light rendering.
+- Increased Arabic title, body, card, chart-caption, badge, moment, highlight, and closing-page text sizes.
+- Expanded charts and content cards to use available A4 space more effectively.
+- Rebuilt dark fingerprint, moments, badges, highlights, cover, and closing styling as light editorial pages.
+- Added safe large-card handling for sparse additional badge pages.
+- Increased leaderboard and prediction-ledger readability while preserving 52 matches per ledger page.
+- Updated SVG chart colors and labels for the light theme.
+- Kept fixed A4 geometry and the existing mobile-safe page-by-page export process.

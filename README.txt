@@ -1,8 +1,29 @@
-V39.0.6 — Profile mobile layout improvement
+V39.2.1 - كتاب الرحلة التذكاري: النسخة الموحّدة الفاتحة
 
-Changes:
-- Profile statistics use 3 columns on medium-small screens and 2 columns on phones.
-- The wide "best stage" statistic spans the full row only on narrow phones.
-- Profile badges use 3 columns on larger mobile/tablet widths, 2 on normal phones, and 1 only on very narrow screens.
-- Existing font sizes and desktop layout are unchanged.
-- Includes all V39.0.5 badge-grid and V39.0.4 dynamic top-three closing changes.
+هذه النسخة تحافظ على محتوى وتحليلات V39.2.0، وتعيد ضبط التصميم بالكامل للقراءة المريحة:
+- جميع صفحات PDF تستخدم خلفية فاتحة موحّدة مستوحاة من ثيم المرحلة النهائية.
+- ألوان النصوص والرسوم والبطاقات أعيدت معايرتها لتباين أوضح.
+- تكبير الخطوط في العناوين، الشروحات، البطاقات، التحليلات، الأضواء، والصفحة الختامية.
+- استغلال أفضل للمساحات في صفحات الرحلة، المراحل، خريطة المنافسة، البصمة الخماسية، الشخصية، المنتخبات، اللحظات، الشارات، الحقائق الجماعية، والترتيب.
+- دفتر التوقعات ما زال 52 مباراة في كل صفحة، مع الحفاظ على الأعلام والنتائج والنقاط.
+- شبكة الشارات ثابتة وآمنة، مع بطاقات أكبر وصفحات إضافية منظمة عند الحاجة.
+- صفحات الأضواء والختام أصبحت فاتحة مع نصوص داكنة وذهبية وخضراء واضحة.
+- ألوان الرسوم البيانية الداخلية أصبحت مناسبة للخلفية الفاتحة.
+
+الملفات المطلوب استبدالها:
+- index.html
+- app.js
+- style.css
+- participant-recap-pdf.js
+- version.json
+
+لا يلزم أي تعديل على قاعدة البيانات أو Workflows أو Automations.
+
+الاختبار قبل نهاية البطولة:
+1. انشر الملفات على فرع الاختبار.
+2. افتح الموقع باستخدام ?previewFinal=1.
+3. سجّل الدخول كمشارك.
+4. افتح الملف الشخصي.
+5. اضغط تحميل كتاب الرحلة PDF.
+
+Version: 39.2.1

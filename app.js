@@ -78,7 +78,7 @@ let allowLeavingPage = false;
 let dashboardRefreshTimer = null;
 let championPredictionCutoffTimer = null;
 
-const APP_VERSION = "39.0.6";
+const APP_VERSION = "39.2.1";
 const PREDICTION_OPEN_HOURS = 72;
 const FINAL_RECAP_PREVIEW_PARAM = "previewFinal";
 const EXPECTED_WORLD_CUP_MATCH_COUNT = 104;
@@ -95,6 +95,10 @@ const BONUS_EXACT_POINTS_BY_STAGE = {
     THIRD_PLACE: 100,
     FINAL: 200
 };
+const PARTICIPANT_RECAP_HTML2CANVAS_URL = "https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js";
+const PARTICIPANT_RECAP_JSPDF_URL = "https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js";
+const PARTICIPANT_RECAP_PREDICTIONS_PER_PAGE = 14;
+let participantRecapPdfGenerationInProgress = false;
 let updateCheckTimer = null;
 const SITE_STAGE_CACHE_KEY = "wcSiteStage";
 
@@ -741,6 +745,7 @@ async function renderProfilePageShell() {
     const profileSummary = document.getElementById("profileSummary");
     const profileBadges = document.getElementById("profileBadges");
     const profileAiStory = document.getElementById("profileAiStory");
+    const profileRecapDownload = document.getElementById("profileRecapDownload");
 
     if (!profileSummary) return;
 
@@ -760,6 +765,7 @@ async function renderProfilePageShell() {
         `;
         if (profileBadges) profileBadges.innerHTML = "";
         if (profileAiStory) profileAiStory.innerHTML = "";
+        if (profileRecapDownload) profileRecapDownload.innerHTML = "";
         return;
     }
 
@@ -767,12 +773,14 @@ async function renderProfilePageShell() {
         profileSummary.innerHTML = `<div class="placeholder-card">سجّل الدخول لعرض ملفك الشخصي.</div>`;
         if (profileBadges) profileBadges.innerHTML = "";
         if (profileAiStory) profileAiStory.innerHTML = "";
+        if (profileRecapDownload) profileRecapDownload.innerHTML = "";
         return;
     }
 
     profileSummary.innerHTML = `<div class="placeholder-card">جاري تحميل ملفك الشخصي...</div>`;
     if (profileBadges) profileBadges.innerHTML = "";
     if (profileAiStory) profileAiStory.innerHTML = "";
+    if (profileRecapDownload) profileRecapDownload.innerHTML = "";
 
     try {
         const [profileStats, recap, profilePosts] = await Promise.all([
@@ -801,6 +809,12 @@ async function renderProfilePageShell() {
 
         if (profileAiStory) {
             profileAiStory.innerHTML = renderProfileClosingNote(currentParticipant, profileStats, profilePost, finalRow, finalBadges);
+        }
+
+        if (profileRecapDownload) {
+            profileRecapDownload.innerHTML = isFinalRecapAvailable(recap) && finalRow
+                ? renderParticipantRecapDownloadCard(currentParticipant, finalRow, recap)
+                : "";
         }
     } catch (error) {
         console.error("Profile page load failed:", error);
@@ -4845,15 +4859,17 @@ function buildFinalRecapParticipantModels(participants, completedMatches, predic
         }
     }
 
-    if (championResult) {
-        for (const participant of participants) {
-            const model = models.get(participant.id);
-            const championPrediction = championPredictionMap.get(String(participant.id));
-            const championPoints = calculateChampionPredictionPoints(championPrediction?.predicted_team, championResult);
-            model.championPredictionTeam = championPrediction?.predicted_team || null;
-            model.championPredictionPoints = championPoints;
-            model.points += championPoints;
-        }
+    for (const participant of participants) {
+        const model = models.get(participant.id);
+        const championPrediction = championPredictionMap.get(String(participant.id));
+        const championPoints = championResult
+            ? calculateChampionPredictionPoints(championPrediction?.predicted_team, championResult)
+            : 0;
+
+        // Keep the saved team visible even before the champion/runner-up is known.
+        model.championPredictionTeam = championPrediction?.predicted_team || null;
+        model.championPredictionPoints = championPoints;
+        model.points += championPoints;
     }
 
     return Array.from(models.values()).map((model) => {
