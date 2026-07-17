@@ -6,7 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#10162d" />
     <title>توقعات كأس العالم 2026</title>
-    <link rel="stylesheet" href="style.css?v=39.2.3" />
+    <link rel="stylesheet" href="style.css?v=39.2.4" />
 </head>
 
 <body>
@@ -147,8 +147,8 @@
                     <button class="tab active" data-tab="available">المباريات المتاحة</button>
                     <button class="tab" data-tab="mine">توقعاتي</button>
                     <button class="tab" data-tab="leaderboard">الترتيب</button>
-                    <button id="adminTabBtn" class="tab hidden" data-tab="admin">الإدارة</button>
-                    <button id="adminPredictionsTabBtn" class="tab hidden" data-tab="adminPredictions">توقعات المشتركين</button>
+                    <button id="adminTabBtn" class="tab hidden" data-tab="admin">لوحة الإدارة</button>
+                    <button id="adminPredictionsTabBtn" class="tab hidden" data-tab="adminPredictions">سجلات المشاركين</button>
                 </nav>
 
                 <section id="availableTab" class="tab-panel">
@@ -247,77 +247,166 @@
                     </div>
                 </section>
 
-                <section id="adminTab" class="tab-panel hidden">
-                    <h3>الإدارة</h3>
+                <section id="adminTab" class="tab-panel hidden admin-console-panel-root">
+                    <div class="admin-command-center">
+                        <header class="admin-command-hero">
+                            <div class="admin-command-copy">
+                                <p class="admin-command-kicker">ADMIN CONTROL CENTER</p>
+                                <h3>لوحة إدارة المسابقة</h3>
+                                <p>نظرة تشغيلية سريعة، ملفات المشاركين، متابعة توقع البطل، وإدارة النتائج والتوقعات من مكان واحد.</p>
+                            </div>
+                            <div class="admin-command-actions">
+                                <span class="admin-mode-pill"><i></i> وضع الإدارة نشط</span>
+                                <button id="adminRefreshBtn" class="admin-dark-btn" type="button">↻ تحديث البيانات</button>
+                            </div>
+                        </header>
 
-                    <div class="admin-management-grid">
-                        <div class="admin-box admin-manual-prediction-box participant-predictions-card">
-                            <div class="participant-predictions-header">
+                        <div id="adminOverviewStats" class="admin-overview-stats">
+                            <div class="admin-loading-card">جاري تجهيز لوحة الإدارة...</div>
+                        </div>
+
+                        <section class="admin-command-section admin-tournament-section">
+                            <div class="admin-section-heading">
                                 <div>
-                                    <p class="eyebrow">إدخال توقع</p>
-                                    <h3>توقع عن مشارك</h3>
+                                    <p class="admin-section-kicker">حالة البطولة</p>
+                                    <h4>مركز المتابعة</h4>
+                                </div>
+                                <div class="admin-section-shortcuts">
+                                    <button type="button" class="admin-ghost-btn" data-admin-scroll="adminParticipantExplorer">ملفات المشاركين</button>
+                                    <button type="button" class="admin-ghost-btn" data-admin-scroll="adminOperationsCenter">العمليات</button>
+                                </div>
+                            </div>
+                            <div class="admin-tournament-grid">
+                                <div id="adminTournamentProgress" class="admin-progress-panel"></div>
+                                <div id="adminUpcomingMatches" class="admin-upcoming-panel"></div>
+                            </div>
+                        </section>
+
+                        <section id="adminParticipantExplorer" class="admin-command-section admin-participant-explorer">
+                            <div class="admin-section-heading admin-section-heading-responsive">
+                                <div>
+                                    <p class="admin-section-kicker">Participant Explorer</p>
+                                    <h4>استعراض ملفات المشاركين</h4>
+                                    <p>انتقل بين المشاركين وشاهد الملف، الإحصائيات، الشارات، وتوقع البطل دون مغادرة وضع الإدارة.</p>
+                                </div>
+                                <div class="admin-participant-switcher">
+                                    <button id="adminParticipantPrevBtn" class="admin-switch-btn" type="button" aria-label="المشارك السابق">‹</button>
+                                    <select id="adminProfileParticipantSelect" class="admin-console-select">
+                                        <option value="">اختر المشارك</option>
+                                    </select>
+                                    <button id="adminParticipantNextBtn" class="admin-switch-btn" type="button" aria-label="المشارك التالي">›</button>
+                                </div>
+                            </div>
+                            <div id="adminParticipantProfileView" class="admin-participant-profile-view">
+                                <div class="admin-empty-state admin-empty-state-large">اختر مشاركاً لعرض ملفه الكامل.</div>
+                            </div>
+                        </section>
+
+                        <section id="adminOperationsCenter" class="admin-command-section admin-operations-section">
+                            <div class="admin-section-heading">
+                                <div>
+                                    <p class="admin-section-kicker">Operations</p>
+                                    <h4>مركز العمليات</h4>
+                                    <p>تعديل توقع مشارك أو تسجيل نتيجة مباراة مع تحديث النقاط مباشرة.</p>
                                 </div>
                             </div>
 
-                            <label class="admin-select-label">المشارك</label>
-                            <select id="adminPredictionParticipantSelect" class="admin-participant-select">
-                                <option value="">اختر المشارك</option>
-                            </select>
+                            <div class="admin-management-grid admin-management-grid-v3924">
+                                <div class="admin-box admin-manual-prediction-box participant-predictions-card admin-operation-card">
+                                    <div class="participant-predictions-header">
+                                        <div>
+                                            <p class="eyebrow">إدخال أو تعديل</p>
+                                            <h3>توقع عن مشارك</h3>
+                                        </div>
+                                        <span class="admin-operation-icon" aria-hidden="true">✍️</span>
+                                    </div>
 
-                            <label class="admin-select-label">المباراة</label>
-                            <select id="adminPredictionMatchSelect" class="admin-participant-select">
-                                <option value="">اختر المباراة</option>
-                            </select>
+                                    <label class="admin-select-label">المشارك</label>
+                                    <select id="adminPredictionParticipantSelect" class="admin-participant-select">
+                                        <option value="">اختر المشارك</option>
+                                    </select>
 
-                            <div id="adminPredictionCard" class="admin-prediction-card-target">
-                                <p class="admin-empty-state">اختر المشارك ثم المباراة لإدخال أو تعديل التوقع.</p>
-                            </div>
+                                    <label class="admin-select-label">المباراة</label>
+                                    <select id="adminPredictionMatchSelect" class="admin-participant-select">
+                                        <option value="">اختر المباراة</option>
+                                    </select>
 
-                            <p id="adminPredictionMessage" class="message"></p>
-                        </div>
+                                    <div id="adminPredictionCard" class="admin-prediction-card-target">
+                                        <p class="admin-empty-state">اختر المشارك ثم المباراة لإدخال أو تعديل التوقع.</p>
+                                    </div>
 
-                        <div class="admin-box admin-result-box">
-                            <div class="participant-predictions-header">
-                                <div>
-                                    <p class="eyebrow">تسجيل نتيجة</p>
-                                    <h3>نتيجة مباراة</h3>
+                                    <p id="adminPredictionMessage" class="message"></p>
+                                </div>
+
+                                <div class="admin-box admin-result-box admin-operation-card">
+                                    <div class="participant-predictions-header">
+                                        <div>
+                                            <p class="eyebrow">تسجيل أو تصحيح</p>
+                                            <h3>نتيجة مباراة</h3>
+                                        </div>
+                                        <span class="admin-operation-icon" aria-hidden="true">⚽</span>
+                                    </div>
+
+                                    <label>كلمة مرور الإدارة</label>
+                                    <input id="adminPassword" type="password" placeholder="أدخل كلمة مرور الإدارة" />
+
+                                    <label>المباراة</label>
+                                    <select id="adminMatchSelect"></select>
+
+                                    <div id="adminResultMatchPreview" class="admin-result-match-preview">
+                                        <p class="admin-empty-state">اختر مباراة لعرض النتيجة الحالية.</p>
+                                    </div>
+
+                                    <div class="score-row">
+                                        <input id="actualTeam1Goals" type="number" min="0" placeholder="أهداف الفريق الأول" />
+                                        <input id="actualTeam2Goals" type="number" min="0" placeholder="أهداف الفريق الثاني" />
+                                    </div>
+
+                                    <button id="saveResultBtn">حفظ النتيجة</button>
+                                    <p id="adminMessage" class="message"></p>
                                 </div>
                             </div>
+                        </section>
 
-                            <label>كلمة مرور الإدارة</label>
-                            <input id="adminPassword" type="password" placeholder="أدخل كلمة مرور الإدارة" />
-
-                            <label>المباراة</label>
-                            <select id="adminMatchSelect"></select>
-
-                            <div class="score-row">
-                                <input id="actualTeam1Goals" type="number" min="0" placeholder="أهداف الفريق الأول" />
-                                <input id="actualTeam2Goals" type="number" min="0" placeholder="أهداف الفريق الثاني" />
+                        <section class="admin-command-section admin-champion-section">
+                            <div class="admin-section-heading">
+                                <div>
+                                    <p class="admin-section-kicker">Champion Predictions</p>
+                                    <h4>توقعات بطل كأس العالم</h4>
+                                    <p>توزيع اختيارات المشاركين وحالة كل اختيار في لقطة واحدة.</p>
+                                </div>
                             </div>
-
-                            <button id="saveResultBtn">حفظ النتيجة</button>
-                            <p id="adminMessage" class="message"></p>
-                        </div>
+                            <div id="adminChampionOverview" class="admin-champion-overview"></div>
+                        </section>
                     </div>
                 </section>
 
-                <section id="adminPredictionsTab" class="tab-panel hidden">
-                    <h3>توقعات المشتركين</h3>
-
-                    <div class="admin-box admin-predictions-box participant-predictions-card">
-                        <div class="participant-predictions-header">
-                            <div>
-                                <p class="eyebrow">عرض التوقعات</p>
-                                <h3>اختر المشارك</h3>
+                <section id="adminPredictionsTab" class="tab-panel hidden admin-console-panel-root">
+                    <div class="admin-command-center admin-records-center">
+                        <header class="admin-command-hero admin-records-hero">
+                            <div class="admin-command-copy">
+                                <p class="admin-command-kicker">PARTICIPANT RECORDS</p>
+                                <h3>سجلات المشاركين</h3>
+                                <p>السجل الكامل لكل مشارك، بما في ذلك توقع بطل كأس العالم في موضعه بين ربع النهائي ونصف النهائي.</p>
                             </div>
-                        </div>
+                            <button id="adminRecordsBackBtn" class="admin-dark-btn" type="button">العودة للوحة الإدارة</button>
+                        </header>
 
-                        <label class="admin-select-label">المشارك</label>
-                        <select id="adminParticipantSelect" class="admin-participant-select">
-                            <option value="">اختر المشارك</option>
-                        </select>
+                        <section class="admin-command-section admin-record-browser">
+                            <div class="admin-section-heading admin-section-heading-responsive">
+                                <div>
+                                    <p class="admin-section-kicker">Prediction History</p>
+                                    <h4>اختر المشارك</h4>
+                                </div>
+                                <select id="adminParticipantSelect" class="admin-console-select admin-record-select">
+                                    <option value="">اختر المشارك</option>
+                                </select>
+                            </div>
 
-                        <div id="adminParticipantPredictions" class="admin-participant-predictions"></div>
+                            <div id="adminParticipantPredictions" class="admin-participant-predictions admin-participant-records-view">
+                                <div class="admin-empty-state admin-empty-state-large">اختر مشاركاً لعرض سجل توقعاته.</div>
+                            </div>
+                        </section>
                     </div>
                 </section>
             </section>
@@ -352,8 +441,8 @@
     </script>
 
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="app.js?v=39.2.3"></script>
-    <script src="participant-recap-pdf.js?v=39.2.3"></script>
+    <script src="app.js?v=39.2.4"></script>
+    <script src="participant-recap-pdf.js?v=39.2.4"></script>
 </body>
 
 </html>

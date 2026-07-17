@@ -1,6 +1,9 @@
-V39.2.3
-- Added champion prediction as a dedicated history section between quarterfinals and semifinals.
-- Added team flag, selection state, friendly outcome wording, and non-zero text states.
-- Added a final-only champion prediction summary card after the World Cup concludes.
-- Added responsive mobile styling for the new history section and final card.
-- Kept PDF generation and database schema unchanged.
+V39.2.4
+- Added premium dark Admin Command Center.
+- Added tournament health and completion overview.
+- Added participant profile explorer with participant switching.
+- Added champion prediction overview for all participants.
+- Added quick navigation between profile, prediction history, and prediction editor.
+- Added champion prediction to admin participant prediction histories.
+- Preserved all V39.2.3 participant-side champion prediction changes.
+- Updated cache/version references to 39.2.4.

@@ -71,6 +71,8 @@ const adminTabBtn = document.getElementById("adminTabBtn");
 const adminPredictionsTabBtn = document.getElementById("adminPredictionsTabBtn");
 
 let isAdminMode = false;
+let adminConsoleParticipants = [];
+let adminConsoleRefreshInProgress = false;
 
 let currentTabName = "available";
 let tabHistory = [];
@@ -78,7 +80,7 @@ let allowLeavingPage = false;
 let dashboardRefreshTimer = null;
 let championPredictionCutoffTimer = null;
 
-const APP_VERSION = "39.2.3";
+const APP_VERSION = "39.2.4";
 const PREDICTION_OPEN_HOURS = 72;
 const FINAL_RECAP_PREVIEW_PARAM = "previewFinal";
 const EXPECTED_WORLD_CUP_MATCH_COUNT = 104;
@@ -343,6 +345,12 @@ async function loadParticipants() {
         adminPredictionParticipantSelect.innerHTML = `<option value="">اختر المشارك</option>`;
     }
 
+    if (adminProfileParticipantSelect) {
+        adminProfileParticipantSelect.innerHTML = `<option value="">اختر المشارك</option>`;
+    }
+
+    adminConsoleParticipants = [...(data || [])];
+
     data.forEach((participant) => {
         const option = document.createElement("option");
         option.value = participant.id;
@@ -359,6 +367,13 @@ async function loadParticipants() {
             adminPredictionOption.value = participant.id;
             adminPredictionOption.textContent = participant.name;
             adminPredictionParticipantSelect.appendChild(adminPredictionOption);
+        }
+
+        if (adminProfileParticipantSelect) {
+            const adminProfileOption = document.createElement("option");
+            adminProfileOption.value = participant.id;
+            adminProfileOption.textContent = participant.name;
+            adminProfileParticipantSelect.appendChild(adminProfileOption);
         }
 
         const participantVisual = getParticipantVisual(participant.name);
@@ -521,8 +536,9 @@ async function openAdminDashboard(password = ADMIN_PASSWORD, rememberAdmin = tru
 
     await loadLeaderboard();
     await loadAdminMatches();
+    await loadAdminConsoleOverview();
 
-    startDashboardTabSession("leaderboard");
+    startDashboardTabSession("admin");
     startDashboardAutoRefresh();
 }
 
@@ -667,6 +683,13 @@ function handleSiteMenuTab(tabName) {
 
 function handleSiteMenuPage(pageName) {
     if (!pageName) return;
+
+    if (isAdminMode && pageName === "profile") {
+        closeSiteMenu();
+        goToDashboardTab("admin");
+        setTimeout(() => document.getElementById("adminParticipantExplorer")?.scrollIntoView({ behavior: "smooth", block: "start" }), 80);
+        return;
+    }
 
     if (pageName === "home") {
         closeSiteMenu();
@@ -1462,9 +1485,14 @@ function goToDashboardTab(tabName) {
     activateTab(tabName);
 
     if (isAdminMode && tabName === "admin") {
-        loadAdminMatches()
+        Promise.all([loadAdminMatches(), loadAdminConsoleOverview({ silent: true })])
             .then(() => loadAdminPredictionForSelectedMatch())
-            .catch((error) => console.error("Admin prediction match refresh failed:", error));
+            .catch((error) => console.error("Admin console refresh failed:", error));
+    }
+
+    if (isAdminMode && tabName === "adminPredictions" && adminParticipantSelect?.value) {
+        loadAdminParticipantPredictions(adminParticipantSelect.value)
+            .catch((error) => console.error("Admin participant record refresh failed:", error));
     }
 }
 
@@ -1501,6 +1529,8 @@ function startDashboardAutoRefresh() {
                 if (adminParticipantSelect.value) {
                     await loadAdminParticipantPredictions(adminParticipantSelect.value);
                 }
+
+                await loadAdminConsoleOverview({ silent: true });
             }
         } catch (error) {
             console.error("Dashboard auto-refresh failed:", error);
@@ -3068,33 +3098,95 @@ async function loadMyPredictions() {
 
 async function loadAdminParticipantPredictions(participantId) {
     const selectedName =
-        adminParticipantSelect.options[adminParticipantSelect.selectedIndex]?.textContent || "";
+        adminParticipantSelect.options[adminParticipantSelect.selectedIndex]?.textContent ||
+        adminConsoleParticipants.find((participant) => String(participant.id) === String(participantId))?.name ||
+        "المشارك";
 
-    let data;
+    adminParticipantPredictions.innerHTML = `<div class="admin-loading-card">جاري تحميل سجل ${escapeHtml(selectedName)}...</div>`;
 
     try {
-        data = await loadParticipantPredictionHistory(participantId);
+        const [historyRows, championMatchesResult, championPrediction, recap] = await Promise.all([
+            loadParticipantPredictionHistory(participantId),
+            db.from("matches").select("id, team1, team2, kickoff_at, stage, status, winner_side, actual_team1_goals, actual_team2_goals").order("kickoff_at", { ascending: true }),
+            loadChampionPredictionForParticipant(participantId),
+            loadFinalRecapModel().catch(() => null)
+        ]);
+
+        const data = historyRows || [];
+        const allMatchesForChampion = championMatchesResult.data || [];
+        const championResult = getChampionPredictionResult(allMatchesForChampion);
+        const championWindow = getChampionPredictionWindow(allMatchesForChampion);
+        const championHistoryAvailable = Boolean(
+            championPrediction?.predicted_team ||
+            championResult ||
+            championWindow?.hasFourQuarterWinners ||
+            getChampionPredictionFinalists(allMatchesForChampion).length
+        );
+
+        if (!data.length && !championHistoryAvailable) {
+            adminParticipantPredictions.innerHTML = `<div class="admin-empty-state admin-empty-state-large">لا توجد توقعات لهذا المشارك.</div>`;
+            return;
+        }
+
+        const sortedMatches = [...data].sort((a, b) => new Date(b.kickoff_at) - new Date(a.kickoff_at));
+        const summary = sortedMatches.reduce((acc, match) => {
+            const prediction = getMatchPrediction(match);
+            const points = calculateLivePredictionPoints(prediction, match);
+            if (prediction) acc.predictions += 1;
+            acc.points += points;
+            if (hasActualScore(match) && isExactScorePrediction(prediction, match)) acc.exact += 1;
+            if (hasActualScore(match) && points === 10) acc.correct += 1;
+            return acc;
+        }, { predictions: 0, points: 0, exact: 0, correct: 0 });
+
+        const championPoints = championResult
+            ? calculateChampionPredictionPoints(championPrediction?.predicted_team, championResult)
+            : Number(championPrediction?.points || 0);
+        summary.points += championPoints;
+
+        const finalRow = (recap?.finalRows || []).find((row) => String(row.id) === String(participantId) || row.name === selectedName) || null;
+        const visual = getParticipantVisual(selectedName);
+        const championState = buildChampionPredictionHistoryState(championPrediction, championResult, allMatchesForChampion, championWindow);
+
+        adminParticipantPredictions.innerHTML = `
+            <article class="admin-record-profile-head" style="--admin-participant-accent:${visual.color}">
+                <div class="admin-record-avatar">${escapeHtml(visual.icon)}</div>
+                <div>
+                    <small>السجل الكامل</small>
+                    <h4>${escapeHtml(selectedName)}</h4>
+                    <p>${finalRow?.finalRank ? `المركز #${finalRow.finalRank}` : "الترتيب الحالي"} · ${summary.points} نقطة</p>
+                </div>
+                <div class="admin-record-head-actions">
+                    <button type="button" onclick="openAdminPredictionEditor('${escapeHtml(String(participantId))}')">تعديل توقع</button>
+                    <button type="button" class="admin-ghost-btn" onclick="goToDashboardTab('admin'); adminProfileParticipantSelect.value='${escapeHtml(String(participantId))}'; loadAdminParticipantProfileView('${escapeHtml(String(participantId))}')">عرض الملف</button>
+                </div>
+            </article>
+
+            <div class="admin-record-summary-grid">
+                <span><strong>${summary.points}</strong><small>إجمالي النقاط</small></span>
+                <span><strong>${summary.predictions}</strong><small>توقع مباراة</small></span>
+                <span><strong>${summary.exact}</strong><small>بالملّي</small></span>
+                <span><strong>${summary.correct}</strong><small>اتجاه صحيح</small></span>
+                <span><strong>${championState.predictedTeam ? escapeHtml(championState.predictedTeam) : "—"}</strong><small>توقع البطل</small></span>
+                <span><strong>${escapeHtml(championState.pointsText)}</strong><small>رصيد البطل</small></span>
+            </div>
+
+            ${renderChampionPredictionFinalCard(championPrediction, championResult, allMatchesForChampion)}
+
+            ${renderPredictionStageSections(sortedMatches, {
+                predictionHeader: "التوقع",
+                championPredictionContext: {
+                    prediction: championPrediction,
+                    result: championResult,
+                    matches: allMatchesForChampion,
+                    windowState: championWindow
+                }
+            })}
+        `;
     } catch (error) {
         console.error(error);
-        adminParticipantPredictions.innerHTML = `<p>تعذر تحميل توقعات المشارك.</p>`;
-        return;
+        adminParticipantPredictions.innerHTML = `<div class="admin-empty-state admin-empty-state-error">تعذر تحميل توقعات المشارك.</div>`;
     }
-
-    if (!data || data.length === 0) {
-        adminParticipantPredictions.innerHTML = `<p>لا توجد توقعات لهذا المشارك.</p>`;
-        return;
-    }
-
-    const sortedMatches = [...data].sort((a, b) => {
-        return new Date(b.kickoff_at).getTime() - new Date(a.kickoff_at).getTime();
-    });
-
-    adminParticipantPredictions.innerHTML = `
-        <h4>توقعات ${escapeHtml(selectedName)}</h4>
-        ${renderPredictionStageSections(sortedMatches, {
-        predictionHeader: "التوقع"
-    })}
-    `;
 }
 
 const LEADERBOARD_STAGE_PRIORITY = [
@@ -3607,14 +3699,319 @@ const actualTeam1Goals = document.getElementById("actualTeam1Goals");
 const actualTeam2Goals = document.getElementById("actualTeam2Goals");
 const saveResultBtn = document.getElementById("saveResultBtn");
 const adminMessage = document.getElementById("adminMessage");
+const adminResultMatchPreview = document.getElementById("adminResultMatchPreview");
 const adminParticipantSelect = document.getElementById("adminParticipantSelect");
 const adminParticipantPredictions = document.getElementById("adminParticipantPredictions");
 const adminPredictionParticipantSelect = document.getElementById("adminPredictionParticipantSelect");
 const adminPredictionMatchSelect = document.getElementById("adminPredictionMatchSelect");
 const adminPredictionCard = document.getElementById("adminPredictionCard");
 const adminPredictionMessage = document.getElementById("adminPredictionMessage");
+const adminOverviewStats = document.getElementById("adminOverviewStats");
+const adminTournamentProgress = document.getElementById("adminTournamentProgress");
+const adminUpcomingMatches = document.getElementById("adminUpcomingMatches");
+const adminChampionOverview = document.getElementById("adminChampionOverview");
+const adminProfileParticipantSelect = document.getElementById("adminProfileParticipantSelect");
+const adminParticipantProfileView = document.getElementById("adminParticipantProfileView");
+const adminParticipantPrevBtn = document.getElementById("adminParticipantPrevBtn");
+const adminParticipantNextBtn = document.getElementById("adminParticipantNextBtn");
+const adminRefreshBtn = document.getElementById("adminRefreshBtn");
+const adminRecordsBackBtn = document.getElementById("adminRecordsBackBtn");
 
 let adminPredictionMatches = [];
+
+function renderAdminMetricCard(icon, label, value, note, tone = "") {
+    return `
+        <article class="admin-metric-card ${tone ? `admin-metric-card-${tone}` : ""}">
+            <span class="admin-metric-icon" aria-hidden="true">${icon}</span>
+            <div>
+                <small>${escapeHtml(label)}</small>
+                <strong>${escapeHtml(String(value))}</strong>
+                <p>${escapeHtml(note)}</p>
+            </div>
+        </article>
+    `;
+}
+
+async function loadAdminConsoleOverview(options = {}) {
+    if (!isAdminMode || !adminOverviewStats || adminConsoleRefreshInProgress) return;
+
+    adminConsoleRefreshInProgress = true;
+    if (!options.silent) {
+        adminOverviewStats.innerHTML = `<div class="admin-loading-card">جاري تحديث لوحة الإدارة...</div>`;
+    }
+
+    try {
+        const [participantsResult, matchesResult, predictionsResult, championResultRows] = await Promise.all([
+            db.from("participants").select("id, name, active, sort_order").eq("active", true).order("sort_order", { ascending: true }),
+            db.from("matches").select("id, team1, team2, kickoff_at, status, stage, score_duration, winner_side, actual_team1_goals, actual_team2_goals").order("kickoff_at", { ascending: true }),
+            db.from("predictions").select("id", { count: "exact", head: true }),
+            db.from(CHAMPION_PREDICTIONS_TABLE).select("participant_id, predicted_team, points, updated_at")
+        ]);
+
+        if (participantsResult.error) throw participantsResult.error;
+        if (matchesResult.error) throw matchesResult.error;
+
+        const participants = participantsResult.data || [];
+        const matches = matchesResult.data || [];
+        const totalPredictions = Number(predictionsResult.count || 0);
+        const championPredictions = championResultRows.data || [];
+        adminConsoleParticipants = participants;
+
+        const completedMatches = matches.filter(isConfirmedCompletedMatch);
+        const remainingMatches = Math.max(0, EXPECTED_WORLD_CUP_MATCH_COUNT - completedMatches.length);
+        const completionPercent = Math.min(100, Math.round((completedMatches.length / EXPECTED_WORLD_CUP_MATCH_COUNT) * 100));
+        const finalReady = matches.length >= EXPECTED_WORLD_CUP_MATCH_COUNT && completedMatches.length >= EXPECTED_WORLD_CUP_MATCH_COUNT;
+        const now = Date.now();
+        const overdueWithoutResult = matches.filter((match) => {
+            const kickoff = new Date(match.kickoff_at).getTime();
+            return Number.isFinite(kickoff) && kickoff < now && !isConfirmedCompletedMatch(match);
+        });
+        const upcoming = matches
+            .filter((match) => !isConfirmedCompletedMatch(match) && new Date(match.kickoff_at).getTime() >= now)
+            .sort((a, b) => new Date(a.kickoff_at) - new Date(b.kickoff_at));
+        const championResult = getChampionPredictionResult(matches);
+
+        adminOverviewStats.innerHTML = [
+            renderAdminMetricCard("⚽", "المباريات المكتملة", `${completedMatches.length}/${EXPECTED_WORLD_CUP_MATCH_COUNT}`, remainingMatches ? `${remainingMatches} مباريات متبقية` : "اكتملت جميع المباريات", finalReady ? "success" : ""),
+            renderAdminMetricCard("🧾", "إجمالي التوقعات", totalPredictions, `من ${participants.length} مشاركاً نشطاً`, "teal"),
+            renderAdminMetricCard("🏆", "توقعات البطل", `${championPredictions.length}/${participants.length}`, championResult ? `البطل: ${championResult.champion}` : "بانتظار حسم النهائي", championResult ? "gold" : ""),
+            renderAdminMetricCard("👥", "المشاركون", participants.length, "ملفات قابلة للاستعراض والتبديل", "purple"),
+            renderAdminMetricCard("⚠️", "تحتاج متابعة", overdueWithoutResult.length, overdueWithoutResult.length ? "مباريات بدأت ولم تُحفظ نتيجتها" : "لا توجد نتائج متأخرة", overdueWithoutResult.length ? "warning" : "success"),
+            renderAdminMetricCard("📕", "كتاب الرحلة", finalReady ? "جاهز" : "مؤجل", finalReady ? "متاح من ملفات المشاركين" : `يفتح عند اكتمال ${EXPECTED_WORLD_CUP_MATCH_COUNT} مباراة`, finalReady ? "success" : "")
+        ].join("");
+
+        if (adminTournamentProgress) {
+            adminTournamentProgress.innerHTML = `
+                <div class="admin-progress-copy">
+                    <div>
+                        <small>نسبة اكتمال البطولة</small>
+                        <strong>${completionPercent}%</strong>
+                    </div>
+                    <span>${completedMatches.length} مكتملة · ${remainingMatches} متبقية</span>
+                </div>
+                <div class="admin-progress-track"><span style="width:${completionPercent}%"></span></div>
+                <div class="admin-health-grid">
+                    <span><strong>${matches.length}</strong><small>مباراة في قاعدة البيانات</small></span>
+                    <span><strong>${overdueWithoutResult.length}</strong><small>نتيجة متأخرة</small></span>
+                    <span><strong>${championPredictions.length}</strong><small>اختيار بطل محفوظ</small></span>
+                </div>
+                <div class="admin-readiness-banner ${finalReady ? "ready" : "pending"}">
+                    <span aria-hidden="true">${finalReady ? "✓" : "◷"}</span>
+                    <div>
+                        <strong>${finalReady ? "البيانات النهائية جاهزة" : "المسابقة ما زالت قيد المتابعة"}</strong>
+                        <small>${finalReady ? "الملفات الشخصية وكتب الرحلة متاحة للمشاركين." : "ستُفتح عناصر الختام تلقائياً بعد اكتمال جميع النتائج."}</small>
+                    </div>
+                </div>
+            `;
+        }
+
+        if (adminUpcomingMatches) {
+            const upcomingRows = upcoming.slice(0, 4);
+            adminUpcomingMatches.innerHTML = `
+                <div class="admin-panel-mini-head">
+                    <div><small>المباريات القادمة</small><strong>${upcoming.length || "لا توجد"}</strong></div>
+                    <span>أقرب المواعيد</span>
+                </div>
+                <div class="admin-upcoming-list">
+                    ${upcomingRows.length ? upcomingRows.map((match) => `
+                        <article>
+                            <div class="admin-upcoming-match-teams">
+                                <span>${formatTeamFlag(match.team1)} ${escapeHtml(match.team1)}</span>
+                                <b>×</b>
+                                <span>${formatTeamFlag(match.team2)} ${escapeHtml(match.team2)}</span>
+                            </div>
+                            <small>${escapeHtml(getFinalRecapStageLabel(match.stage))} · ${new Date(match.kickoff_at).toLocaleString("ar-SA")}</small>
+                        </article>
+                    `).join("") : `<div class="admin-empty-state">لا توجد مباريات قادمة في الجدول.</div>`}
+                </div>
+            `;
+        }
+
+        renderAdminChampionOverview(participants, championPredictions, matches, championResult);
+
+        if (adminProfileParticipantSelect && !adminProfileParticipantSelect.value && participants.length) {
+            adminProfileParticipantSelect.value = String(participants[0].id);
+            await loadAdminParticipantProfileView(participants[0].id);
+        }
+    } catch (error) {
+        console.error("Admin overview failed:", error);
+        adminOverviewStats.innerHTML = `<div class="admin-empty-state admin-empty-state-error">تعذر تحميل لوحة الإدارة حالياً.</div>`;
+    } finally {
+        adminConsoleRefreshInProgress = false;
+    }
+}
+
+function renderAdminChampionOverview(participants = [], predictions = [], matches = [], championResult = null) {
+    if (!adminChampionOverview) return;
+
+    const participantMap = new Map(participants.map((participant) => [String(participant.id), participant]));
+    const predictionMap = new Map(predictions.map((row) => [String(row.participant_id), row]));
+    const grouped = new Map();
+
+    predictions.forEach((row) => {
+        const team = String(row.predicted_team || "").trim();
+        if (!team) return;
+        const key = normalizeTeamName(team);
+        if (!grouped.has(key)) grouped.set(key, { team, rows: [] });
+        grouped.get(key).rows.push(row);
+    });
+
+    const teamCards = [...grouped.values()]
+        .sort((a, b) => b.rows.length - a.rows.length || a.team.localeCompare(b.team, "ar"))
+        .map((group) => {
+            const names = group.rows.map((row) => participantMap.get(String(row.participant_id))?.name).filter(Boolean);
+            const state = buildChampionPredictionHistoryState(group.rows[0], championResult, matches, null);
+            return `
+                <article class="admin-champion-team-card admin-champion-team-card-${state.statusClass}">
+                    <div class="admin-champion-team-head">
+                        <span>${formatTeamFlag(group.team)}</span>
+                        <div><strong>${escapeHtml(group.team)}</strong><small>${group.rows.length} ${group.rows.length === 1 ? "اختيار" : "اختيارات"}</small></div>
+                        <b>${escapeHtml(state.pointsText)}</b>
+                    </div>
+                    <div class="admin-champion-team-names">${names.map((name) => `<span>${escapeHtml(name)}</span>`).join("")}</div>
+                </article>
+            `;
+        }).join("");
+
+    const missing = participants.filter((participant) => !predictionMap.has(String(participant.id)));
+    adminChampionOverview.innerHTML = `
+        <div class="admin-champion-summary-line">
+            <span><strong>${predictions.length}</strong> اختيارات محفوظة</span>
+            <span><strong>${missing.length}</strong> بدون اختيار</span>
+            <span><strong>${grouped.size}</strong> منتخبات مختلفة</span>
+        </div>
+        <div class="admin-champion-team-grid">
+            ${teamCards || `<div class="admin-empty-state">لا توجد توقعات بطل محفوظة.</div>`}
+        </div>
+        ${missing.length ? `<div class="admin-missing-champion"><strong>لم يسجلوا توقع البطل:</strong> ${missing.map((participant) => escapeHtml(participant.name)).join("، ")}</div>` : ""}
+    `;
+}
+
+async function loadAdminParticipantProfileView(participantId) {
+    if (!adminParticipantProfileView || !participantId) return;
+
+    const participant = adminConsoleParticipants.find((item) => String(item.id) === String(participantId));
+    if (!participant) {
+        adminParticipantProfileView.innerHTML = `<div class="admin-empty-state">تعذر العثور على المشارك.</div>`;
+        return;
+    }
+
+    adminParticipantProfileView.innerHTML = `<div class="admin-loading-card">جاري تحميل ملف ${escapeHtml(participant.name)}...</div>`;
+
+    try {
+        const [profileStats, recap, profilePosts, championPrediction, matchesResult] = await Promise.all([
+            loadParticipantProfileStats(participant.id),
+            loadFinalRecapModel().catch(() => null),
+            loadAiPosts(FINAL_AI_PROFILE_SECTION, { participantId: participant.id, limit: 1, useCache: false }).catch(() => []),
+            loadChampionPredictionForParticipant(participant.id),
+            db.from("matches").select("id, team1, team2, kickoff_at, stage, winner_side, actual_team1_goals, actual_team2_goals").order("kickoff_at", { ascending: true })
+        ]);
+
+        const finalRow = (recap?.finalRows || []).find((row) => String(row.id) === String(participant.id) || row.name === participant.name) || null;
+        const visual = getParticipantVisual(participant.name);
+        const badges = finalRow ? buildCalculatedParticipantBadges(finalRow) : [];
+        const matches = matchesResult.data || [];
+        const championResult = getChampionPredictionResult(matches);
+        const championWindow = getChampionPredictionWindow(matches);
+        const championState = buildChampionPredictionHistoryState(championPrediction, championResult, matches, championWindow);
+        const story = profilePosts?.[0]?.body_ar || buildLocalProfileClosingText(participant, profileStats, finalRow, badges);
+        const points = finalRow?.points ?? profileStats.totalPoints;
+        const predictions = finalRow?.predictions ?? profileStats.totalPredictions;
+        const exact = finalRow?.exactScores ?? profileStats.exactScores;
+        const accuracy = finalRow?.accuracyPercent ?? (predictions ? Math.round((profileStats.scoringPredictions / predictions) * 100) : 0);
+        const recapReady = Boolean(recap && isFinalRecapAvailable(recap));
+
+        adminParticipantProfileView.innerHTML = `
+            <article class="admin-profile-hero" style="--admin-participant-accent:${visual.color}">
+                <div class="admin-profile-avatar">${escapeHtml(visual.icon)}</div>
+                <div class="admin-profile-copy">
+                    <p>ملف المشارك</p>
+                    <h4>${escapeHtml(participant.name)}</h4>
+                    <span>${finalRow?.finalRank ? `المركز #${finalRow.finalRank}` : "الترتيب يتحدث مع النتائج"} · ${points} نقطة</span>
+                </div>
+                <div class="admin-profile-actions">
+                    <button type="button" onclick="openAdminParticipantPredictions('${escapeHtml(String(participant.id))}')">عرض سجل التوقعات</button>
+                    <button type="button" class="admin-ghost-btn" onclick="openAdminPredictionEditor('${escapeHtml(String(participant.id))}')">تعديل توقع</button>
+                </div>
+            </article>
+
+            <div class="admin-profile-stat-grid">
+                <span><strong>${points}</strong><small>نقطة</small></span>
+                <span><strong>${predictions}</strong><small>توقع</small></span>
+                <span><strong>${exact}</strong><small>بالملّي</small></span>
+                <span><strong>${accuracy}%</strong><small>دقة</small></span>
+                <span><strong>${finalRow?.bestCorrectStreak || 0}</strong><small>أطول سلسلة</small></span>
+                <span><strong>${escapeHtml(finalRow?.bestStage?.label_ar || profileStats.bestStage || "بانتظار النتائج")}</strong><small>أفضل مرحلة</small></span>
+            </div>
+
+            <div class="admin-profile-detail-grid">
+                <section class="admin-profile-champion-card admin-profile-champion-card-${championState.statusClass}">
+                    <div class="admin-profile-card-head"><span>🏆</span><div><small>توقع بطل كأس العالم</small><strong>${championState.predictedTeam ? `${formatTeamFlag(championState.predictedTeam)} ${escapeHtml(championState.predictedTeam)}` : "لم يتم الاختيار"}</strong></div></div>
+                    <h5>${escapeHtml(championState.statusTitle)}</h5>
+                    <p>${escapeHtml(championState.statusNote)}</p>
+                    <b>${escapeHtml(championState.pointsText)}</b>
+                </section>
+                <section class="admin-profile-story-card">
+                    <div class="admin-profile-card-head"><span>✨</span><div><small>لمحة الملف</small><strong>ملخص شخصي</strong></div></div>
+                    <p>${escapeHtml(story)}</p>
+                    <div class="admin-profile-readiness ${recapReady ? "ready" : "pending"}">${recapReady ? "كتاب الرحلة متاح" : "كتاب الرحلة يفتح بعد اكتمال البطولة"}</div>
+                </section>
+            </div>
+
+            <section class="admin-profile-badges-section">
+                <div class="admin-profile-subhead"><div><small>الشارات</small><strong>${badges.length ? `${badges.length} شارة محسوبة` : "بانتظار اكتمال البيانات"}</strong></div></div>
+                <div class="admin-profile-badge-grid">
+                    ${badges.length ? badges.slice(0, 8).map((badge) => `
+                        <article><span>${escapeHtml(badge.icon)}</span><strong>${escapeHtml(badge.title)}</strong><small>${escapeHtml(badge.value || badge.note || "شارة محسوبة")}</small></article>
+                    `).join("") : `<div class="admin-empty-state">لا توجد شارات محسوبة بعد.</div>`}
+                </div>
+            </section>
+        `;
+    } catch (error) {
+        console.error("Admin participant profile failed:", error);
+        adminParticipantProfileView.innerHTML = `<div class="admin-empty-state admin-empty-state-error">تعذر تحميل ملف المشارك.</div>`;
+    }
+}
+
+function changeAdminProfileParticipant(direction) {
+    if (!adminProfileParticipantSelect || !adminConsoleParticipants.length) return;
+    const currentIndex = adminConsoleParticipants.findIndex((item) => String(item.id) === String(adminProfileParticipantSelect.value));
+    const safeIndex = currentIndex < 0 ? 0 : currentIndex;
+    const nextIndex = (safeIndex + direction + adminConsoleParticipants.length) % adminConsoleParticipants.length;
+    const participant = adminConsoleParticipants[nextIndex];
+    adminProfileParticipantSelect.value = String(participant.id);
+    loadAdminParticipantProfileView(participant.id);
+}
+
+function openAdminParticipantPredictions(participantId) {
+    if (!participantId || !adminParticipantSelect) return;
+    adminParticipantSelect.value = String(participantId);
+    goToDashboardTab("adminPredictions");
+    loadAdminParticipantPredictions(participantId);
+    scrollDashboardIntoView("adminPredictions");
+}
+
+function openAdminPredictionEditor(participantId) {
+    if (!participantId || !adminPredictionParticipantSelect) return;
+    adminPredictionParticipantSelect.value = String(participantId);
+    goToDashboardTab("admin");
+    loadAdminPredictionForSelectedMatch();
+    setTimeout(() => document.getElementById("adminOperationsCenter")?.scrollIntoView({ behavior: "smooth", block: "start" }), 80);
+}
+
+adminProfileParticipantSelect?.addEventListener("change", () => {
+    if (adminProfileParticipantSelect.value) loadAdminParticipantProfileView(adminProfileParticipantSelect.value);
+});
+adminParticipantPrevBtn?.addEventListener("click", () => changeAdminProfileParticipant(-1));
+adminParticipantNextBtn?.addEventListener("click", () => changeAdminProfileParticipant(1));
+adminRefreshBtn?.addEventListener("click", async () => {
+    await Promise.all([loadAdminMatches(), loadLeaderboard(), loadAdminConsoleOverview()]);
+    if (adminProfileParticipantSelect?.value) await loadAdminParticipantProfileView(adminProfileParticipantSelect.value);
+});
+adminRecordsBackBtn?.addEventListener("click", () => goToDashboardTab("admin"));
+document.querySelectorAll("[data-admin-scroll]").forEach((button) => {
+    button.addEventListener("click", () => document.getElementById(button.dataset.adminScroll)?.scrollIntoView({ behavior: "smooth", block: "start" }));
+});
 
 function isAdminPredictionMatchActive(match) {
     const status = String(match.status || "").toLowerCase();
@@ -3703,6 +4100,40 @@ async function loadAdminMatches() {
             adminPredictionMatchSelect.value = activeMatch.id;
         }
     }
+
+    if (!adminMatchSelect.value && adminPredictionMatches.length) {
+        adminMatchSelect.value = adminPredictionMatches[0].id;
+    }
+    loadAdminResultMatchPreview();
+}
+
+function loadAdminResultMatchPreview() {
+    if (!adminMatchSelect || !adminResultMatchPreview) return;
+    const match = adminPredictionMatches.find((item) => String(item.id) === String(adminMatchSelect.value));
+    if (!match) {
+        adminResultMatchPreview.innerHTML = `<p class="admin-empty-state">اختر مباراة لعرض النتيجة الحالية.</p>`;
+        return;
+    }
+
+    const completed = isConfirmedCompletedMatch(match);
+    const hasScore = hasActualScore(match);
+    if (hasScore) {
+        actualTeam1Goals.value = match.actual_team1_goals;
+        actualTeam2Goals.value = match.actual_team2_goals;
+    } else {
+        actualTeam1Goals.value = "";
+        actualTeam2Goals.value = "";
+    }
+
+    adminResultMatchPreview.innerHTML = `
+        <div class="admin-result-preview-status ${completed ? "completed" : "pending"}">${completed ? "نتيجة محفوظة — يمكن تصحيحها" : getAdminPredictionMatchStatusLabel(match)}</div>
+        <div class="admin-result-preview-teams">
+            <span>${formatTeamFlag(match.team1)}<strong>${escapeHtml(match.team1)}</strong><b>${hasScore ? match.actual_team1_goals : "—"}</b></span>
+            <i>×</i>
+            <span>${formatTeamFlag(match.team2)}<strong>${escapeHtml(match.team2)}</strong><b>${hasScore ? match.actual_team2_goals : "—"}</b></span>
+        </div>
+        <small>${escapeHtml(getFinalRecapStageLabel(match.stage))} · ${new Date(match.kickoff_at).toLocaleString("ar-SA")}</small>
+    `;
 }
 
 async function loadAdminPredictionForSelectedMatch() {
@@ -3910,6 +4341,8 @@ if (adminPredictionMatchSelect) {
     adminPredictionMatchSelect.addEventListener("change", loadAdminPredictionForSelectedMatch);
 }
 
+adminMatchSelect?.addEventListener("change", loadAdminResultMatchPreview);
+
 saveResultBtn.addEventListener("click", async () => {
     if (adminPassword.value !== ADMIN_PASSWORD) {
         adminMessage.textContent = "كلمة مرور الإدارة غير صحيحة.";
@@ -3950,8 +4383,11 @@ saveResultBtn.addEventListener("click", async () => {
     await recalculatePoints(matchId, team1Goals, team2Goals);
 
     adminMessage.textContent = "تم حفظ النتيجة وتحديث النقاط.";
+    await loadAdminMatches();
     await loadLeaderboard();
-    await loadMyPredictions();
+    await loadAdminConsoleOverview({ silent: true });
+    loadAdminResultMatchPreview();
+    if (currentParticipant) await loadMyPredictions();
 });
 
 adminParticipantSelect.addEventListener("change", async () => {
