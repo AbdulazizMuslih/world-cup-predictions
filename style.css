@@ -14747,3 +14747,109 @@ body.site-stage-theme #availableMatches .available-stage-card.match-card-predict
 .memory-book-page-ledger .memory-ledger-row {
   min-height: 29px;
 }
+
+/* ==========================================================
+   V39.2.2 - Compact, readable profile badges on mobile
+   Two cards per row on phones; three on wider small screens.
+   ========================================================== */
+@media (max-width: 900px) {
+  #profileBadges.badge-grid,
+  #profileTab .badge-grid {
+    display: grid !important;
+    align-items: stretch !important;
+    grid-auto-rows: auto !important;
+    margin-top: 12px !important;
+  }
+
+  #profileTab .profile-badge-card-final {
+    width: 100% !important;
+    min-width: 0 !important;
+    height: auto !important;
+    min-height: 100px !important;
+    display: grid !important;
+    grid-template-columns: 38px minmax(0, 1fr) !important;
+    grid-template-rows: auto auto !important;
+    align-content: center !important;
+    align-items: center !important;
+    gap: 5px 9px !important;
+    padding: 12px 11px !important;
+    border-radius: 19px !important;
+    text-align: right !important;
+  }
+
+  #profileTab .profile-badge-card-final span[aria-hidden="true"] {
+    grid-column: 1 !important;
+    grid-row: 1 / span 2 !important;
+    width: 38px !important;
+    height: 38px !important;
+    border-radius: 14px !important;
+    font-size: 20px !important;
+    align-self: center !important;
+  }
+
+  #profileTab .profile-badge-card-final strong,
+  #profileTab .profile-badge-card-final small {
+    grid-column: 2 !important;
+    min-width: 0 !important;
+    margin: 0 !important;
+    overflow-wrap: anywhere !important;
+  }
+
+  #profileTab .profile-badge-card-final strong {
+    font-size: 14.5px !important;
+    line-height: 1.38 !important;
+  }
+
+  #profileTab .profile-badge-card-final small {
+    font-size: 13px !important;
+    line-height: 1.38 !important;
+  }
+}
+
+@media (min-width: 600px) and (max-width: 900px) {
+  #profileBadges.badge-grid,
+  #profileTab .badge-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+    gap: 10px !important;
+  }
+}
+
+@media (min-width: 321px) and (max-width: 599px) {
+  #profileBadges.badge-grid,
+  #profileTab .badge-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 9px !important;
+  }
+}
+
+@media (max-width: 380px) {
+  #profileTab .profile-badge-card-final {
+    min-height: 96px !important;
+    grid-template-columns: 34px minmax(0, 1fr) !important;
+    gap: 4px 7px !important;
+    padding: 10px 9px !important;
+  }
+
+  #profileTab .profile-badge-card-final span[aria-hidden="true"] {
+    width: 34px !important;
+    height: 34px !important;
+    border-radius: 12px !important;
+    font-size: 18px !important;
+  }
+
+  #profileTab .profile-badge-card-final strong {
+    font-size: 13.5px !important;
+  }
+
+  #profileTab .profile-badge-card-final small {
+    font-size: 12.5px !important;
+  }
+}
+
+@media (max-width: 320px) {
+  #profileBadges.badge-grid,
+  #profileTab .badge-grid {
+    grid-template-columns: minmax(0, 1fr) !important;
+    gap: 8px !important;
+  }
+}

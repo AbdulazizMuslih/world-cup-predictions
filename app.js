@@ -78,7 +78,7 @@ let allowLeavingPage = false;
 let dashboardRefreshTimer = null;
 let championPredictionCutoffTimer = null;
 
-const APP_VERSION = "39.2.1";
+const APP_VERSION = "39.2.2";
 const PREDICTION_OPEN_HOURS = 72;
 const FINAL_RECAP_PREVIEW_PARAM = "previewFinal";
 const EXPECTED_WORLD_CUP_MATCH_COUNT = 104;
