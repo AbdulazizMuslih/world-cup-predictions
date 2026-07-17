@@ -1,3 +1,10 @@
+V39.2.9
+- Fixed mobile text escaping from the Abdulaziz leaderboard row.
+- Added strict width containment and responsive wrapping to the toggle card.
+- Added stable mobile leaderboard column widths.
+- Hid redundant observer row micro-copy on mobile.
+- Updated all cache-busting versions.
+
 V39.2.8
 - Abdulaziz is hidden from the leaderboard by default for every user, including Abdulaziz.
 - The Show Abdulaziz button creates only a temporary leaderboard preview.

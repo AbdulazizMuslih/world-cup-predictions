@@ -1,3 +1,13 @@
+V39.2.9 RESPONSIVE LEADERBOARD FIX
+
+- Keeps Abdulaziz hidden by default.
+- The temporary grey row still appears only after pressing عرض عبدالعزيز.
+- Fixes mobile overflow in the observer explanation card and grey leaderboard row.
+- Uses fixed responsive table columns on mobile.
+- Removes repeated micro-copy inside the grey row on mobile because the card above already explains it.
+- No SQL changes.
+- Official ranks, podium, statistics, profiles, and all participant tables remain unchanged.
+
 V39.2.8 LEADERBOARD BEHAVIOR
 
 - Abdulaziz is always hidden when the leaderboard is opened.

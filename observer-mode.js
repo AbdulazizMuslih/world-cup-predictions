@@ -1,5 +1,5 @@
 /* ==============================================================
-   V39.2.8 — Abdulaziz isolated account with transient leaderboard preview
+   V39.2.9 — Responsive transient Abdulaziz leaderboard preview
    - Completely separate storage from official participants/predictions.
    - Keeps Abdulaziz as an optional, greyed-out leaderboard entry.
    - Uses the same participant dashboard and available-matches experience.
