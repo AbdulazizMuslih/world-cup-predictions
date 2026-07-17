@@ -1,9 +1,12 @@
-V39.2.4
-- Added premium dark Admin Command Center.
-- Added tournament health and completion overview.
-- Added participant profile explorer with participant switching.
-- Added champion prediction overview for all participants.
-- Added quick navigation between profile, prediction history, and prediction editor.
-- Added champion prediction to admin participant prediction histories.
-- Preserved all V39.2.3 participant-side champion prediction changes.
-- Updated cache/version references to 39.2.4.
+V39.2.8
+- Abdulaziz is hidden from the leaderboard by default for every user, including Abdulaziz.
+- The Show Abdulaziz button creates only a temporary leaderboard preview.
+- Leaving the leaderboard clears the preview; returning starts hidden again.
+- Abdulaziz is inserted in points order as a grey out-of-competition row.
+- Official ranks, podium, leader story, participants, predictions, and all other pages remain unchanged.
+
+v39.2.7
+- Imported Abdulaziz predictions into isolated observer storage.
+- Removed the all-matches observer workbench from the active UI.
+- Matched Abdulaziz dashboard, available matches, prediction history, and profile wording to the normal participant experience.
+- Preserved admin-only login and isolated write guards.

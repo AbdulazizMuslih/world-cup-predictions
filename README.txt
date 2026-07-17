@@ -1,31 +1,31 @@
-V39.2.4 — Premium Admin Command Center
+V39.2.8 LEADERBOARD BEHAVIOR
 
-This release builds on V39.2.3 and includes all participant-side champion prediction history changes.
+- Abdulaziz is always hidden when the leaderboard is opened.
+- Clicking عرض عبدالعزيز shows a grey comparison row in points order.
+- The preview exists only while the user remains on the leaderboard.
+- Navigating to another page resets it; returning shows the official leaderboard only.
+- The official podium, ranks, leader card, statistics, participant tables, and prediction tables are never changed.
+- No additional SQL is required for this UI update.
 
-Participant side
-- Champion prediction remains inside توقعاتي between the quarterfinal and semifinal sections.
-- Final-only champion card remains available after the World Cup final is concluded.
-- Mobile champion history layout remains compact and readable.
+World Cup Predictions — v39.2.7
 
-Admin side
-- New dark premium admin theme, isolated from participant pages.
-- Admin now opens directly on a dedicated control center.
-- Tournament overview: completed matches, remaining matches, predictions, participants, delayed results, champion prediction coverage, and PDF readiness.
-- Tournament progress panel and upcoming match panel.
-- Participant Explorer with previous/next controls and participant selector.
-- Participant profile preview: rank, points, predictions, exact scores, accuracy, streak, best stage, badges, profile note, champion prediction, and journey-book availability.
-- Quick actions from participant profile to open prediction history or edit a prediction.
-- Champion prediction overview grouped by selected team, including participant names and current status.
-- Participant Records page now includes champion prediction in its chronological position between quarterfinals and semifinals.
-- Existing result entry and manual participant prediction controls remain available in the Operations Center.
+This package keeps Abdulaziz completely isolated from official participant data while making his dashboard look and behave like a normal participant dashboard.
 
-Files
+Changes:
+- Removed the special "كل المباريات" workbench from Abdulaziz.
+- The available-matches page now uses the same participant layout and availability rules.
+- Any prediction saved from Abdulaziz still goes only through observer RPC functions.
+- My Predictions and Profile use normal participant wording and visual treatment.
+- The optional grey leaderboard row remains isolated and unchanged.
+- Admin-only entry as Abdulaziz remains available.
+
+Database import:
+Run abdulaziz-observer-predictions-v39.2.7.sql once. It replaces only Abdulaziz rows in public.observer_predictions and does not touch public.participants, public.predictions, or public.champion_predictions.
+
+Deploy these replacement files:
 - index.html
 - app.js
 - style.css
+- observer-mode.js
 - participant-recap-pdf.js
 - version.json
-
-No database migration is required. Existing admin write operations continue to use the current database/RPC setup.
-
-Version: 39.2.4
