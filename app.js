@@ -78,7 +78,7 @@ let allowLeavingPage = false;
 let dashboardRefreshTimer = null;
 let championPredictionCutoffTimer = null;
 
-const APP_VERSION = "39.2.2";
+const APP_VERSION = "39.2.3";
 const PREDICTION_OPEN_HOURS = 72;
 const FINAL_RECAP_PREVIEW_PARAM = "previewFinal";
 const EXPECTED_WORLD_CUP_MATCH_COUNT = 104;
@@ -1918,26 +1918,176 @@ async function renderChampionPredictionAvailableBlock(matches) {
     `;
 }
 
-function renderChampionPredictionHistoryCard(championPrediction, championResult = null, windowState = null) {
-    if (!championPrediction && !windowState?.isOpen) return "";
-    const predictionText = championPrediction?.predicted_team || "لم يتم اختيار البطل بعد";
-    const points = championResult
-        ? calculateChampionPredictionPoints(championPrediction?.predicted_team, championResult)
-        : Number(championPrediction?.points || 0);
-    const statusText = championResult
-        ? (points === CHAMPION_WINNER_POINTS ? "توقع البطل صح" : points === CHAMPION_RUNNER_UP_POINTS ? "اختيارك وصل للنهائي" : "انتهى التوقع بدون نقاط")
-        : (windowState?.isOpen ? "التوقع مفتوح الآن حتى بداية نصف النهائي" : "بانتظار حسم البطل");
+function getChampionPredictionFinalists(matches = []) {
+    const finalMatch = [...matches]
+        .filter((match) => getPredictionStage(match) === "FINAL")
+        .sort((a, b) => new Date(b.kickoff_at || 0) - new Date(a.kickoff_at || 0))[0] || null;
+
+    if (!finalMatch) return [];
+
+    return [finalMatch.team1, finalMatch.team2]
+        .map((team) => String(team || "").trim())
+        .filter((team) => team && !/^(tbd|to be decided|winner|loser)/i.test(team));
+}
+
+function buildChampionPredictionHistoryState(championPrediction, championResult = null, matches = [], windowState = null) {
+    const predictedTeam = String(championPrediction?.predicted_team || "").trim();
+    const finalists = getChampionPredictionFinalists(matches);
+    const normalizedPrediction = normalizeTeamName(predictedTeam || "");
+    const reachedFinal = Boolean(
+        predictedTeam && finalists.some((team) => normalizeTeamName(team) === normalizedPrediction)
+    );
+
+    if (!predictedTeam) {
+        return {
+            predictedTeam: "",
+            statusClass: "missing",
+            statusIcon: "—",
+            statusTitle: windowState?.isOpen ? "لم تحفظ اختيارك بعد" : "لم يتم تسجيل توقع",
+            statusNote: windowState?.isOpen ? "يمكنك الاختيار قبل بداية نصف النهائي." : "انتهت نافذة توقع البطل دون اختيار محفوظ.",
+            pointsText: "لم يُسجّل",
+            pointsClass: "text"
+        };
+    }
+
+    if (championResult) {
+        const points = calculateChampionPredictionPoints(predictedTeam, championResult);
+        if (points === CHAMPION_WINNER_POINTS) {
+            return {
+                predictedTeam,
+                statusClass: "winner",
+                statusIcon: "🏆",
+                statusTitle: "أصبت بطل العالم",
+                statusNote: `${predictedTeam} رفع الكأس واختيارك جاء في مكانه.`,
+                pointsText: `+${CHAMPION_WINNER_POINTS}`,
+                pointsClass: "winner"
+            };
+        }
+        if (points === CHAMPION_RUNNER_UP_POINTS) {
+            return {
+                predictedTeam,
+                statusClass: "runner-up",
+                statusIcon: "🥈",
+                statusTitle: "اختيارك وصل إلى النهائي",
+                statusNote: `${predictedTeam} أنهى البطولة وصيفاً.`,
+                pointsText: `+${CHAMPION_RUNNER_UP_POINTS}`,
+                pointsClass: "runner-up"
+            };
+        }
+        return {
+            predictedTeam,
+            statusClass: "no-points",
+            statusIcon: "💭",
+            statusTitle: "اختيار بقي جزءاً من الرحلة",
+            statusNote: `${predictedTeam} لم يصل إلى منصة النهائي.`,
+            pointsText: "بدون نقاط",
+            pointsClass: "text"
+        };
+    }
+
+    if (reachedFinal) {
+        return {
+            predictedTeam,
+            statusClass: "finalist",
+            statusIcon: "✨",
+            statusTitle: "اختيارك وصل إلى النهائي",
+            statusNote: "النتيجة النهائية ستحدد رصيد توقع البطل.",
+            pointsText: "بانتظار الحسم",
+            pointsClass: "pending"
+        };
+    }
+
+    if (finalists.length >= 2) {
+        return {
+            predictedTeam,
+            statusClass: "no-points",
+            statusIcon: "💭",
+            statusTitle: "انتهى مشوار اختيارك",
+            statusNote: `${predictedTeam} لم يصل إلى المباراة النهائية.`,
+            pointsText: "بدون نقاط",
+            pointsClass: "text"
+        };
+    }
+
+    return {
+        predictedTeam,
+        statusClass: "pending",
+        statusIcon: "🔒",
+        statusTitle: "اختيارك محفوظ",
+        statusNote: windowState?.isOpen ? "يمكن حفظ توقع البطل مرة واحدة فقط." : "بانتظار اكتمال طريق البطولة وحسم البطل.",
+        pointsText: "بانتظار الحسم",
+        pointsClass: "pending"
+    };
+}
+
+function renderChampionPredictionStageSection(championPrediction, championResult = null, matches = [], windowState = null) {
+    const shouldShow = Boolean(
+        championPrediction?.predicted_team ||
+        championResult ||
+        windowState?.hasFourQuarterWinners ||
+        getChampionPredictionFinalists(matches).length
+    );
+    if (!shouldShow) return "";
+
+    const state = buildChampionPredictionHistoryState(championPrediction, championResult, matches, windowState);
+    const teamHtml = state.predictedTeam
+        ? `<span class="champion-history-team">${formatTeamFlag(state.predictedTeam)}<strong>${escapeHtml(state.predictedTeam)}</strong></span>`
+        : `<span class="champion-history-empty">لم يتم الاختيار</span>`;
 
     return `
-        <section class="champion-history-card">
-            <div>
+        <section class="predictions-stage-section predictions-stage-champion">
+            <h4 class="predictions-stage-title champion-stage-title">توقع بطل كأس العالم 🏆</h4>
+            <table class="table champion-history-table">
+                <thead>
+                    <tr>
+                        <th>اختيارك</th>
+                        <th>حالة التوقع</th>
+                        <th>الرصيد</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr class="champion-history-row champion-history-row-${state.statusClass}">
+                        <td>${teamHtml}</td>
+                        <td>
+                            <span class="champion-history-status">
+                                <span aria-hidden="true">${state.statusIcon}</span>
+                                <span>
+                                    <strong>${escapeHtml(state.statusTitle)}</strong>
+                                    <small>${escapeHtml(state.statusNote)}</small>
+                                </span>
+                            </span>
+                        </td>
+                        <td>
+                            <span class="champion-history-result champion-history-result-${state.pointsClass}">
+                                ${escapeHtml(state.pointsText)}
+                            </span>
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </section>
+    `;
+}
+
+function renderChampionPredictionFinalCard(championPrediction, championResult = null, matches = []) {
+    if (!championResult) return "";
+
+    const state = buildChampionPredictionHistoryState(championPrediction, championResult, matches, null);
+    const actualChampion = championResult.champion || "";
+    const selectedTeam = state.predictedTeam || "لم يتم تسجيل توقع";
+
+    return `
+        <section class="champion-final-card champion-final-card-${state.statusClass}">
+            <div class="champion-final-card-icon" aria-hidden="true">${state.statusIcon}</div>
+            <div class="champion-final-card-copy">
                 <p class="eyebrow">توقع بطل كأس العالم</p>
-                <h4>${escapeHtml(predictionText)}</h4>
-                <p>${escapeHtml(statusText)}</p>
+                <h4>${state.predictedTeam ? `${formatTeamFlag(state.predictedTeam)} ${escapeHtml(selectedTeam)}` : escapeHtml(selectedTeam)}</h4>
+                <strong>${escapeHtml(state.statusTitle)}</strong>
+                <p>${escapeHtml(state.statusNote)} ${actualChampion ? `بطل العالم: ${actualChampion}.` : ""}</p>
             </div>
-            <div class="champion-history-points">
-                <strong>${points}</strong>
-                <span>نقطة</span>
+            <div class="champion-final-card-result champion-final-card-result-${state.pointsClass}">
+                <strong>${escapeHtml(state.pointsText)}</strong>
+                <span>${state.pointsClass === "winner" || state.pointsClass === "runner-up" ? "نقطة" : "توقع البطل"}</span>
             </div>
         </section>
     `;
@@ -2667,10 +2817,24 @@ function renderPredictionStageSections(matches, options = {}) {
     const groups = groupMatchesByStage(matches);
     const knockoutSections = [];
     let groupSection = "";
+    const championContext = options.championPredictionContext || null;
+    const championSectionHtml = championContext
+        ? renderChampionPredictionStageSection(
+            championContext.prediction,
+            championContext.result,
+            championContext.matches,
+            championContext.windowState
+        )
+        : "";
 
     PREDICTION_STAGE_SECTIONS.forEach((section) => {
-        const sectionMatches = groups[section.stage];
+        // Chronologically, the champion selection happened after the quarterfinals
+        // and before the semifinals. The history is shown in that exact position.
+        if (section.stage === "QUARTER_FINALS" && championSectionHtml) {
+            knockoutSections.push(championSectionHtml);
+        }
 
+        const sectionMatches = groups[section.stage];
         if (!sectionMatches || sectionMatches.length === 0) return;
 
         const sectionHtml = `
@@ -2686,6 +2850,11 @@ function renderPredictionStageSections(matches, options = {}) {
             groupSection = sectionHtml;
         }
     });
+
+    // Safety for unusual data where no quarterfinal history row exists.
+    if (championSectionHtml && !knockoutSections.includes(championSectionHtml)) {
+        knockoutSections.push(championSectionHtml);
+    }
 
     return `
         <div class="predictions-stage-groups">
@@ -2817,9 +2986,19 @@ async function loadMyPredictions() {
 
     const championResult = getChampionPredictionResult(allMatchesForChampion);
     const championWindow = getChampionPredictionWindow(allMatchesForChampion);
-    const championHistoryHtml = renderChampionPredictionHistoryCard(championPrediction, championResult, championWindow);
+    const championFinalCardHtml = renderChampionPredictionFinalCard(
+        championPrediction,
+        championResult,
+        allMatchesForChampion
+    );
+    const championHistoryAvailable = Boolean(
+        championPrediction?.predicted_team ||
+        championResult ||
+        championWindow?.hasFourQuarterWinners ||
+        getChampionPredictionFinalists(allMatchesForChampion).length
+    );
 
-    if ((!data || data.length === 0) && !championHistoryHtml) {
+    if ((!data || data.length === 0) && !championHistoryAvailable) {
         myPredictions.innerHTML = `<p>لم تقم بإضافة أي توقع حتى الآن.</p>`;
         return;
     }
@@ -2859,7 +3038,7 @@ async function loadMyPredictions() {
     summary.totalPoints += championPoints;
 
     myPredictions.innerHTML = `
-    ${championHistoryHtml}
+    ${championFinalCardHtml}
     <div class="prediction-summary-card prediction-summary-card-v36">
       <div class="prediction-summary-title">
         <p class="eyebrow">ملخص توقعاتك</p>
@@ -2876,7 +3055,14 @@ async function loadMyPredictions() {
       </div>
     </div>
 
-    ${sortedMatches.length ? renderPredictionStageSections(sortedMatches) : ""}
+    ${renderPredictionStageSections(sortedMatches, {
+        championPredictionContext: {
+            prediction: championPrediction,
+            result: championResult,
+            matches: allMatchesForChampion,
+            windowState: championWindow
+        }
+    })}
   `;
 }
 

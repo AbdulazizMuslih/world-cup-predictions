@@ -14853,3 +14853,464 @@ body.site-stage-theme #availableMatches .available-stage-card.match-card-predict
     gap: 8px !important;
   }
 }
+
+/* ==========================================================
+   V39.2.3 - Champion prediction inside prediction history
+   The selection sits chronologically between QF and SF.
+   ========================================================== */
+.predictions-stage-champion {
+  margin-block: 2px;
+}
+
+.champion-stage-title {
+  background: linear-gradient(135deg, #fff2ad, #d6a93f) !important;
+  color: #17131a !important;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+}
+
+.champion-history-table {
+  width: 100%;
+  table-layout: fixed;
+  overflow: hidden;
+  border-collapse: separate;
+  border-spacing: 0;
+  border-radius: 22px;
+  color: #fff7df;
+  background:
+    radial-gradient(circle at 88% 12%, rgba(255, 218, 113, 0.18), transparent 28%),
+    radial-gradient(circle at 10% 100%, rgba(52, 214, 189, 0.12), transparent 30%),
+    linear-gradient(135deg, rgba(13, 21, 42, 0.96), rgba(47, 32, 54, 0.95));
+  border: 1px solid rgba(241, 216, 154, 0.24);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.22);
+}
+
+.champion-history-table th,
+.champion-history-table td {
+  padding: 14px 16px;
+  text-align: right;
+  vertical-align: middle;
+  border-bottom: 0;
+}
+
+.champion-history-table th {
+  color: #f5df9d;
+  font-size: 13px;
+  font-weight: 1000;
+  background: rgba(5, 8, 23, 0.32);
+  border-bottom: 1px solid rgba(241, 216, 154, 0.16);
+}
+
+.champion-history-table th:nth-child(1),
+.champion-history-table td:nth-child(1) {
+  width: 31%;
+}
+
+.champion-history-table th:nth-child(2),
+.champion-history-table td:nth-child(2) {
+  width: 47%;
+}
+
+.champion-history-table th:nth-child(3),
+.champion-history-table td:nth-child(3) {
+  width: 22%;
+  text-align: center;
+}
+
+.champion-history-row td {
+  background: transparent;
+}
+
+.champion-history-row-winner {
+  background: linear-gradient(90deg, rgba(255, 215, 82, 0.11), rgba(52, 214, 189, 0.08));
+}
+
+.champion-history-row-runner-up,
+.champion-history-row-finalist {
+  background: linear-gradient(90deg, rgba(190, 205, 228, 0.09), rgba(52, 214, 189, 0.06));
+}
+
+.champion-history-team {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+}
+
+.champion-history-team .scoreline-flag-img,
+.champion-final-card-copy .scoreline-flag-img {
+  width: 30px;
+  height: 22px;
+  border-radius: 5px;
+  flex: 0 0 auto;
+}
+
+.champion-history-team strong {
+  min-width: 0;
+  font-size: 16px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.champion-history-empty {
+  color: rgba(247, 241, 227, 0.68);
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.champion-history-status {
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+}
+
+.champion-history-status > span:first-child {
+  width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  border-radius: 13px;
+  background: rgba(255, 255, 255, 0.09);
+  border: 1px solid rgba(255, 255, 255, 0.11);
+  font-size: 19px;
+}
+
+.champion-history-status strong,
+.champion-history-status small {
+  display: block;
+}
+
+.champion-history-status strong {
+  color: #fff7df;
+  font-size: 15px;
+  line-height: 1.35;
+}
+
+.champion-history-status small {
+  margin-top: 3px;
+  color: rgba(247, 241, 227, 0.70);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.champion-history-result {
+  min-height: 48px;
+  padding: 8px 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  border-radius: 16px;
+  font-size: 15px;
+  font-weight: 1000;
+  line-height: 1.25;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.champion-history-result-winner {
+  color: #17131a;
+  background: linear-gradient(135deg, #fff0a8, #d8a832);
+  box-shadow: 0 8px 24px rgba(216, 168, 50, 0.24);
+}
+
+.champion-history-result-runner-up {
+  color: #142033;
+  background: linear-gradient(135deg, #edf4ff, #aab9ce);
+}
+
+.champion-history-result-pending {
+  color: #dffcf4;
+  border-color: rgba(52, 214, 189, 0.30);
+  background: rgba(52, 214, 189, 0.12);
+}
+
+.champion-history-result-text {
+  color: rgba(247, 241, 227, 0.84);
+}
+
+/* Final-only top card. It never appears before the final result exists. */
+.champion-final-card {
+  position: relative;
+  overflow: hidden;
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 18px;
+  padding: 20px;
+  border-radius: 26px;
+  color: #fff7df;
+  background:
+    radial-gradient(circle at 90% 8%, rgba(255, 218, 113, 0.22), transparent 30%),
+    radial-gradient(circle at 8% 100%, rgba(52, 214, 189, 0.15), transparent 28%),
+    linear-gradient(135deg, rgba(13, 21, 42, 0.97), rgba(54, 30, 55, 0.96));
+  border: 1px solid rgba(241, 216, 154, 0.25);
+  box-shadow: 0 20px 52px rgba(0, 0, 0, 0.25);
+}
+
+.champion-final-card::after {
+  content: "🏆";
+  position: absolute;
+  inset-inline-start: 18px;
+  bottom: -28px;
+  font-size: 92px;
+  opacity: 0.055;
+  transform: rotate(-12deg);
+  pointer-events: none;
+}
+
+.champion-final-card-icon {
+  width: 64px;
+  height: 64px;
+  display: grid;
+  place-items: center;
+  border-radius: 21px;
+  background: rgba(255, 255, 255, 0.10);
+  border: 1px solid rgba(255, 255, 255, 0.13);
+  font-size: 30px;
+  position: relative;
+  z-index: 1;
+}
+
+.champion-final-card-copy,
+.champion-final-card-result {
+  position: relative;
+  z-index: 1;
+}
+
+.champion-final-card-copy .eyebrow {
+  margin: 0 0 3px;
+}
+
+.champion-final-card-copy h4 {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin: 0 0 4px;
+  color: #fff7df;
+  font-size: clamp(21px, 3.2vw, 29px);
+}
+
+.champion-final-card-copy > strong {
+  display: block;
+  color: #f3d77c;
+  font-size: 16px;
+  margin-bottom: 3px;
+}
+
+.champion-final-card-copy p:last-child {
+  margin: 0;
+  color: rgba(247, 241, 227, 0.74);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.champion-final-card-result {
+  min-width: 114px;
+  min-height: 86px;
+  padding: 12px 15px;
+  display: grid;
+  place-content: center;
+  text-align: center;
+  border-radius: 21px;
+  background: rgba(255, 255, 255, 0.09);
+  border: 1px solid rgba(255, 255, 255, 0.13);
+}
+
+.champion-final-card-result strong,
+.champion-final-card-result span {
+  display: block;
+}
+
+.champion-final-card-result strong {
+  font-size: 22px;
+  line-height: 1.15;
+}
+
+.champion-final-card-result span {
+  margin-top: 4px;
+  color: rgba(247, 241, 227, 0.68);
+  font-size: 11px;
+}
+
+.champion-final-card-result-winner {
+  color: #17131a;
+  background: linear-gradient(135deg, #fff0a8, #d8a832);
+  border-color: rgba(255, 255, 255, 0.32);
+}
+
+.champion-final-card-result-winner span {
+  color: rgba(23, 19, 26, 0.72);
+}
+
+.champion-final-card-result-runner-up {
+  color: #142033;
+  background: linear-gradient(135deg, #edf4ff, #aab9ce);
+}
+
+.champion-final-card-result-runner-up span {
+  color: rgba(20, 32, 51, 0.70);
+}
+
+body.site-stage-theme .champion-history-table,
+body.site-stage-theme .champion-final-card {
+  border-color: rgba(var(--stage-rgb), 0.30) !important;
+  background:
+    radial-gradient(circle at 90% 8%, rgba(var(--stage-rgb), 0.20), transparent 30%),
+    radial-gradient(circle at 8% 100%, rgba(52, 214, 189, 0.12), transparent 28%),
+    linear-gradient(135deg, rgba(13, 21, 42, 0.97), rgba(var(--stage-rgb), 0.10)) !important;
+}
+
+@media (max-width: 700px) {
+  .champion-history-table {
+    border-radius: 18px;
+  }
+
+  .champion-history-table th,
+  .champion-history-table td {
+    padding: 10px 7px;
+  }
+
+  .champion-history-table th {
+    font-size: 11px;
+    text-align: center;
+  }
+
+  .champion-history-table th:nth-child(1),
+  .champion-history-table td:nth-child(1) {
+    width: 29%;
+  }
+
+  .champion-history-table th:nth-child(2),
+  .champion-history-table td:nth-child(2) {
+    width: 47%;
+  }
+
+  .champion-history-table th:nth-child(3),
+  .champion-history-table td:nth-child(3) {
+    width: 24%;
+  }
+
+  .champion-history-team {
+    display: grid;
+    justify-items: center;
+    gap: 5px;
+    text-align: center;
+  }
+
+  .champion-history-team .scoreline-flag-img {
+    width: 26px !important;
+    height: 19px !important;
+  }
+
+  .champion-history-team strong {
+    font-size: 13px;
+    line-height: 1.25;
+  }
+
+  .champion-history-empty {
+    display: block;
+    text-align: center;
+    font-size: 12px;
+  }
+
+  .champion-history-status {
+    grid-template-columns: 28px minmax(0, 1fr);
+    gap: 6px;
+  }
+
+  .champion-history-status > span:first-child {
+    width: 28px;
+    height: 28px;
+    border-radius: 10px;
+    font-size: 15px;
+  }
+
+  .champion-history-status strong {
+    font-size: 12.5px;
+    line-height: 1.3;
+  }
+
+  .champion-history-status small {
+    font-size: 10.5px;
+    line-height: 1.35;
+  }
+
+  .champion-history-result {
+    width: 100%;
+    min-height: 42px;
+    padding: 6px 5px;
+    border-radius: 13px;
+    font-size: 12px;
+  }
+
+  .champion-final-card {
+    grid-template-columns: 48px minmax(0, 1fr);
+    gap: 11px;
+    padding: 15px;
+    border-radius: 22px;
+  }
+
+  .champion-final-card-icon {
+    width: 48px;
+    height: 48px;
+    border-radius: 16px;
+    font-size: 23px;
+  }
+
+  .champion-final-card-copy h4 {
+    font-size: 20px;
+  }
+
+  .champion-final-card-copy > strong {
+    font-size: 14px;
+  }
+
+  .champion-final-card-copy p:last-child {
+    font-size: 11.5px;
+  }
+
+  .champion-final-card-result {
+    grid-column: 1 / -1;
+    min-height: 60px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    border-radius: 17px;
+  }
+
+  .champion-final-card-result strong {
+    font-size: 19px;
+  }
+
+  .champion-final-card-result span {
+    margin: 0;
+    font-size: 11px;
+  }
+}
+
+@media (max-width: 420px) {
+  .champion-history-status small {
+    display: none;
+  }
+
+  .champion-history-status {
+    grid-template-columns: 25px minmax(0, 1fr);
+  }
+
+  .champion-history-status > span:first-child {
+    width: 25px;
+    height: 25px;
+    font-size: 13px;
+  }
+
+  .champion-history-status strong {
+    font-size: 12px;
+  }
+
+  .champion-history-result {
+    font-size: 11.5px;
+  }
+}

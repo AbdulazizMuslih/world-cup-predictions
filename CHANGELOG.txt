@@ -1,4 +1,6 @@
-V39.2.2
-- Profile badges now use two columns on normal phones and three columns on wider small screens.
-- Reduced excessive vertical space while keeping readable typography and clear icons.
-- Preserved desktop layout and the V39.2.1 personal PDF implementation.
+V39.2.3
+- Added champion prediction as a dedicated history section between quarterfinals and semifinals.
+- Added team flag, selection state, friendly outcome wording, and non-zero text states.
+- Added a final-only champion prediction summary card after the World Cup concludes.
+- Added responsive mobile styling for the new history section and final card.
+- Kept PDF generation and database schema unchanged.
