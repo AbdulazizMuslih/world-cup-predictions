@@ -1,0 +1,68 @@
+name: Shutdown World Cup Automation
+
+on:
+  workflow_dispatch:
+  schedule:
+    # 24 hours after the tournament's final-result safety window.
+    - cron: "5 23 20 7 *"
+
+permissions:
+  actions: write
+  contents: read
+
+env:
+  AUTOMATION_ACTIVE_UNTIL: "2026-07-20T23:00:00Z"
+
+concurrency:
+  group: shutdown-world-cup-automation
+  cancel-in-progress: false
+
+jobs:
+  disable-world-cup-workflows:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Confirm shutdown time
+        id: shutdown_window
+        shell: bash
+        run: |
+          now_epoch=$(date -u +%s)
+          cutoff_epoch=$(date -u -d "$AUTOMATION_ACTIVE_UNTIL" +%s)
+
+          echo "utc_now=$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+          echo "shutdown_cutoff=$AUTOMATION_ACTIVE_UNTIL"
+
+          if (( now_epoch >= cutoff_epoch )); then
+            echo "allowed=true" >> "$GITHUB_OUTPUT"
+            echo "The final 24-hour automation window has ended. Workflows will now be disabled."
+          else
+            echo "allowed=false" >> "$GITHUB_OUTPUT"
+            echo "Shutdown skipped because the final automation window is still active."
+          fi
+
+      - name: Disable World Cup workflows
+        if: steps.shutdown_window.outputs.allowed == 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const workflowFiles = [
+              'sync-worldcup-normal.yml',
+              'sync-worldcup-correction.yml',
+              'sync-worldcup-full-fixtures.yml',
+              'fetch-final-event-notes.yml',
+              'generate-ai-posts.yml',
+              'audit-final-recap-data.yml',
+              'worldcup-external-orchestrator.yml',
+              'shutdown-worldcup-automation.yml'
+            ];
+
+            for (const workflow_id of workflowFiles) {
+              try {
+                await github.rest.actions.disableWorkflow({ owner, repo, workflow_id });
+                core.info(`Disabled ${workflow_id}`);
+              } catch (error) {
+                core.warning(`Could not disable ${workflow_id}: ${error.message}`);
+              }
+            }

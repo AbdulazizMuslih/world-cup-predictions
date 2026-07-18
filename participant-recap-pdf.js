@@ -1,5 +1,5 @@
 /* ==============================================================
-   V39.0.8 - Personal Journey Book PDF
+   V39.4.0 FINAL - Personal Journey Book PDF
    A participant-specific editorial recap with collective analysis.
    PDF libraries are loaded only after the participant clicks.
    ============================================================== */
@@ -24,24 +24,27 @@ const PARTICIPANT_RECAP_STAGE_COLORS = {
     FINAL: "#f1d89a"
 };
 
-function renderParticipantRecapDownloadCard(participant, finalRow, recap) {
+function renderParticipantRecapDownloadCard(participant, finalRow, recap, options = {}) {
     const completedMatches = Number(recap?.seasonStats?.completedMatches || 0);
     const predictionCount = Number(finalRow?.predictions || 0);
     const rank = finalRow?.finalRank || "-";
+    const buttonId = options.buttonId || "participantRecapPdfDownloadBtn";
+    const cardClass = options.cardClass ? ` ${options.cardClass}` : "";
+    const eyebrow = options.eyebrow || "نسختك التذكارية";
+    const title = options.title || "حمّل كتاب رحلتك في المسابقة";
+    const description = options.description || "كتاب شخصي مصمم من بيانات رحلتك: تحليلك أمام بقية المشاركين، حركة مركزك، أسلوب توقعاتك، جميع اختياراتك بالأعلام والنتائج، وأجمل ما بقي من البطولة.";
 
     return `
-        <section class="profile-recap-download-card">
+        <section class="profile-recap-download-card${cardClass}">
             <div class="profile-recap-download-glow" aria-hidden="true"></div>
             <div class="profile-recap-download-icon" aria-hidden="true">
                 <span>PDF</span>
                 <strong>🏆</strong>
             </div>
             <div class="profile-recap-download-copy">
-                <p class="eyebrow">نسختك التذكارية</p>
-                <h4>حمّل كتاب رحلتك في المسابقة</h4>
-                <p>
-                    كتاب شخصي مصمم من بيانات رحلتك: تحليلك أمام بقية المشاركين، حركة مركزك، أسلوب توقعاتك، جميع اختياراتك بالأعلام والنتائج، وأجمل ما بقي من البطولة.
-                </p>
+                <p class="eyebrow">${escapeHtml(eyebrow)}</p>
+                <h4>${escapeHtml(title)}</h4>
+                <p>${escapeHtml(description)}</p>
                 <div class="profile-recap-download-meta">
                     <span>المركز ${escapeHtml(rank)}</span>
                     <span>${predictionCount} توقع</span>
@@ -50,10 +53,10 @@ function renderParticipantRecapDownloadCard(participant, finalRow, recap) {
                 </div>
             </div>
             <button
-                id="participantRecapPdfDownloadBtn"
+                id="${escapeHtml(buttonId)}"
                 class="profile-recap-download-btn"
                 type="button"
-                onclick="downloadParticipantRecapPdf()"
+                onclick="downloadParticipantRecapPdf('${escapeHtml(buttonId)}')"
             >
                 <span aria-hidden="true">⬇</span>
                 تحميل كتاب الرحلة PDF
@@ -62,11 +65,11 @@ function renderParticipantRecapDownloadCard(participant, finalRow, recap) {
     `;
 }
 
-async function downloadParticipantRecapPdf() {
+async function downloadParticipantRecapPdf(buttonId = "participantRecapPdfDownloadBtn") {
     if (participantRecapPdfGenerationInProgress || !currentParticipant) return;
 
     participantRecapPdfGenerationInProgress = true;
-    const button = document.getElementById("participantRecapPdfDownloadBtn");
+    const button = document.getElementById(buttonId);
     const originalButtonHtml = button?.innerHTML || "تحميل كتاب الرحلة PDF";
     let documentElement = null;
 
@@ -79,7 +82,7 @@ async function downloadParticipantRecapPdf() {
 
     try {
         const [recap, profilePosts, highlightPosts] = await Promise.all([
-            loadFinalRecapModel(),
+            loadCurrentParticipantRecapModel(),
             loadAiPosts(FINAL_AI_PROFILE_SECTION, {
                 participantId: currentParticipant.id,
                 limit: 1,

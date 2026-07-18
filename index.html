@@ -6,7 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#10162d" />
     <title>توقعات كأس العالم 2026</title>
-    <link rel="stylesheet" href="style.css?v=39.2.9" />
+    <link rel="stylesheet" href="style.css?v=39.4.0" />
 </head>
 
 <body>
@@ -219,8 +219,8 @@
                 <section id="seasonRecapTab" class="tab-panel menu-page-panel hidden" data-menu-page="seasonRecap">
                     <div class="menu-page-header">
                         <p class="eyebrow">ختام المسابقة</p>
-                        <h3>قريباً</h3>
-                        <p class="menu-page-subtitle">تفتح في وقتها.</p>
+                        <h3>لحظة الختام</h3>
+                        <p class="menu-page-subtitle">تفتح بعد اكتمال البطولة، وتبقى بعدها صفحة للذكرى.</p>
                     </div>
 
                     <div id="seasonRecap" class="season-thanks-wrap">
@@ -415,8 +415,8 @@
 
     <script id="aiContentPlan" type="application/json">
         {
-          "plannedVersion": "39.0",
-          "aiMode": "manual_final_only",
+          "plannedVersion": "39.4.0",
+          "aiMode": "automatic_final_then_shutdown",
           "dataSource": "supabase_database",
           "rule": "Code calculates all facts first. AI may only rewrite short fun phrases from locked calculated facts after the tournament ends.",
           "liveSchedule": "disabled",
@@ -441,9 +441,9 @@
     </script>
 
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="app.js?v=39.2.9"></script>
-    <script src="observer-mode.js?v=39.2.9"></script>
-    <script src="participant-recap-pdf.js?v=39.2.9"></script>
+    <script src="app.js?v=39.4.0"></script>
+    <script src="observer-mode.js?v=39.4.0"></script>
+    <script src="participant-recap-pdf.js?v=39.4.0"></script>
 </body>
 
 </html>

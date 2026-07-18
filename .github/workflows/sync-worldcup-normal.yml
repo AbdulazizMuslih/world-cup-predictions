@@ -5,6 +5,9 @@ on:
   schedule:
     - cron: "2,32 * * * *"
 
+env:
+  AUTOMATION_ACTIVE_UNTIL: "2026-07-20T23:00:00Z"
+
 concurrency:
   group: wc-normal-sync
   cancel-in-progress: false
@@ -14,16 +17,43 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      - name: Check automatic-call window
+        id: automation_window
+        shell: bash
+        run: |
+          if [[ "${{ github.event_name }}" != "schedule" ]]; then
+            echo "allowed=true" >> "$GITHUB_OUTPUT"
+            echo "Manual run allowed for emergency verification."
+            exit 0
+          fi
+
+          now_epoch=$(date -u +%s)
+          cutoff_epoch=$(date -u -d "$AUTOMATION_ACTIVE_UNTIL" +%s)
+
+          echo "utc_now=$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+          echo "automatic_cutoff=$AUTOMATION_ACTIVE_UNTIL"
+
+          if (( now_epoch <= cutoff_epoch )); then
+            echo "allowed=true" >> "$GITHUB_OUTPUT"
+            echo "Scheduled World Cup calls are still inside the final 24-hour window."
+          else
+            echo "allowed=false" >> "$GITHUB_OUTPUT"
+            echo "Scheduled World Cup calls are stopped. No football API or Supabase sync will run."
+          fi
+
       - name: Checkout repository
+        if: steps.automation_window.outputs.allowed == 'true'
         uses: actions/checkout@v4
 
       - name: Show trigger details
+        if: steps.automation_window.outputs.allowed == 'true'
         run: |
           echo "workflow=normal-window"
           echo "event=${{ github.event_name }}"
           echo "utc_now=$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
 
       - name: Run normal sync
+        if: steps.automation_window.outputs.allowed == 'true'
         run: node scripts/sync-results.mjs
         env:
           FOOTBALL_DATA_TOKEN: ${{ secrets.FOOTBALL_DATA_TOKEN }}

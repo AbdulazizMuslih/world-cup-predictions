@@ -34,7 +34,7 @@ on:
 
 
 env:
-  AUTOMATION_ACTIVE_UNTIL: "2026-07-21T03:00:00Z"
+  AUTOMATION_ACTIVE_UNTIL: "2026-07-20T23:00:00Z"
 
 concurrency:
   group: generate-final-highlights

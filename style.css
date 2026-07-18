@@ -17364,3 +17364,684 @@ body.site-stage-theme .champion-final-card {
     padding-inline: 4px !important;
   }
 }
+
+
+/* ==============================================================
+   V39.3.0 FINAL — Post-tournament home, closing warmth and hard mobile fit
+   ============================================================== */
+.season-end-hub,
+.season-end-hub * {
+  min-width: 0;
+}
+
+.season-end-hub {
+  display: grid;
+  gap: 18px;
+  width: 100%;
+}
+
+.season-end-celebration-card {
+  position: relative;
+  overflow: hidden;
+  display: grid;
+  grid-template-columns: 150px minmax(0, 1fr);
+  align-items: center;
+  gap: 26px;
+  padding: clamp(24px, 4vw, 42px);
+  border-radius: 32px;
+  background:
+    radial-gradient(circle at 12% 10%, rgba(241, 216, 154, .27), transparent 30%),
+    radial-gradient(circle at 92% 100%, rgba(52, 214, 189, .15), transparent 30%),
+    linear-gradient(135deg, rgba(5, 8, 23, .94), rgba(64, 27, 65, .88));
+  border: 1px solid rgba(241, 216, 154, .30);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, .28), inset 0 1px 0 rgba(255,255,255,.07);
+}
+
+.season-end-celebration-card::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: url("assets/wc-confetti.svg") center / 520px auto repeat;
+  opacity: .22;
+  mix-blend-mode: screen;
+}
+
+.season-end-trophy-wrap {
+  position: relative;
+  width: 132px;
+  height: 132px;
+  display: grid;
+  place-items: center;
+  border-radius: 38px;
+  background: linear-gradient(145deg, rgba(241,216,154,.28), rgba(255,255,255,.06));
+  border: 1px solid rgba(241,216,154,.38);
+  box-shadow: 0 20px 44px rgba(0,0,0,.28), 0 0 44px rgba(241,216,154,.12);
+}
+
+.season-end-trophy {
+  font-size: 66px;
+  filter: drop-shadow(0 12px 20px rgba(0,0,0,.32));
+  animation: seasonEndTrophyFloat 3.8s ease-in-out infinite;
+}
+
+.season-end-spark {
+  position: absolute;
+  color: var(--wc-gold-light, #f1d89a);
+  text-shadow: 0 0 14px rgba(241,216,154,.65);
+  animation: seasonEndSpark 2.6s ease-in-out infinite;
+}
+.season-end-spark-one { top: 14px; right: 15px; }
+.season-end-spark-two { left: 16px; bottom: 20px; animation-delay: .7s; }
+.season-end-spark-three { right: 9px; bottom: 18px; font-size: 8px; animation-delay: 1.25s; }
+
+@keyframes seasonEndTrophyFloat { 0%,100% { transform: translateY(0) rotate(-2deg); } 50% { transform: translateY(-7px) rotate(2deg); } }
+@keyframes seasonEndSpark { 0%,100% { opacity:.35; transform:scale(.8); } 50% { opacity:1; transform:scale(1.25); } }
+
+.season-end-celebration-copy { position: relative; z-index: 1; }
+.season-end-status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 14px;
+  padding: 8px 13px;
+  border-radius: 999px;
+  color: #fff7d7;
+  background: rgba(5,8,23,.46);
+  border: 1px solid rgba(241,216,154,.22);
+  font-size: 12px;
+  font-weight: 900;
+}
+.season-end-status-pill i {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #34d6bd;
+  box-shadow: 0 0 14px rgba(52,214,189,.75);
+}
+.season-end-celebration-card h4 {
+  margin: 0 0 12px;
+  color: #fff7d7;
+  font-size: clamp(28px, 4.6vw, 48px);
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+.season-end-celebration-card p:not(.eyebrow) {
+  max-width: 780px;
+  margin: 0;
+  color: rgba(247,241,227,.80);
+  font-size: clamp(14px, 1.8vw, 17px);
+  line-height: 1.9;
+  overflow-wrap: anywhere;
+}
+.season-end-heart-line {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  margin-top: 17px;
+  color: #f1d89a;
+  font-weight: 900;
+}
+
+.season-end-guide-card {
+  padding: clamp(18px, 3vw, 28px);
+  border-radius: 30px;
+  background: linear-gradient(145deg, rgba(255,255,255,.11), rgba(255,255,255,.045));
+  border: 1px solid rgba(255,255,255,.14);
+  box-shadow: 0 18px 44px rgba(0,0,0,.20);
+}
+.season-end-guide-card > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 18px;
+}
+.season-end-guide-card h4 {
+  margin: 0;
+  color: #fff7d7;
+  font-size: clamp(22px, 3vw, 31px);
+}
+.season-end-guide-badge {
+  flex: 0 0 auto;
+  padding: 8px 12px;
+  border-radius: 999px;
+  color: #11101a;
+  background: linear-gradient(135deg, var(--wc-gold-light, #f1d89a), var(--wc-gold, #caa45d));
+  font-size: 11px;
+  font-weight: 1000;
+}
+
+.season-end-numbered-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 13px;
+}
+.season-end-numbered-grid button {
+  position: relative;
+  display: grid;
+  grid-template-columns: 38px 44px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 11px;
+  width: 100%;
+  min-height: 112px;
+  padding: 16px;
+  border-radius: 23px;
+  color: #f7f1e3;
+  text-align: right;
+  background: linear-gradient(145deg, rgba(5,8,23,.56), rgba(255,255,255,.065));
+  border: 1px solid rgba(241,216,154,.16);
+  box-shadow: 0 12px 28px rgba(0,0,0,.16);
+}
+.season-end-numbered-grid button:hover { border-color: rgba(241,216,154,.42); }
+.season-end-step-number {
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  color: #11101a;
+  background: linear-gradient(135deg, #fff0b8, #caa45d);
+  font-weight: 1000;
+}
+.season-end-step-icon { font-size: 28px; line-height: 1; }
+.season-end-step-copy { display: block; min-width: 0; }
+.season-end-step-copy strong,
+.season-end-step-copy small { display: block; overflow-wrap: anywhere; }
+.season-end-step-copy strong { margin-bottom: 5px; color: #fff7d7; font-size: 17px; }
+.season-end-step-copy small { color: rgba(247,241,227,.66); line-height: 1.55; }
+.season-end-step-arrow { color: #f1d89a; font-size: 20px; }
+
+.season-end-quick-links {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.season-end-quick-links button {
+  display: grid;
+  grid-template-columns: auto minmax(0,1fr);
+  gap: 2px 11px;
+  align-items: center;
+  width: 100%;
+  padding: 15px 18px;
+  border-radius: 20px;
+  color: #f7f1e3;
+  text-align: right;
+  background: rgba(255,255,255,.075);
+  border: 1px solid rgba(255,255,255,.12);
+}
+.season-end-quick-links button > span { grid-row: 1 / span 2; font-size: 25px; }
+.season-end-quick-links strong,
+.season-end-quick-links small { min-width: 0; overflow-wrap: anywhere; }
+.season-end-quick-links small { color: rgba(247,241,227,.62); }
+.season-end-signoff {
+  margin: 0;
+  padding: 6px 12px;
+  color: rgba(247,241,227,.68);
+  text-align: center;
+  line-height: 1.7;
+}
+
+.season-recap-farewell-card {
+  display: grid;
+  grid-template-columns: auto minmax(0,1fr);
+  align-items: center;
+  gap: 18px;
+  margin-top: 18px;
+  padding: clamp(20px, 3vw, 30px);
+  border-radius: 28px;
+  background:
+    radial-gradient(circle at 92% 10%, rgba(52,214,189,.14), transparent 32%),
+    linear-gradient(145deg, rgba(125,23,56,.18), rgba(5,8,23,.56));
+  border: 1px solid rgba(241,216,154,.16);
+}
+.season-recap-farewell-card > span { font-size: 42px; }
+.season-recap-farewell-card h3 { margin: 0 0 7px; color: #fff7d7; line-height: 1.55; overflow-wrap:anywhere; }
+.season-recap-farewell-card p:not(.eyebrow) { margin: 0; color: rgba(247,241,227,.72); line-height: 1.8; overflow-wrap:anywhere; }
+.season-recap-pdf-card { margin-top: 18px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .season-end-trophy,
+  .season-end-spark { animation: none !important; }
+}
+
+@media (max-width: 760px) {
+  .season-end-celebration-card {
+    grid-template-columns: 1fr;
+    gap: 18px;
+    text-align: center;
+    padding: 25px 17px;
+  }
+  .season-end-trophy-wrap { width: 104px; height: 104px; margin-inline: auto; border-radius: 30px; }
+  .season-end-trophy { font-size: 53px; }
+  .season-end-heart-line { justify-content: center; }
+  .season-end-guide-card > header { align-items: flex-start; flex-direction: column; }
+  .season-end-numbered-grid { grid-template-columns: 1fr; }
+  .season-end-numbered-grid button { min-height: 104px; }
+}
+
+@media (max-width: 480px) {
+  .season-end-hub { gap: 12px; }
+  .season-end-celebration-card,
+  .season-end-guide-card { border-radius: 23px; }
+  .season-end-celebration-card h4 { font-size: clamp(25px, 8vw, 34px); }
+  .season-end-status-pill { margin-inline: auto; }
+  .season-end-numbered-grid button {
+    grid-template-columns: 31px 36px minmax(0,1fr);
+    gap: 8px;
+    min-height: 0;
+    padding: 14px 12px;
+  }
+  .season-end-step-number { width: 29px; height: 29px; font-size: 12px; }
+  .season-end-step-icon { font-size: 24px; }
+  .season-end-step-arrow { display: none; }
+  .season-end-step-copy strong { font-size: 15px; }
+  .season-end-step-copy small { font-size: 11px; }
+  .season-end-quick-links { grid-template-columns: 1fr; }
+  .season-recap-farewell-card { grid-template-columns: 1fr; text-align: center; }
+}
+
+
+/* ==============================================================
+   V39.4.0 FINAL — Scoped home text contrast + stable About layout
+   Built directly on v39.3.0. No global card or button redesign.
+   ============================================================== */
+
+/*
+   The final-stage theme applies a gold background to most buttons with
+   !important. The v39.3 destination cards were therefore gold while their
+   explicit white copy remained low-contrast. Keep the gold cards and make
+   only their text dark and readable.
+*/
+body.site-stage-theme .season-end-numbered-grid button,
+body.site-stage-theme .season-end-quick-links button {
+  color: #11101a !important;
+}
+
+body.site-stage-theme .season-end-numbered-grid button .season-end-step-copy strong,
+body.site-stage-theme .season-end-numbered-grid button .season-end-step-copy small,
+body.site-stage-theme .season-end-numbered-grid button .season-end-step-arrow,
+body.site-stage-theme .season-end-quick-links button strong,
+body.site-stage-theme .season-end-quick-links button small {
+  color: #11101a !important;
+  text-shadow: none !important;
+  opacity: 1 !important;
+}
+
+body.site-stage-theme .season-end-numbered-grid button .season-end-step-copy small,
+body.site-stage-theme .season-end-quick-links button small {
+  color: rgba(17, 16, 26, .76) !important;
+  font-weight: 800;
+}
+
+body.site-stage-theme .season-end-numbered-grid button .season-end-step-number {
+  color: #11101a !important;
+  background: rgba(255, 255, 255, .30);
+  border: 1px solid rgba(17, 16, 26, .12);
+  box-shadow: none;
+}
+
+/* The About renderer places full-width sections inside rulesSummary. */
+#aboutTab #rulesSummary.rules-summary-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) !important;
+  gap: 18px;
+  width: 100%;
+  margin-top: 16px;
+}
+
+#aboutTab #rulesSummary > * {
+  min-width: 0;
+  width: 100%;
+}
+
+.about-hero-card-v394 {
+  min-height: 190px;
+  background:
+    radial-gradient(circle at 92% 12%, rgba(241, 216, 154, .19), transparent 30%),
+    radial-gradient(circle at 8% 100%, rgba(52, 214, 189, .10), transparent 34%),
+    linear-gradient(135deg, rgba(5, 8, 23, .74), rgba(255, 255, 255, .075));
+}
+
+.about-hero-card-v394 p:not(.eyebrow) {
+  max-width: 850px;
+}
+
+.about-section-card {
+  min-width: 0;
+  padding: clamp(20px, 3vw, 28px);
+  border-radius: 28px;
+  background:
+    radial-gradient(circle at 92% 0%, rgba(241, 216, 154, .08), transparent 30%),
+    linear-gradient(145deg, rgba(5, 8, 23, .58), rgba(255, 255, 255, .055));
+  border: 1px solid rgba(241, 216, 154, .15);
+  box-shadow: 0 16px 38px rgba(0, 0, 0, .18);
+}
+
+.about-section-heading {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 13px;
+  margin-bottom: 17px;
+}
+
+.about-section-icon {
+  width: 50px;
+  height: 50px;
+  display: grid;
+  place-items: center;
+  border-radius: 17px;
+  background: linear-gradient(135deg, rgba(241, 216, 154, .22), rgba(52, 214, 189, .12));
+  border: 1px solid rgba(241, 216, 154, .18);
+  font-size: 25px;
+}
+
+.about-section-heading h4 {
+  margin: 0;
+  color: #fff7d7;
+  font-size: clamp(22px, 3vw, 30px);
+  line-height: 1.35;
+}
+
+.about-section-heading p:not(.eyebrow) {
+  margin: 5px 0 0;
+  color: rgba(247, 241, 227, .70);
+  line-height: 1.65;
+}
+
+.about-overview-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.about-feature-card {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: 11px;
+  padding: 16px;
+  border-radius: 20px;
+  background: rgba(255, 255, 255, .065);
+  border: 1px solid rgba(255, 255, 255, .10);
+}
+
+.about-feature-card > span {
+  font-size: 25px;
+  line-height: 1;
+}
+
+.about-feature-card strong,
+.about-feature-card p {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.about-feature-card strong {
+  color: #fff7d7;
+  font-size: 15px;
+}
+
+.about-feature-card p {
+  margin: 5px 0 0;
+  color: rgba(247, 241, 227, .70);
+  font-size: 12px;
+  line-height: 1.65;
+}
+
+.about-rule-grid-v394 {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.about-rule-grid-v394 .rules-card {
+  min-width: 0;
+  min-height: 134px;
+  align-items: flex-start;
+  padding: 18px;
+  background:
+    radial-gradient(circle at 94% 6%, rgba(241, 216, 154, .09), transparent 32%),
+    rgba(5, 8, 23, .42);
+  border-color: rgba(241, 216, 154, .14);
+}
+
+.about-rule-grid-v394 .about-rule-kicker {
+  color: rgba(247, 241, 227, .60);
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.about-rule-grid-v394 .rules-card strong {
+  color: #fff0b8;
+  font-size: clamp(21px, 2.6vw, 29px);
+  line-height: 1.15;
+}
+
+.about-rule-grid-v394 .rules-card > span:last-child {
+  color: rgba(247, 241, 227, .76);
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+.about-contact-card-v394 {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: 17px;
+  padding: clamp(22px, 3vw, 30px);
+  border-radius: 28px;
+  background:
+    radial-gradient(circle at 90% 10%, rgba(52, 214, 189, .15), transparent 32%),
+    linear-gradient(135deg, rgba(5, 8, 23, .74), rgba(47, 23, 58, .64));
+  border: 1px solid rgba(241, 216, 154, .19);
+  box-shadow: 0 18px 44px rgba(0, 0, 0, .20);
+}
+
+.about-contact-icon {
+  width: 62px;
+  height: 62px;
+  display: grid;
+  place-items: center;
+  border-radius: 21px;
+  background: linear-gradient(135deg, rgba(241, 216, 154, .25), rgba(52, 214, 189, .14));
+  border: 1px solid rgba(241, 216, 154, .20);
+  font-size: 31px;
+}
+
+.about-contact-copy h4 {
+  margin: 0 0 7px;
+  color: #fff7d7;
+  font-size: clamp(23px, 3vw, 32px);
+}
+
+.about-contact-copy > p:not(.eyebrow) {
+  margin: 0;
+  max-width: 820px;
+  color: rgba(247, 241, 227, .76);
+  line-height: 1.75;
+}
+
+.about-contact-owner {
+  width: fit-content;
+  margin: 13px 0 0 !important;
+  padding: 7px 11px;
+  border-radius: 999px;
+  color: rgba(247, 241, 227, .82) !important;
+  background: rgba(255, 255, 255, .07);
+  border: 1px solid rgba(241, 216, 154, .14);
+}
+
+.about-contact-owner strong {
+  color: #fff0b8;
+}
+
+.about-contact-methods {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 11px;
+  max-width: 760px;
+  margin-top: 14px;
+}
+
+.about-contact-method {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  padding: 13px 14px;
+  border-radius: 18px;
+  color: inherit;
+  text-decoration: none;
+  background: rgba(255, 255, 255, .065);
+  border: 1px solid rgba(255, 255, 255, .10);
+}
+
+.about-contact-method > span {
+  font-size: 23px;
+}
+
+.about-contact-method small,
+.about-contact-method strong {
+  display: block;
+  min-width: 0;
+}
+
+.about-contact-method small {
+  margin-bottom: 3px;
+  color: rgba(247, 241, 227, .56);
+  font-size: 10px;
+  font-weight: 900;
+}
+
+.about-contact-method strong {
+  color: #fff7d7;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.about-contact-method[href]:hover {
+  border-color: rgba(241, 216, 154, .34);
+}
+
+@media (max-width: 920px) {
+  .about-overview-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 700px) {
+  #aboutTab #rulesSummary.rules-summary-grid {
+    gap: 13px;
+  }
+
+  .about-section-card,
+  .about-contact-card-v394 {
+    border-radius: 23px;
+    padding: 18px 15px;
+  }
+
+  .about-section-heading,
+  .about-contact-card-v394 {
+    grid-template-columns: 1fr;
+  }
+
+  .about-section-icon,
+  .about-contact-icon {
+    width: 48px;
+    height: 48px;
+    border-radius: 16px;
+    font-size: 24px;
+  }
+
+  .about-rule-grid-v394,
+  .about-contact-methods {
+    grid-template-columns: 1fr;
+  }
+
+  .about-rule-grid-v394 .rules-card {
+    min-height: 0;
+  }
+}
+
+@media (max-width: 480px) {
+  .about-overview-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .about-feature-card,
+  .about-rule-grid-v394 .rules-card,
+  .about-contact-method {
+    padding: 14px;
+  }
+
+  .about-hero-card-v394 {
+    min-height: 0;
+  }
+}
+
+/* ==============================================================
+   V39.4.0 FINAL PATCH — About rules: two cards per mobile row
+   Keeps the compact card rhythm without sacrificing readability.
+   ============================================================== */
+@media (max-width: 700px) {
+  .about-rule-grid-v394 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+    align-items: stretch;
+  }
+
+  .about-rule-grid-v394 .rules-card {
+    width: 100%;
+    min-width: 0;
+    min-height: 0;
+    height: 100%;
+    padding: 15px 13px;
+    gap: 7px;
+    justify-content: flex-start;
+    align-items: stretch;
+    text-align: right;
+    border-radius: 19px;
+  }
+
+  .about-rule-grid-v394 .about-rule-kicker {
+    font-size: clamp(10.5px, 2.7vw, 11.5px);
+    line-height: 1.35;
+  }
+
+  .about-rule-grid-v394 .rules-card strong {
+    font-size: clamp(18px, 4.9vw, 22px);
+    line-height: 1.18;
+    text-wrap: balance;
+  }
+
+  .about-rule-grid-v394 .rules-card > span:last-child {
+    font-size: clamp(12px, 3.2vw, 13px);
+    line-height: 1.58;
+    overflow-wrap: break-word;
+    text-wrap: pretty;
+  }
+}
+
+@media (max-width: 380px) {
+  .about-rule-grid-v394 {
+    gap: 8px;
+  }
+
+  .about-rule-grid-v394 .rules-card {
+    padding: 13px 10px;
+    border-radius: 17px;
+  }
+
+  .about-rule-grid-v394 .rules-card strong {
+    font-size: clamp(17.5px, 5vw, 19px);
+  }
+
+  .about-rule-grid-v394 .rules-card > span:last-child {
+    font-size: 12px;
+    line-height: 1.52;
+  }
+}

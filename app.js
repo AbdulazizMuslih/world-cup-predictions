@@ -80,7 +80,7 @@ let allowLeavingPage = false;
 let dashboardRefreshTimer = null;
 let championPredictionCutoffTimer = null;
 
-const APP_VERSION = "39.2.9";
+const APP_VERSION = "39.4.0";
 const PREDICTION_OPEN_HOURS = 72;
 const FINAL_RECAP_PREVIEW_PARAM = "previewFinal";
 const EXPECTED_WORLD_CUP_MATCH_COUNT = 104;
@@ -940,23 +940,118 @@ function renderAboutPage() {
 
     rulesSummary.dataset.rendered = "true";
     rulesSummary.innerHTML = `
-        <section class="about-hero-card about-hero-card-final">
+        <section class="about-hero-card about-hero-card-final about-hero-card-v394">
             <span aria-hidden="true">🏆</span>
             <div>
-                <p class="eyebrow">عن المسابقة</p>
-                <h4>توقع، تابع، واستمتع بالرحلة</h4>
-                <p>مسابقة بسيطة بين الأحبة: كل واحد يتوقع النتيجة، وكل مباراة تترك ضحكة أو حسرة أو لقطة تستاهل الذكر. هنا تجد القواعد بشكل واضح، بدون تعقيد.</p>
+                <p class="eyebrow">ما هو هذا الموقع؟</p>
+                <h4>مسابقة توقعات جمعتنا طوال كأس العالم</h4>
+                <p>موقع خاص للأصدقاء والأحبة خلال كأس العالم 2026. نتوقع نتائج المباريات، نجمع النقاط، نتابع الترتيب، ثم نحتفظ بعد النهاية بأجمل اللحظات والإحصائيات وكتاب رحلة شخصي لكل مشارك.</p>
             </div>
         </section>
-        <div class="about-rule-grid about-rule-grid-final">
-            <article class="info-card rules-card"><strong>بالملّي</strong><span>50 نقطة، وتصبح 100 في نصف النهائي والمركز الثالث، و200 في النهائي.</span></article>
-            <article class="info-card rules-card"><strong>10 نقاط</strong><span>إذا كان الفائز أو التعادل صحيحاً.</span></article>
-            <article class="info-card rules-card"><strong>72 ساعة</strong><span>تفتح التوقعات قبل المباراة بثلاثة أيام.</span></article>
-            <article class="info-card rules-card"><strong>صافرة البداية</strong><span>بعد بداية المباراة يُغلق التعديل.</span></article>
-            <article class="info-card rules-card"><strong>ركلات الترجيح</strong><span>لا تُحسب ضمن نتيجة التوقع؛ نعتمد نتيجة المباراة قبل الترجيح.</span></article>
-            <article class="info-card rules-card"><strong>توقع البطل</strong><span>بعد ربع النهائي: 50 نقطة للبطل الصحيح، و10 نقاط إذا وصل وصيفاً.</span></article>
-            <article class="info-card rules-card"><strong>الأضواء</strong><span>مساحة للّقطات الجميلة: مفاجآت، قراءات مختلفة، وشارات تستاهل التصفيق.</span></article>
-        </div>
+
+        <section class="about-section-card about-overview-section">
+            <header class="about-section-heading">
+                <span class="about-section-icon" aria-hidden="true">🧭</span>
+                <div>
+                    <p class="eyebrow">نظرة عامة على المسابقة</p>
+                    <h4>من أول توقع إلى صفحة الختام</h4>
+                    <p>كل أقسام التجربة في مكان واحد، بصورة بسيطة وواضحة.</p>
+                </div>
+            </header>
+
+            <div class="about-overview-grid">
+                <article class="about-feature-card">
+                    <span aria-hidden="true">⚽</span>
+                    <div><strong>توقعات المباريات</strong><p>اختر النتيجة وعدّلها قبل صافرة البداية.</p></div>
+                </article>
+                <article class="about-feature-card">
+                    <span aria-hidden="true">🏅</span>
+                    <div><strong>الترتيب والنقاط</strong><p>تابع مركزك وتقدم المنافسة بعد كل مباراة.</p></div>
+                </article>
+                <article class="about-feature-card">
+                    <span aria-hidden="true">✨</span>
+                    <div><strong>الأضواء والإحصائيات</strong><p>لقطات ممتعة، شارات، وأرقام من رحلة البطولة.</p></div>
+                </article>
+                <article class="about-feature-card">
+                    <span aria-hidden="true">📖</span>
+                    <div><strong>ملفك وكتاب الرحلة</strong><p>ملخص شخصي ونسخة PDF تذكارية بعد الختام.</p></div>
+                </article>
+            </div>
+        </section>
+
+        <section class="about-section-card about-rules-section">
+            <header class="about-section-heading">
+                <span class="about-section-icon" aria-hidden="true">📋</span>
+                <div>
+                    <p class="eyebrow">قواعد المسابقة</p>
+                    <h4>احتساب النقاط والملاحظات المهمة</h4>
+                    <p>القواعد التي اعتُمدت طوال البطولة، بدون تعقيد.</p>
+                </div>
+            </header>
+
+            <div class="about-rule-grid about-rule-grid-final about-rule-grid-v394">
+                <article class="info-card rules-card">
+                    <span class="about-rule-kicker">النتيجة بالملّي</span>
+                    <strong>50 نقطة</strong>
+                    <span>عند تطابق توقعك تماماً مع النتيجة الفعلية في المراحل العادية.</span>
+                </article>
+                <article class="info-card rules-card">
+                    <span class="about-rule-kicker">المراحل الحاسمة</span>
+                    <strong>100 / 200</strong>
+                    <span>بالملّي تمنح 100 في نصف النهائي والمركز الثالث، و200 في النهائي.</span>
+                </article>
+                <article class="info-card rules-card">
+                    <span class="about-rule-kicker">الاتجاه الصحيح</span>
+                    <strong>10 نقاط</strong>
+                    <span>عند توقع الفائز الصحيح أو التعادل الصحيح، حتى لو اختلفت النتيجة.</span>
+                </article>
+                <article class="info-card rules-card">
+                    <span class="about-rule-kicker">توقع البطل</span>
+                    <strong>50 / 10</strong>
+                    <span>50 للبطل الصحيح، و10 إذا أنهى المنتخب المختار البطولة وصيفاً.</span>
+                </article>
+                <article class="info-card rules-card">
+                    <span class="about-rule-kicker">وقت التوقع</span>
+                    <strong>72 ساعة</strong>
+                    <span>تفتح المباراة للتوقع قبل انطلاقها بثلاثة أيام.</span>
+                </article>
+                <article class="info-card rules-card">
+                    <span class="about-rule-kicker">صافرة البداية</span>
+                    <strong>إغلاق التعديل</strong>
+                    <span>يتوقف الحفظ والتعديل فور بداية المباراة.</span>
+                </article>
+                <article class="info-card rules-card">
+                    <span class="about-rule-kicker">ركلات الترجيح</span>
+                    <strong>قبل الترجيح</strong>
+                    <span>تُعتمد نتيجة المباراة قبل ركلات الترجيح، ويُحفظ المتأهل منفصلاً.</span>
+                </article>
+                <article class="info-card rules-card">
+                    <span class="about-rule-kicker">الخصوصية</span>
+                    <strong>توقعاتك لك</strong>
+                    <span>كل مشارك يرى توقعاته فقط، ولا تظهر توقعات الآخرين التفصيلية.</span>
+                </article>
+            </div>
+        </section>
+
+        <section class="about-contact-card about-contact-card-v394">
+            <div class="about-contact-icon" aria-hidden="true">💌</div>
+            <div class="about-contact-copy">
+                <p class="eyebrow">للتواصل أو الاقتراحات</p>
+                <h4>ملاحظاتكم دائماً مرحب بها</h4>
+                <p>لأي استفسار، اقتراح، أو ملاحظة على نتيجة أو على تجربة الموقع، تواصلوا من خلال مجموعة الواتساب أو عبر البريد الإلكتروني.</p>
+                <p class="about-contact-owner">أخوكم: <strong>عبدالعزيز</strong></p>
+                <div class="about-contact-methods">
+                    <div class="about-contact-method">
+                        <span aria-hidden="true">💬</span>
+                        <div><small>واتساب</small><strong>مجموعة المسابقة</strong></div>
+                    </div>
+                    <a class="about-contact-method" href="mailto:aazizalamri2@gmail.com">
+                        <span aria-hidden="true">✉️</span>
+                        <div><small>البريد الإلكتروني</small><strong dir="ltr">aazizalamri2@gmail.com</strong></div>
+                    </a>
+                </div>
+            </div>
+        </section>
     `;
 }
 
@@ -5252,6 +5347,18 @@ function renderSeasonThankYouPage(recap = null) {
     const finalRows = recap?.finalRows || [];
     const podiumSentence = buildFinalPodiumSentence(finalRows);
     const podiumMiniText = buildFinalPodiumMiniText(finalRows);
+    const participantFinalRow = currentParticipant
+        ? finalRows.find((row) => String(row.id) === String(currentParticipant.id) || row.name === currentParticipant.name)
+        : null;
+    const participantBook = currentParticipant && participantFinalRow && typeof renderParticipantRecapDownloadCard === "function"
+        ? renderParticipantRecapDownloadCard(currentParticipant, participantFinalRow, recap, {
+            buttonId: "seasonRecapPdfDownloadBtn",
+            cardClass: "season-recap-pdf-card",
+            eyebrow: "ذكراك الخاصة",
+            title: "خذ رحلتك معك",
+            description: "في نهاية الصفحة ينتظرك كتاب شخصي يجمع أرقامك، توقعاتك، شاراتك، ولحظاتك من أول مباراة حتى الختام."
+        })
+        : "";
 
     return `
         <section class="season-thanks-card season-thanks-card-final">
@@ -5277,22 +5384,58 @@ function renderSeasonThankYouPage(recap = null) {
             <div class="season-thanks-mini-card"><strong>🎁</strong><span>جوائز لكل المشاركين</span></div>
             <div class="season-thanks-mini-card"><strong>✨</strong><span>هذه الذكرى صنعتوها أنتم</span></div>
         </div>
+
+        <section class="season-recap-farewell-card">
+            <span aria-hidden="true">🌙</span>
+            <div>
+                <p class="eyebrow">آخر سطر… وليس آخر ذكرى</p>
+                <h3>انتهت البطولة، لكن هذه الحكاية ستبقى باسم كل من كان هنا.</h3>
+                <p>شكراً على الحماس، المزح، المنافسة، وكل لحظة جعلت الموقع يبدو كأنه مجلس صغير يجمعنا بعد كل مباراة.</p>
+            </div>
+        </section>
+
+        ${participantBook}
     `;
 }
 // ===== V39 Final Recap Engine: calculated facts first; optional AI wording only after final data is locked =====
+async function loadCurrentParticipantRecapModel() {
+    if (
+        typeof isObserverParticipant === "function" &&
+        isObserverParticipant() &&
+        typeof loadObserverParticipantRecapModel === "function"
+    ) {
+        return loadObserverParticipantRecapModel();
+    }
+    return loadFinalRecapModel();
+}
+
+function updateSeasonRecapHeader(isReady) {
+    const title = document.querySelector("#seasonRecapTab .menu-page-header h3");
+    const subtitle = document.querySelector("#seasonRecapTab .menu-page-header .menu-page-subtitle");
+    if (title) title.textContent = isReady ? "الحكاية التي صنعناها معاً" : "قريباً";
+    if (subtitle) {
+        subtitle.textContent = isReady
+            ? "رسالة الختام، منصة الفائزين، ونسختك التذكارية من الرحلة."
+            : "تفتح بعد اكتمال البطولة، وتبقى بعدها صفحة للذكرى.";
+    }
+}
+
 async function renderSeasonRecapPage() {
     if (!seasonRecap) return false;
 
     try {
-        const recap = await loadFinalRecapModel();
+        const recap = await loadCurrentParticipantRecapModel();
         if (!isFinalRecapAvailable(recap)) {
+            updateSeasonRecapHeader(false);
             seasonRecap.innerHTML = renderClosingLockedUntilFinal(recap);
             return false;
         }
+        updateSeasonRecapHeader(true);
         seasonRecap.innerHTML = renderSeasonThankYouPage(recap);
         return true;
     } catch (error) {
         console.warn("Season closing recap unavailable:", error?.message || error);
+        updateSeasonRecapHeader(false);
         seasonRecap.innerHTML = renderClosingLockedUntilFinal();
         return false;
     }

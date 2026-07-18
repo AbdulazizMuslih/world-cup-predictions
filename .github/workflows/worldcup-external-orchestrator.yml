@@ -9,7 +9,7 @@ permissions:
   contents: read
 
 env:
-  AUTOMATION_ACTIVE_UNTIL: "2026-07-21T03:00:00Z"
+  AUTOMATION_ACTIVE_UNTIL: "2026-07-20T23:00:00Z"
 
 concurrency:
   group: world-cup-external-orchestrator
@@ -76,7 +76,7 @@ jobs:
           DEFAULT_APPROVED: "false"
           DRY_RUN: "false"
           SCHEDULE_ACTIVE_FROM: "2026-07-10T00:00:00Z"
-          SCHEDULE_ACTIVE_UNTIL: "2026-07-21T03:00:00Z"
+          SCHEDULE_ACTIVE_UNTIL: "2026-07-20T23:00:00Z"
         run: node scripts/fetch-final-event-notes.mjs
 
       - name: Report event-note result

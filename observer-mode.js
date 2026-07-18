@@ -1,5 +1,5 @@
 /* ==============================================================
-   V39.2.9 — Responsive transient Abdulaziz leaderboard preview
+   V39.4.0 FINAL — Post-tournament home and isolated Abdulaziz experience
    - Completely separate storage from official participants/predictions.
    - Keeps Abdulaziz as an optional, greyed-out leaderboard entry.
    - Uses the same participant dashboard and available-matches experience.
@@ -237,6 +237,81 @@ async function getObserverTournamentState(force = false) {
     return observerTournamentStateCache;
 }
 
+async function loadObserverParticipantRecapModel() {
+    if (!isObserverParticipant()) return loadFinalRecapModel();
+
+    const token = getObserverSessionToken();
+    if (!token) throw new Error("Observer session missing");
+
+    const [officialRecap, observerPredictions, observerChampionRows, officialChampionRows] = await Promise.all([
+        loadFinalRecapModel(),
+        observerRpc("observer_get_predictions", { p_token: token }),
+        observerRpc("observer_get_champion_prediction", { p_token: token }).catch(() => []),
+        db.from(CHAMPION_PREDICTIONS_TABLE).select("participant_id, predicted_team, points").then(({ data, error }) => {
+            if (error) throw error;
+            return data || [];
+        })
+    ]);
+
+    const observerParticipant = {
+        id: currentParticipant.id,
+        name: currentParticipant.name,
+        active: true,
+        sort_order: 999999
+    };
+    const recapMatchIdMap = new Map((officialRecap.completedMatches || []).map((match) => [String(match.id), match.id]));
+    const isolatedPredictions = (observerPredictions || []).map((row) => ({
+        participant_id: observerParticipant.id,
+        match_id: recapMatchIdMap.get(String(row.match_id)) ?? row.match_id,
+        predicted_team1_goals: row.predicted_team1_goals,
+        predicted_team2_goals: row.predicted_team2_goals,
+        points: row.points || 0,
+        updated_at: row.updated_at || row.created_at || null
+    }));
+    const allPredictions = [...(officialRecap.predictions || []), ...isolatedPredictions];
+    const allParticipants = [...(officialRecap.participants || []), observerParticipant];
+    const predictionsByMatch = groupFinalRecapBy(allPredictions, "match_id");
+    const observerChampion = Array.isArray(observerChampionRows) ? observerChampionRows[0] : observerChampionRows;
+    const championPredictionMap = new Map((officialChampionRows || []).map((row) => [String(row.participant_id), row]));
+    if (observerChampion?.predicted_team) {
+        championPredictionMap.set(String(observerParticipant.id), {
+            participant_id: observerParticipant.id,
+            predicted_team: observerChampion.predicted_team,
+            points: observerChampion.points || 0
+        });
+    }
+
+    const championResult = getChampionPredictionResult(officialRecap.completedMatches || []);
+    const models = buildFinalRecapParticipantModels(
+        allParticipants,
+        officialRecap.completedMatches || [],
+        predictionsByMatch,
+        championPredictionMap,
+        championResult
+    );
+    const snapshots = buildFinalRecapSnapshots(
+        allParticipants,
+        officialRecap.completedMatches || [],
+        predictionsByMatch,
+        championPredictionMap,
+        championResult
+    );
+    applyFinalRecapRankHistory(models, snapshots);
+    const ranked = rankFinalRecapModels(models);
+    ranked.forEach((row, index) => row.finalRank = index + 1);
+    const observerRow = ranked.find((row) => String(row.id) === String(observerParticipant.id));
+    if (!observerRow) throw new Error("Observer recap row unavailable");
+    observerRow.isObserver = true;
+
+    return {
+        ...officialRecap,
+        participants: allParticipants,
+        predictions: allPredictions,
+        finalRows: [...(officialRecap.finalRows || []), observerRow],
+        observerFinalRow: observerRow
+    };
+}
+
 async function applySeasonEndChromeForOfficialParticipant() {
     if (!currentParticipant || isAdminMode) return;
 
@@ -246,8 +321,8 @@ async function applySeasonEndChromeForOfficialParticipant() {
         const availableTitle = document.querySelector("#availableTab > h3");
 
         if (state.isComplete) {
-            if (availableTabButton) availableTabButton.textContent = "بعد الختام";
-            if (availableTitle) availableTitle.textContent = "رحلة اكتملت… وذكريات بقيت";
+            if (availableTabButton) availableTabButton.textContent = "الرئيسية";
+            if (availableTitle) availableTitle.textContent = "انتهت البطولة… والذكرى ما زالت هنا";
         } else {
             if (availableTabButton) availableTabButton.textContent = "المباريات المتاحة";
             if (availableTitle) availableTitle.textContent = "المباريات المتاحة للتوقع";
@@ -260,22 +335,65 @@ async function applySeasonEndChromeForOfficialParticipant() {
 function renderSeasonEndHub() {
     availableMatches.className = "season-end-hub";
     availableMatches.innerHTML = `
-        <section class="season-end-hero-card">
-            <div class="season-end-hero-icon" aria-hidden="true">🏆</div>
-            <div>
-                <p class="eyebrow">انتهت المباريات… وبقيت الحكاية</p>
-                <h4>كل شيء جاهز للعودة إليه</h4>
-                <p>راجع توقعاتك، شاهد الترتيب النهائي، افتح كتاب رحلتك، وتصفّح الأضواء واللحظات التي صنعت هذا الشهر.</p>
+        <section class="season-end-celebration-card">
+            <div class="season-end-trophy-wrap" aria-hidden="true">
+                <span class="season-end-trophy">🏆</span>
+                <span class="season-end-spark season-end-spark-one">✦</span>
+                <span class="season-end-spark season-end-spark-two">✦</span>
+                <span class="season-end-spark season-end-spark-three">●</span>
+            </div>
+            <div class="season-end-celebration-copy">
+                <span class="season-end-status-pill"><i></i> اكتمل كأس العالم</span>
+                <p class="eyebrow">النهاية وصلت… والذكريات بدأت</p>
+                <h4>انتهت المباريات، لكن قصتكم ما زالت هنا</h4>
+                <p>من أول توقع إلى صافرة النهائي، كل نقطة وضحكة ومفاجأة أصبحت جزءاً من رحلة واحدة. هذه الصفحة هي بوابتكم لكل ما بقي بعد الختام.</p>
+                <div class="season-end-heart-line"><span aria-hidden="true">❤️</span> شكراً لأنكم أعطيتم المسابقة روحها.</div>
             </div>
         </section>
-        <div class="season-end-action-grid">
-            <button type="button" onclick="goToDashboardTab('mine')"><span>📖</span><strong>توقعاتي كاملة</strong><small>كل مباراة ونقاطها</small></button>
-            <button type="button" onclick="goToDashboardTab('leaderboard')"><span>🏅</span><strong>الترتيب النهائي</strong><small>المنصة والنتائج الرسمية</small></button>
-            <button type="button" onclick="goToDashboardTab('profile')"><span>👤</span><strong>ملفي وكتاب الرحلة</strong><small>الإحصائيات والشارات وPDF</small></button>
-            <button type="button" onclick="goToDashboardTab('highlights')"><span>✨</span><strong>الأضواء</strong><small>أجمل اللقطات والقصص</small></button>
-            <button type="button" onclick="goToDashboardTab('statistics')"><span>📊</span><strong>أرقام لها طعم</strong><small>حقائق وشارات المسابقة</small></button>
-            <button type="button" onclick="goToDashboardTab('seasonRecap')"><span>❤️</span><strong>ختام المسابقة</strong><small>الرسالة الأخيرة</small></button>
+
+        <section class="season-end-guide-card">
+            <header>
+                <div>
+                    <p class="eyebrow">ابدأ من هنا</p>
+                    <h4>أربع محطات تنتظرك بعد النهاية</h4>
+                </div>
+                <span class="season-end-guide-badge">رحلتك محفوظة</span>
+            </header>
+
+            <div class="season-end-numbered-grid">
+                <button type="button" onclick="goToDashboardTab('highlights')">
+                    <span class="season-end-step-number">١</span>
+                    <span class="season-end-step-icon" aria-hidden="true">✨</span>
+                    <span class="season-end-step-copy"><strong>الأضواء</strong><small>أجمل القصص، المفاجآت، واللقطات التي صنعت البطولة.</small></span>
+                    <span class="season-end-step-arrow" aria-hidden="true">←</span>
+                </button>
+                <button type="button" onclick="goToDashboardTab('statistics')">
+                    <span class="season-end-step-number">٢</span>
+                    <span class="season-end-step-icon" aria-hidden="true">📊</span>
+                    <span class="season-end-step-copy"><strong>الإحصائيات والشارات</strong><small>أرقام المسابقة، ألقاب المشاركين، والحقائق الخفيفة.</small></span>
+                    <span class="season-end-step-arrow" aria-hidden="true">←</span>
+                </button>
+                <button type="button" onclick="goToDashboardTab('seasonRecap')">
+                    <span class="season-end-step-number">٣</span>
+                    <span class="season-end-step-icon" aria-hidden="true">❤️</span>
+                    <span class="season-end-step-copy"><strong>ختام المسابقة</strong><small>الرسالة الأخيرة، منصة الفائزين، وشكر لكل من شارك.</small></span>
+                    <span class="season-end-step-arrow" aria-hidden="true">←</span>
+                </button>
+                <button type="button" onclick="goToDashboardTab('profile')">
+                    <span class="season-end-step-number">٤</span>
+                    <span class="season-end-step-icon" aria-hidden="true">📖</span>
+                    <span class="season-end-step-copy"><strong>ملفك وكتاب الرحلة</strong><small>ملخصك الشخصي وشاراتك وتحميل نسختك التذكارية PDF.</small></span>
+                    <span class="season-end-step-arrow" aria-hidden="true">←</span>
+                </button>
+            </div>
+        </section>
+
+        <div class="season-end-quick-links">
+            <button type="button" onclick="goToDashboardTab('leaderboard')"><span aria-hidden="true">🏅</span><strong>الترتيب النهائي</strong><small>شاهد المراكز الرسمية</small></button>
+            <button type="button" onclick="goToDashboardTab('mine')"><span aria-hidden="true">⚽</span><strong>توقعاتي</strong><small>راجع رحلتك مباراة بمباراة</small></button>
         </div>
+
+        <p class="season-end-signoff">كانت مسابقة صغيرة… وصارت ذكرى كبيرة لأنكم كنتم فيها.</p>
     `;
 }
 
@@ -718,6 +836,17 @@ async function renderObserverProfilePage() {
                     <p>${escapeHtml(currentParticipant.name)} كان جزءاً من جو المسابقة مباراة بعد مباراة، وهذه الصفحة تحفظ أرقامه ولحظاته كما تحفظ رحلة كل مشارك.</p>
                 </div>
             `;
+        }
+
+        if (profileRecapDownload) {
+            const tournamentState = await getObserverTournamentState();
+            if (tournamentState.isComplete) {
+                const recap = await loadObserverParticipantRecapModel();
+                const observerFinalRow = recap.observerFinalRow || (recap.finalRows || []).find((row) => String(row.id) === String(currentParticipant.id));
+                profileRecapDownload.innerHTML = observerFinalRow
+                    ? renderParticipantRecapDownloadCard(currentParticipant, observerFinalRow, recap)
+                    : "";
+            }
         }
     } catch (error) {
         console.error("Observer profile failed:", error);

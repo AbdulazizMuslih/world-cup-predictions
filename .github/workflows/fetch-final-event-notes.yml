@@ -54,7 +54,7 @@ on:
 
 
 env:
-  AUTOMATION_ACTIVE_UNTIL: "2026-07-21T03:00:00Z"
+  AUTOMATION_ACTIVE_UNTIL: "2026-07-20T23:00:00Z"
 
 jobs:
   fetch-final-event-notes:
@@ -106,5 +106,5 @@ jobs:
           DEFAULT_APPROVED: ${{ github.event_name == 'schedule' && 'false' || inputs.default_approved }}
           DRY_RUN: ${{ github.event_name == 'schedule' && 'false' || inputs.dry_run }}
           SCHEDULE_ACTIVE_FROM: "2026-07-10T00:00:00Z"
-          SCHEDULE_ACTIVE_UNTIL: "2026-07-21T03:00:00Z"
+          SCHEDULE_ACTIVE_UNTIL: "2026-07-20T23:00:00Z"
         run: node scripts/fetch-final-event-notes.mjs
