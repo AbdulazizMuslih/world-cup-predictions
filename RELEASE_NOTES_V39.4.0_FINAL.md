@@ -18,6 +18,8 @@ This release is rebuilt directly from the confirmed v39.3.0 final source files. 
   - `aazizalamri2@gmail.com`
 - Added explicit desktop, tablet and mobile grid rules so About sections cannot collapse into narrow columns.
 - Updated frontend cache references and `version.json` to `39.4.0`.
+- Updated participant profile closing messages to a lighter, funnier style while preserving every calculated fact, participant row, scoring value and data source.
+- The profile wording still runs through the existing `Generate Final Highlights AI` workflow; no workflow, table, input payload or publishing process was changed.
 
 ## Preserved without functional changes
 
@@ -25,9 +27,15 @@ This release is rebuilt directly from the confirmed v39.3.0 final source files. 
 - Champion prediction scoring.
 - Abdulaziz isolated observer account and data separation.
 - Final recap, highlights, statistics, badges and journey-book PDFs.
-- Result sync, AI generation and audit scripts.
+- Result sync and audit behavior.
+- AI highlight generation inputs, facts pack and workflow configuration.
 - Workflow cutoff and automatic shutdown behavior.
 
 ## Deployment note
 
 This ZIP is a source replacement overlay. Keep the repository's existing `assets/` directory.
+
+
+## Final profile-tone patch
+
+Only `scripts/generate-ai-posts.mjs` changed for this patch. The profile title/body templates now use a friendly, lightly humorous tone. The underlying leaderboard facts, scoring, champion data, participant names, workflow inputs and AI facts pack are unchanged.

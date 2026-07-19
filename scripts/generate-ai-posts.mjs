@@ -4325,9 +4325,10 @@ function rebuildSafeProfileRows(existingRows, factsPack) {
         const row = factsPack.contest.leaderboard.find((item) => item.name === participant.name);
         rowsWithoutProfiles.push({
             section_key: FINAL_PROFILE_SECTION,
-            title_ar: cleanText(row?.rank === 1
-                ? (factsPack.audit.finalDataReady ? "لمحة البطل" : "لمحة المتصدر")
-                : "لمحة شخصية", AI_POST_TITLE_MAX_CHARS),
+            title_ar: cleanText(
+                buildFallbackProfileTitle(row || {}, factsPack),
+                AI_POST_TITLE_MAX_CHARS
+            ),
             subtitle_ar: "بصمة المشارك",
             body_ar: cleanBodyText(buildFallbackProfileMessage(participant.name, factsPack), 950),
             icon: cleanText(row?.rank === 1 ? "👑" : "✨", 8),
@@ -4344,11 +4345,34 @@ function rebuildSafeProfileRows(existingRows, factsPack) {
     return rowsWithoutProfiles;
 }
 
+function buildFallbackProfileTitle(row = {}, factsPack = {}) {
+    const leaderboard = factsPack.contest.leaderboard || [];
+    const exactLeader = Math.max(...leaderboard.map((item) => item.exactScores || 0), 0);
+    const accuracyLeader = Math.max(...leaderboard.map((item) => item.accuracyPercent || 0), 0);
+    const streakLeader = Math.max(...leaderboard.map((item) => item.bestCorrectStreak || 0), 0);
+    const bestStageLabel = row.bestStage?.label_ar || "";
+
+    if (row.rank === 1) {
+        return factsPack.audit.finalDataReady
+            ? "الكرسي الأول تعوّد على الاسم"
+            : "الصدارة تقول: لا تستعجلوا";
+    }
+
+    if ((row.rank || 999) <= 3) return "المنصة قالت: أهلاً";
+    if ((row.exactScores || 0) >= Math.max(4, exactLeader - 2)) return "موعد متكرر مع «بالملّي»";
+    if ((row.uniqueCorrect || 0) > 0 || (row.againstCrowdPoints || 0) > 0) return "طريق مختلف… ونقاط حقيقية";
+    if ((row.accuracyPercent || 0) >= Math.max(50, accuracyLeader - 8)) return "هدوء يجمع النقاط";
+    if ((row.bestCorrectStreak || 0) >= Math.max(4, streakLeader - 1)) return "دخل مود السلسلة";
+    if (bestStageLabel) return `${bestStageLabel}: هنا ظهرت البصمة`;
+    return "الحضور له لقطة";
+}
+
 function buildFallbackProfileMessage(participantName, factsPack) {
     const row = factsPack.contest.leaderboard.find((item) => item.name === participantName);
-    if (!row) return `${participantName}: الاسم كان جزءاً من جو المسابقة، وهذا وحده يستحق لمحة في الختام.`;
+    if (!row) {
+        return `${participantName}: هذا الاسم كان جزءاً من جو المسابقة، والجدول يرفع القبعة لكل من حضر الرحلة حتى النهاية.`;
+    }
 
-    const lang = participantLanguageWords(row.name, row.gender);
     const leaderboard = factsPack.contest.leaderboard || [];
     const exactLeader = Math.max(...leaderboard.map((item) => item.exactScores || 0), 0);
     const accuracyLeader = Math.max(...leaderboard.map((item) => item.accuracyPercent || 0), 0);
@@ -4357,39 +4381,49 @@ function buildFallbackProfileMessage(participantName, factsPack) {
     const bestStageLabel = row.bestStage?.label_ar || "مرحلة من البطولة";
     const bestStagePoints = row.bestStage?.points || 0;
     const badges = buildProfileBadgeLabels(row).slice(0, 3);
-    const badgeText = badges.length ? `أبرز شاراته${lang.taMarbuta}: ${badges.join("، ")}.` : "له حضور بسيط لكنه جزء من الحكاية.";
+    const badgeText = badges.length
+        ? `أبرز الشارات: ${badges.join("، ")}.`
+        : "حتى من دون شارة لامعة، الاسم حاضر في حكاية المسابقة.";
 
     let opening = "";
     let second = "";
 
     if (row.rank === 1) {
         opening = factsPack.audit.finalDataReady
-            ? `${row.name} أنهى المسابقة في الصدارة بعد رحلة طويلة من النقاط والتوقعات.`
-            : `${row.name} يتصدر حالياً، لكن الطريق ما زال مفتوحاً مع كل نتيجة جديدة.`;
-        second = `الأرقام الحالية تقول ${row.points} نقطة، ${row.correctPredictions} توقعاً جاب نقاط، و${row.exactScores} بالملّي. هذه لمحة متحركة من السباق، وتتحدث بما وصل إليه الجدول الآن.`;
+            ? `${row.name} في الصدارة النهائية بعد رحلة طويلة من النقاط والتوقعات. كرسي المركز الأول تعوّد على الاسم وقرر الاكتفاء به.`
+            : `${row.name} في الصدارة حالياً، لكن الجدول يرفض الاحتفال مبكراً ويقول: انتظروا صافرة النهاية.`;
+
+        second = `المحصلة ${row.points} نقطة، ${row.correctPredictions} توقعاً جاب نقاط، و${row.exactScores} بالملّي. لا سحر ولا VAR في الجدول؛ فقط أرقام محسوبة جيداً.`;
     } else if (topThree) {
         opening = factsPack.audit.finalDataReady
-            ? `${row.name} أنهى المسابقة ضمن الثلاثة الأوائل، وهي نتيجة تعكس حضوراً واضحاً طوال الطريق.`
-            : `${row.name} موجود حالياً في المركز ${row.rank}، وما زال كل شيء قابلاً للتغير مع المباريات المتبقية.`;
-        second = `جمع ${row.points} نقطة، ومع ${row.exactScores} بالملّي و${row.correctPredictions} توقعاً جاب نقاط، يظهر حضوره الحالي بوضوح. ${badgeText}`;
+            ? `${row.name} ضمن الثلاثة الأوائل، والمنصة قالت باختصار: الصورة الجماعية ناقصة من دون هذا الاسم.`
+            : `${row.name} في المركز ${row.rank} حالياً، والمنصة قريبة بما يكفي لتجعل كل مباراة ترفع النبض قليلاً.`;
+
+        second = `المحصلة ${row.points} نقطة، مع ${row.exactScores} بالملّي و${row.correctPredictions} توقعاً جاب نقاط. ${badgeText}`;
     } else if ((row.exactScores || 0) >= Math.max(4, exactLeader - 2)) {
-        opening = `${row.name} عنده علاقة واضحة مع لحظة "بالملّي". ليس ضرورياً أن تكون في القمة حتى تملك لقطة يتذكرها الجميع.`;
-        second = `${row.exactScores} نتائج كاملة تعني أن أكثر من مباراة قالت له${lang.taMarbuta}: صح عليك. ومع ${row.points} نقطة، أصبحت بصمته${lang.taMarbuta} في المسابقة أوضح من مجرد رقم في الترتيب.`;
+        opening = `لدى ${row.name} موعد متكرر مع كلمة «بالملّي». كأن خانتي النتيجة كانتا ترسلان تلميحاً قبل البداية، لكن لا تقلقوا: كل شيء محفوظ في قاعدة البيانات.`;
+
+        second = `${row.exactScores} نتائج كاملة و${row.points} نقطة جعلت بصمة ${row.name} أوضح من مجرد مركز في الجدول. الدقة هنا ليست مزحة؛ المزحة فقط أنها تكررت أكثر من اللازم.`;
     } else if ((row.uniqueCorrect || 0) > 0 || (row.againstCrowdPoints || 0) > 0) {
-        opening = `${row.name} لم يكن دائماً مع الطريق المزدحم. بعض أجمل لقطاته${lang.taMarbuta} جاءت من قراءة مختلفة، وهذا النوع من التوقعات يعطي المسابقة نكهتها.`;
-        second = `${row.uniqueCorrect || 0} قراءة منفردة و${row.againstCrowdPoints || 0} نقطة ضد الموجة تقول إن ${row.name} كان يملك لحظات خاصة؛ لحظات لا تشبه توقع الأغلبية ولا تمشي معها دائماً.`;
+        opening = `${row.name} لم يلتزم دائماً بالطريق المزدحم. كلما اتجهت الزحمة إلى اختيار واحد، كان هناك فضول للنظر في الاتجاه الآخر—وأحياناً كانت النقاط هناك.`;
+
+        second = `${row.uniqueCorrect || 0} قراءة منفردة و${row.againstCrowdPoints || 0} نقطة ضد الموجة تقول إن أجمل لقطات ${row.name} جاءت من قرارات لا تشبه توقع الأغلبية.`;
     } else if ((row.accuracyPercent || 0) >= Math.max(50, accuracyLeader - 8)) {
-        opening = `${row.name} كان يميل إلى القراءة الهادئة: لا ضجيج كثير، لكن نسبة الدقة كانت تتكلم بهدوء.`;
-        second = `دقة ${row.accuracyPercent}% مع ${row.correctPredictions} توقعاً جاب نقاط تجعل الملف الشخصي هنا أقرب إلى لاعب يعرف متى يختار الطريق الآمن ومتى ينتظر الفرصة.`;
+        opening = `ملف ${row.name} يقول: دراما أقل، نقاط أكثر. نسبة الدقة كانت تقوم بالمهمة بهدوء، من دون حاجة إلى مؤثرات صوتية.`;
+
+        second = `دقة ${row.accuracyPercent}% مع ${row.correctPredictions} توقعاً جاب نقاط و${row.points} نقطة؛ أسلوب ثابت، والجدول يحب هذا النوع من الهدوء.`;
     } else if ((row.bestCorrectStreak || 0) >= Math.max(4, streakLeader - 1)) {
-        opening = `${row.name} صنع سلسلة جميلة، والسلاسل في مسابقة التوقعات لها طعم خاص؛ لأنها تقول إن التركيز استمر أكثر من مباراة.`;
-        second = `${row.bestCorrectStreak} توقعات صحيحة متتالية ليست مجرد رقم. هي فترة كان فيها ${row.name} قريباً من الإيقاع الصحيح، وكأنه دخل الجولة وهو فاهم المزاج.`;
+        opening = `${row.name} دخل فترة كان عنوانها: لا تقاطعوا السلسلة. كل توقع صحيح كان يسلّم الكرة للتوقع الذي بعده.`;
+
+        second = `${row.bestCorrectStreak} توقعات صحيحة متتالية و${row.points} نقطة تعني أن الإيقاع استمر أكثر من مباراة، وهذه وحدها لقطة تستحق التذكر.`;
     } else if (bestStagePoints > 0) {
-        opening = `${row.name} ظهرت بصمته${lang.taMarbuta} أكثر في ${bestStageLabel}. أحياناً لا تحتاج كل البطولة؛ مرحلة واحدة كافية لتعطي الاسم لقطة واضحة.`;
-        second = `المحصلة ${row.points} نقطة، و${row.correctPredictions} توقعاً جاب نقاط. ${badgeText} هذه لمحة تقول إن لكل مشارك زاويته، حتى لو لم تكن في أعلى الجدول.`;
+        opening = `${bestStageLabel} كانت المرحلة التي ظهرت فيها بصمة ${row.name} بأوضح صورة. بعض المشاركين يحتاجون بطولة كاملة، وبعضهم تكفيه مرحلة تقول: هنا كانت اللقطة.`;
+
+        second = `أفضل حصيلة مرحلية كانت ${bestStagePoints} نقطة، والمجموع النهائي ${row.points} نقطة مع ${row.correctPredictions} توقعاً جاب نقاط. ${badgeText}`;
     } else {
-        opening = `${row.name} كان ضمن أسماء المسابقة، والحضور نفسه جزء من الجو. ليست كل اللمحات عن الكأس؛ بعضها عن المشاركة والضحكة وانتظار النتيجة.`;
-        second = `الأرقام الحالية تقول ${row.points} نقطة و${row.correctPredictions} توقعاً جاب نقاط. الخلاصة: صفحة الختام تسع الجميع، والذكريات ليست للمتصدر فقط.`;
+        opening = `${row.name} جزء من قصة المسابقة، والترتيب ليس كل الحكاية. أحياناً يكفي أن تفتح النتيجة بعد المباراة وتقول: كنت قريباً… قريباً جداً.`;
+
+        second = `الأرقام تقول ${row.points} نقطة و${row.correctPredictions} توقعاً جاب نقاط. الخلاصة: صفحة الختام تسع الجميع، والذكريات لا تطلب مركزاً أولاً للدخول.`;
     }
 
     return `${opening}\n\n${second}`;

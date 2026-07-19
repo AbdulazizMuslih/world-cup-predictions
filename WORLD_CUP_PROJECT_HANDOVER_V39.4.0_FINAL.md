@@ -202,13 +202,17 @@ Changed functional files:
 - `participant-recap-pdf.js` — version comment only.
 - `style.css` — one appended, scoped v39.4.0 block.
 - `version.json` — version only.
+- `scripts/generate-ai-posts.mjs` — participant profile titles and closing-message wording only.
 
-Unchanged from v39.3.0:
+Unchanged:
 
-- all scripts in `scripts/`;
-- all workflows in `.github/workflows/`;
+- all workflow files in `.github/workflows/`;
+- the facts pack supplied to the AI;
+- result sync and audit scripts;
 - data template;
-- scoring, leaderboard, final recap, observer storage and PDF behavior.
+- scoring, leaderboard, champion calculations, final recap, observer storage and PDF behavior.
+
+Profile messages are rebuilt from calculated participant facts inside `scripts/generate-ai-posts.mjs`. The final tone is now friendly and lightly humorous, but no participant metric or source data is changed.
 
 ---
 
@@ -258,9 +262,25 @@ Unchanged from v39.3.0:
 - Added Abdulaziz, WhatsApp group and email contact details.
 - Updated frontend version/cache references to `39.4.0`.
 - Preserved all scoring, data, observer, PDF and automation behavior.
+- Refreshed participant profile messages with a fun, lightly humorous tone using the same calculated facts and the same workflow.
 
 ---
 
 ## 14. File fingerprints
 
 See `FILE_MANIFEST_SHA256.txt` in the package for the final SHA-256 fingerprints.
+
+
+## 15. Final-match operational sequence
+
+After the final result is official:
+
+1. Run `Sync World Cup - Active Match Correction` once manually.
+2. Confirm 104/104 completed matches and verify the final/champion points.
+3. Run `Fetch Final Event Notes Drafts` with real insertion enabled.
+4. Run `Generate Final Highlights AI` in `full` mode with preview disabled, visible publishing enabled, maximum 40 and reset enabled.
+5. Run `Audit Final Recap Data`.
+6. Verify the post-tournament Home, final leaderboard, highlights, profile messages, statistics, badges, closing page, official PDF and Abdulaziz isolated PDF.
+7. Back up Supabase, stop the external cron and allow the shutdown workflow to disable the remaining World Cup workflows.
+
+Statistics, badges, final ranks, closing-page unlock and PDF availability are calculated/read by the frontend from final database data; they do not require separate generation workflows.

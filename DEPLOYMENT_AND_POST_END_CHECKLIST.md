@@ -47,3 +47,30 @@
 - [ ] Back up Supabase tables.
 - [ ] Stop the external cron jobs.
 - [ ] Confirm workflows are disabled after `2026-07-20T23:00:00Z`.
+
+## Exact final-match completion order
+
+- [ ] Push the updated `scripts/generate-ai-posts.mjs` before generating the final profiles.
+- [ ] After the final whistle, wait until the official football feed marks the final as finished.
+- [ ] Run `Sync World Cup - Active Match Correction` manually once for a controlled final update.
+- [ ] Confirm the database shows 104 total completed matches with valid scores.
+- [ ] Confirm the final winner, runner-up, official prediction points and champion-prediction points.
+- [ ] Run `Fetch Final Event Notes Drafts` with:
+  - `dry_run=false`
+  - `fetch_football_data_notes=true`
+  - `fetch_api_football_events=false`
+  - `fetch_news_events=true`
+  - `recent_completed_days=3`
+  - `news_max_per_match=2`
+  - `default_approved=false`
+- [ ] Run `Generate Final Highlights AI` with:
+  - `generation_mode=full`
+  - `allow_preview_generation=false`
+  - `publish_visible=true`
+  - `max_highlights=40`
+  - `reset_existing=true`
+- [ ] Run `Audit Final Recap Data`.
+- [ ] Open the website in a fresh session and confirm Home, final leaderboard, highlights, profile messages, statistics, badges, closing page and both PDF buttons.
+- [ ] Verify Abdulaziz remains outside the official table and that `عرض عبدالعزيز` remains temporary.
+- [ ] Back up Supabase, stop the external cron, and let the shutdown workflow disable the World Cup workflows after the cutoff.
+
